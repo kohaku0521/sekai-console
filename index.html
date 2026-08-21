@@ -1,0 +1,3595 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>セカイ秒読み 統合コンソール</title>
+<style>
+:root{
+  --accent:#3d79d5; --bg:#0b0d10; --panel:#14171c; --panel2:#1a1e24;
+  --text:#e9edf3; --dim:#8b95a5; --line:#242a33;
+  --warn:#e0a33a; --bad:#e0574a; --ok:#4aa96c;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;line-height:1.6}
+header{position:sticky;top:0;z-index:10;background:rgba(11,13,16,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.bar{max-width:1240px;margin:0 auto;padding:14px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.04em}
+.brand i{width:4px;height:20px;background:var(--accent);display:block}
+.spacer{flex:1}
+label.file{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid var(--line);border-radius:6px;background:var(--panel);cursor:pointer;font-size:13px;white-space:nowrap}
+label.file:hover{border-color:var(--accent)}
+label.file input{display:none}
+button{font:inherit;font-size:13px;padding:8px 14px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.bad{background:var(--bad);border-color:var(--bad);color:#fff}
+button:disabled{opacity:.4;cursor:not-allowed}
+main{max-width:1240px;margin:0 auto;padding:24px 20px 80px}
+.empty{text-align:center;padding:80px 20px;color:var(--dim)}
+.empty h1{font-size:22px;color:var(--text);margin-bottom:12px}
+.empty ol{display:inline-block;text-align:left;margin-top:18px;padding-left:20px;font-size:14px}
+.empty li{margin:6px 0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:22px}
+.stat{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--accent);padding:14px 16px;border-radius:6px}
+.stat.warn{border-top-color:var(--warn)} .stat.bad{border-top-color:var(--bad)} .stat.ok{border-top-color:var(--ok)}
+.stat .k{font-size:11px;color:var(--dim);letter-spacing:.08em}
+.stat .v{font-size:26px;font-weight:800;margin-top:2px}
+.stat .n{font-size:11px;color:var(--dim)}
+.cols{display:grid;grid-template-columns:1fr 320px;gap:22px;align-items:start}
+@media(max-width:980px){.cols{grid-template-columns:1fr}}
+/* 左（シーン一覧）と右（実行パネル）を、それぞれ独立にスクロールさせる */
+.colmain{display:flex;flex-direction:column;max-height:calc(100vh - 96px)}
+.scenes-toolbar{display:none;align-items:center;gap:10px;padding-bottom:12px;flex:none}
+#scenes{overflow-y:auto;padding-right:8px;padding-bottom:8px}
+.side{position:sticky;top:76px;max-height:calc(100vh - 96px);overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding-bottom:4px}
+@media(max-width:980px){.colmain,.side{max-height:none;overflow:visible;position:static}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+/* 縦並びのフレックスは、入りきらないと中身を押し潰す。
+   .card は overflow:hidden なので潰れたぶんが切り捨てられ、入力欄が消えてしまう。
+   カードは自然な高さのまま置き、はみ出たら .side 側をスクロールさせる */
+.side > .card{flex:none}
+.card h2{font-size:12px;letter-spacing:.1em;color:var(--dim);padding:12px 16px;border-bottom:1px solid var(--line);font-weight:600}
+.card .body{padding:14px 16px}
+.chapters li{list-style:none;display:flex;gap:10px;font-size:13px;padding:5px 0;border-bottom:1px solid var(--line)}
+.chapters li:last-child{border:0}
+.chapters .t{color:var(--accent);font-variant-numeric:tabular-nums;font-weight:700;flex:none}
+.scene{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:16px;overflow:hidden}
+.scene.flagged{border-color:var(--warn)}
+.scene .head{display:flex;gap:10px;align-items:center;padding:10px 16px;background:var(--panel2);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.id{font-weight:700;font-size:13px;font-variant-numeric:tabular-nums}
+.tag{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
+.tag.chap{border-color:var(--accent);color:var(--accent)}
+.tag.src-design{border-color:var(--ok);color:var(--ok)}
+.tag.src-auto{border-color:var(--dim)}
+/* ビジュアル種別。文字スライドだけ地味にして、画のあるシーンが目で追えるようにする */
+.tag.kind{font-weight:700;color:var(--text);background:rgba(255,255,255,.06);border-color:transparent}
+.tag.k-slide{color:var(--dim);font-weight:400;background:transparent;border-color:var(--line)}
+.dur{margin-left:auto;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+.scene .grid{display:grid;grid-template-columns:420px 1fr;gap:0}
+@media(max-width:820px){.scene .grid{grid-template-columns:1fr}}
+.shot{position:relative;background:#000;border-right:1px solid var(--line);aspect-ratio:16/9}
+.shot img,.shot video{width:100%;height:100%;object-fit:cover;display:block}
+.shot .none{position:absolute;inset:0;display:flex;flex-direction:column;gap:4px;align-items:center;justify-content:center;color:var(--dim);font-size:13px;text-align:center;padding:20px}
+.slide-frame{width:100%;height:100%;border:0;display:block;pointer-events:none}
+.shot .del{position:absolute;top:6px;right:6px;width:26px;height:26px;line-height:24px;padding:0;
+  border-radius:50%;background:rgba(0,0,0,.65);border-color:rgba(255,255,255,.3);color:#fff;font-size:15px}
+.shot .del:hover{background:var(--bad);border-color:var(--bad)}
+.shot .badge{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.65);color:var(--dim);
+  font-size:10px;padding:3px 7px;border-radius:4px;pointer-events:none;max-width:calc(100% - 12px)}
+.safe{position:absolute;pointer-events:none;inset:0;display:none}
+.safe.on{display:block}
+.safe .zone{position:absolute;background:rgba(224,87,74,.30)}
+.safe .box{position:absolute;border:1px dashed rgba(255,255,255,.55)}
+.safe .lbl{position:absolute;bottom:2px;right:4px;font-size:10px;color:#fff;opacity:.75}
+.meta{padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.meta .text{font-size:14px;white-space:pre-wrap;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:10px 12px;color:var(--text);resize:vertical;font-family:inherit;line-height:1.7}
+.meta .row{font-size:12px;color:var(--dim);display:flex;gap:8px}
+.meta .row b{color:var(--text);font-weight:600;flex:none}
+.flags{display:flex;flex-direction:column;gap:4px}
+.flag{font-size:12px;padding:5px 10px;border-radius:4px;background:rgba(224,163,58,.12);color:var(--warn);border-left:2px solid var(--warn)}
+.flag.bad{background:rgba(224,87,74,.12);color:var(--bad);border-left-color:var(--bad)}
+.toggle{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);cursor:pointer;user-select:none}
+.err{background:rgba(224,87,74,.12);border:1px solid var(--bad);color:var(--bad);padding:12px 16px;border-radius:6px;margin-bottom:18px;font-size:13px;white-space:pre-wrap}
+code{background:var(--panel2);padding:1px 5px;border-radius:3px;font-size:12px}
+/* ドラッグ&ドロップ */
+#drop{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;
+  background:rgba(11,13,16,.88);border:3px dashed var(--accent);color:var(--text)}
+#drop.on{display:flex}
+#drop .msg{text-align:center}
+#drop .msg b{display:block;font-size:26px;margin-bottom:8px}
+#drop .msg span{color:var(--dim);font-size:14px}
+/* 保存した案件 */
+select{font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px solid var(--line);
+  background:var(--panel);color:var(--text);max-width:230px}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:120;
+  background:var(--accent);color:#fff;padding:10px 20px;border-radius:6px;font-size:13px;
+  opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.on{opacity:1}
+/* 実行パネル（GitHubへ保存 → 生成 → 予約投稿）*/
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.field label{font-size:11px;color:var(--dim);letter-spacing:.06em}
+.field input,.field select,.field textarea{font:inherit;font-size:13px;padding:7px 9px;border-radius:5px;
+  border:1px solid var(--line);background:var(--panel2);color:var(--text);width:100%;max-width:none}
+.field .hint{font-size:11px;color:var(--dim)}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.run{font-size:12px;border:1px solid var(--line);border-radius:5px;padding:8px 10px;margin-top:10px;
+  background:var(--panel2);display:flex;flex-direction:column;gap:3px}
+.run .st{font-weight:700}
+.run.queued .st,.run.in_progress .st{color:var(--warn)}
+.run.success .st{color:var(--ok)}
+.run.failure .st,.run.cancelled .st{color:var(--bad)}
+.run a{color:var(--accent)}
+.gate{font-size:12px;color:var(--dim);line-height:1.7}
+/* 設定モーダル */
+#modal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.72);padding:20px}
+#modal.on{display:flex}
+#modal .sheet{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  width:100%;max-width:520px;max-height:90vh;overflow:auto}
+#modal .sheet h2{font-size:14px;padding:16px 20px;border-bottom:1px solid var(--line)}
+#modal .sheet .body{padding:18px 20px}
+.note{font-size:12px;color:var(--dim);background:var(--panel2);border-left:2px solid var(--accent);
+  padding:10px 12px;border-radius:4px;line-height:1.7;margin-bottom:14px}
+/* ComfyUI 写真生成 */
+.photogen{border-top:1px solid var(--line);margin-top:8px;padding-top:10px}
+.photogen .pg-prompt{width:100%;font:inherit;font-size:12px;padding:7px 9px;border-radius:5px;
+  border:1px solid var(--line);background:var(--panel2);color:var(--text);resize:vertical;line-height:1.5}
+.pg-preview{width:100%;border-radius:6px;margin-top:8px;display:block}
+/* 一括生成の全体進捗 */
+.genall{margin:0 0 12px;padding:11px 13px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.genall-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:12px;margin-bottom:8px}
+.genall-head #genall-eta{color:var(--dim);flex:none;font-variant-numeric:tabular-nums}
+.genall-dots{display:flex;gap:3px;flex-wrap:wrap;margin-top:9px}
+.gd{width:15px;height:6px;border-radius:2px;background:var(--panel2);border:1px solid var(--line)}
+.gd.done{background:var(--ok);border-color:var(--ok)}
+.gd.fail{background:var(--bad);border-color:var(--bad)}
+.gd.cur{background:var(--accent);border-color:var(--accent)}
+.pg-progress{margin-top:8px}
+.pg-bar{height:6px;border-radius:3px;background:var(--panel2);overflow:hidden}
+.pg-bar-fill{height:100%;width:2%;background:var(--accent);transition:width .3s ease}
+.pg-progress-text{display:block;font-size:11px;color:var(--dim);margin-top:4px}
+.px-results{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.cands{margin:8px 0}
+.cands-t{font-size:11px;color:var(--dim);margin-bottom:5px}
+.cand{font-size:12px;padding:4px 10px;margin:0 5px 5px 0;border-radius:99px;
+  background:#ffffff0d;border-color:var(--line)}
+.cand:hover{border-color:var(--accent);color:var(--accent)}
+.px-thumb{padding:0;border:2px solid var(--line);border-radius:5px;overflow:hidden;width:84px;height:56px;flex:none;cursor:pointer}
+.px-thumb:hover{border-color:var(--accent)}
+.px-thumb img,.px-thumb video{width:100%;height:100%;object-fit:cover;display:block}
+/* シーンの調整 */
+.ctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px}
+.ctl select,.ctl input{font:inherit;font-size:12px;padding:4px 7px;border-radius:4px;
+  border:1px solid var(--line);background:var(--panel2);color:var(--text);max-width:none}
+.ctl input.chap{width:160px}
+.ctl .mv{padding:3px 8px;font-size:12px;line-height:1.2}
+.ctl .spacer{flex:1}
+/* 企画案（配列JSON）の一覧 */
+.plan{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:6px;padding:14px 16px;margin-bottom:12px}
+.plan h3{font-size:16px;margin-bottom:6px}
+.plan .row{font-size:13px;color:var(--dim);display:flex;gap:8px;margin-top:4px}
+.plan .row b{color:var(--text);font-weight:600;flex:none}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <div class="brand"><i></i>セカイ秒読み 統合コンソール</div>
+    <div class="spacer"></div>
+    <select id="s-saved" title="保存した案件"><option value="">保存した案件…</option></select>
+    <label class="file">台本JSON<input type="file" id="f-json" accept=".json"></label>
+    <label class="file">素材ZIP<input type="file" id="f-zip" accept=".zip"></label>
+    <label class="toggle"><input type="checkbox" id="t-safe" checked>安全領域を表示</label>
+    <button id="b-design" disabled title="Claude Design に貼る依頼文をコピーします">Design用にコピー</button>
+    <button id="b-export" disabled>JSONを書き出し</button>
+    <button id="b-settings" title="GitHubの接続設定">⚙ 接続設定</button>
+    <button id="b-delete" disabled title="この案件を保存から削除します">削除</button>
+  </div>
+</header>
+
+<div id="drop"><div class="msg">
+  <b>ここにドロップ</b>
+  <span>台本JSON（.json）／ 素材ZIP（.zip）／ 画像・動画ファイル</span>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<div id="modal"><div class="sheet">
+  <h2>GitHub 接続設定</h2>
+  <div class="body">
+    <div class="note">
+      動画の書き出しには ffmpeg・音声合成・ブラウザが要るため、<b style="color:var(--text)">生成そのものは
+      GitHub Actions（GitHubの計算機）で走ります</b>。この画面はそれを操作する管理卓です。<br><br>
+      そのためにアクセストークンが要ります。<b style="color:var(--text)">トークンはこのブラウザにだけ保存され、
+      GitHub以外へは送られません</b>。共用パソコンでは使わないでください。
+    </div>
+    <div class="field">
+      <label>リポジトリ</label>
+      <input id="g-repo" placeholder="kohaku0521/kaitai-check">
+    </div>
+    <div class="field">
+      <label>ブランチ</label>
+      <input id="g-branch" placeholder="main">
+      <div class="hint">ワークフローの実行はこのブランチに対して行われます。通常は main。</div>
+    </div>
+    <div class="field">
+      <label>アクセストークン</label>
+      <input id="g-token" type="password" placeholder="github_pat_…">
+      <div class="hint">
+        GitHub → Settings → Developer settings → <b>Fine-grained tokens</b> で作成。<br>
+        対象リポジトリを <code>kaitai-check</code> だけに絞り、権限は
+        <b>Contents: Read and write</b> と <b>Actions: Read and write</b> の2つだけにしてください。
+      </div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" id="g-test">接続を確認して保存</button>
+      <button id="g-clear">トークンを消す</button>
+    </div>
+    <div id="g-result" style="margin-top:12px;font-size:12px"></div>
+
+    <div class="field" style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
+      <label>ComfyUI（写真生成）</label>
+    </div>
+    <div class="note">
+      写真だけはコードで描けないため、この画面から<b style="color:var(--text)">社長のPCのComfyUIに直接</b>
+      頼みます（Claude Codeは経由しません）。ComfyUIの起動時に
+      <code>--enable-cors-header</code> を付けてください（ブラウザからの直接アクセスを許可する設定です）。
+    </div>
+    <div class="field">
+      <label>ComfyUIのURL</label>
+      <input id="c-base" placeholder="http://127.0.0.1:8188">
+    </div>
+    <div class="btnrow" style="margin-bottom:12px">
+      <button id="c-list">モデル一覧を取得</button>
+    </div>
+    <div class="field">
+      <label>モデルの形式</label>
+      <select id="c-mode">
+        <option value="checkpoint">全部入り（checkpoints フォルダ）</option>
+        <option value="unet">本体だけ（diffusion_models フォルダ）＋ CLIP・VAEを個別指定</option>
+      </select>
+      <div class="hint">FLUX系は「本体だけ」で配布されていることが多く、その場合は下の3つも選びます</div>
+    </div>
+    <div id="c-fields-ckpt">
+      <div class="field">
+        <label>チェックポイント</label>
+        <select id="c-ckpt"></select>
+      </div>
+    </div>
+    <div id="c-fields-unet" style="display:none">
+      <div class="field">
+        <label>本体（UNET / diffusion model）</label>
+        <select id="c-unet"></select>
+      </div>
+      <div class="field">
+        <label>テキストエンコーダ 1（例: clip_l）</label>
+        <select id="c-clip1"></select>
+      </div>
+      <div class="field">
+        <label>テキストエンコーダ 2（例: t5xxl）</label>
+        <select id="c-clip2"></select>
+      </div>
+      <div class="field">
+        <label>VAE（例: ae.safetensors）</label>
+        <select id="c-vae"></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>ステップ数</label>
+      <input id="c-steps" type="number" min="1" max="50" step="1">
+      <div class="hint">
+        FLUX.1-schnellは蒸留済みモデルのため1〜4ステップで十分（既定は1）。
+        SDXLなど他モデルに切り替える場合はここも合わせて変えること
+      </div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" id="c-save">ComfyUI設定を保存</button>
+    </div>
+    <div id="c-result" style="margin-top:8px;font-size:12px"></div>
+
+    <div class="field" style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
+      <label>Pixabay（実写・動画素材の検索）</label>
+    </div>
+    <div class="note">
+      ComfyUIで作らず、既存の実写・イラスト・動画素材をそのまま使いたいシーン向け。各シーンの画面に検索欄が出ます
+      （写真は全種別、動画は`kind: clip`のシーンに出ます）。
+      Pixabayの<a href="https://pixabay.com/ja/service/license/" target="_blank" rel="noopener">利用規約</a>上、
+      帰属表示なしで商用利用できます。APIキーはこのブラウザにだけ保存されます。
+      Mixkitなど検索APIの無いサイトの素材は、同じ画面の「手動アップロード」から追加できます。
+    </div>
+    <div class="field">
+      <label>Pixabay APIキー</label>
+      <input id="px-key" type="password" placeholder="キーを貼り付け">
+      <div class="hint">
+        <a href="https://pixabay.com/api/docs/" target="_blank" rel="noopener">pixabay.com/api/docs</a>
+        の上部に、無料アカウントでログインすると表示されます。
+      </div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" id="px-save">Pixabay設定を保存</button>
+    </div>
+    <div id="px-result" style="margin-top:8px;font-size:12px"></div>
+
+    <div class="btnrow" style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
+      <button id="g-close">閉じる</button>
+    </div>
+  </div>
+</div></div>
+
+<main>
+  <div id="err" class="err" style="display:none"></div>
+  <div id="empty" class="empty">
+    <h1>台本JSONをここにドラッグ＆ドロップ</h1>
+    <p>Claude Code が出力した台本と、Claude Design が出力した素材ZIP（画像・動画）を突き合わせて確認します。</p>
+    <ol>
+      <li><b>台本JSON</b> をドロップ（Claude Code の出力）</li>
+      <li><b>「Design用にコピー」</b>で依頼書をコピー → Claude Design に貼る</li>
+      <li>返ってきた <b>素材ZIP</b> をドロップ</li>
+      <li>画・文字数・安全領域・チャプターを確認し、この画面で直す</li>
+      <li>右の <b>① 保存 → ② 生成 → ③ 予約投稿</b> まで、この画面から実行する</li>
+    </ol>
+    <p style="margin-top:18px;font-size:13px">
+      読み込んだ内容はこのブラウザに保存され、次に開いたときも残ります。<br>
+      ①〜③を使うには「⚙ 接続設定」でGitHubにつないでください（それ以外の機能は接続なしで使えます）。
+    </p>
+  </div>
+  <div id="plans" style="display:none"></div>
+  <div id="view" style="display:none">
+    <div class="stats" id="stats"></div>
+    <div class="cols">
+      <div class="colmain">
+        <div class="scenes-toolbar" id="scenes-toolbar">
+          <button class="primary" id="b-gen-all" title="写真・生成画像のシーンだけをまとめて生成します。図解・グラフ・文字スライドは対象外です">写真を一括生成（ComfyUI）</button>
+          <button class="primary" id="b-clip-all" title="動画クリップのシーン（clip_motion指定のものを除く）について、prompt_enから作った検索語でPixabayを検索し、いちばん合いそうな動画を自動で仮選択します">動画クリップを一括選択（Pixabay）</button>
+          <button id="b-commit-all" title="ComfyUIで生成済みだが、まだリポジトリに反映していない写真をまとめてコミットします">写真を一括コミット</button>
+          <button id="b-commit-clips" title="Pixabayで選択・手動アップロード済みだが、まだリポジトリに反映していない動画クリップをまとめてコミットします">動画クリップを一括コミット</button>
+          <button id="b-all-generated" title="全シーンの画の種類を「生成画像」に変えます">全シーンを生成画像にする</button>
+          <button id="b-prompt-copy" title="全シーンのプロンプトをまとめてコピーします">プロンプトを全コピー</button>
+          <button id="b-prompt-paste" title="書き換えたプロンプトを貼り付けて一括で反映します">貼り付けて一括反映</button>
+          <span id="gen-all-status" style="font-size:12px;color:var(--dim)"></span>
+          <span id="clip-all-status" style="font-size:12px;color:var(--dim)"></span>
+          <span id="commit-all-status" style="font-size:12px;color:var(--dim)"></span>
+          <span id="commit-clips-status" style="font-size:12px;color:var(--dim)"></span>
+        </div>
+        <div class="genall" id="genall" style="display:none">
+          <div class="genall-head">
+            <span id="genall-label"></span>
+            <span id="genall-eta"></span>
+            <button id="genall-stop" class="bad" style="display:none">停止</button>
+          </div>
+          <div class="pg-bar"><div class="pg-bar-fill" id="genall-fill" style="width:0%"></div></div>
+          <div class="genall-dots" id="genall-dots"></div>
+        </div>
+        <div id="scenes"></div>
+      </div>
+      <div class="side">
+        <div class="card"><h2>① リポジトリに保存</h2><div class="body">
+          <div id="gate-save" class="gate" style="display:none">
+            先に「⚙ 接続設定」でGitHubにつないでください。
+          </div>
+          <div id="panel-save" style="display:none">
+            <div class="field">
+              <label>台本の保存先</label>
+              <input id="p-script" placeholder="data/scripts/2026-08-09-long.json">
+            </div>
+            <div class="field" id="f-zippath" style="display:none">
+              <label>素材フォルダの保存先</label>
+              <input id="p-zip" placeholder="data/design/2026-08-09-long/">
+            </div>
+            <div class="btnrow">
+              <button class="primary" id="b-save-repo">この内容で保存</button>
+            </div>
+            <div class="hint" style="font-size:11px;color:var(--dim);margin-top:8px">
+              画面で直した本文・種別・チャプターがそのままコミットされます。
+            </div>
+            <div id="save-result" style="font-size:12px;margin-top:8px"></div>
+          </div>
+        </div></div>
+
+        <div class="card"><h2>② 動画を生成</h2><div class="body">
+          <div id="gate-run" class="gate" style="display:none">
+            先に「⚙ 接続設定」でGitHubにつないでください。
+          </div>
+          <div id="panel-run" style="display:none">
+            <div class="field">
+              <label>やること</label>
+              <select id="p-mode">
+                <option value="full">動画を作って限定公開でアップロードする</option>
+                <option value="noupload">動画を作るだけ（アップロードしない）</option>
+                <option value="slides">画だけ作って確かめる（数分で終わる）</option>
+              </select>
+            </div>
+            <div class="btnrow"><button class="primary" id="b-run">生成を開始</button></div>
+            <div class="hint" style="font-size:11px;color:var(--dim);margin-top:8px">
+              10分の動画で30〜60分かかります。閉じても実行は続きます。
+            </div>
+            <div id="run-status"></div>
+          </div>
+        </div></div>
+
+        <div class="card"><h2>③ 予約投稿</h2><div class="body">
+          <div id="gate-pub" class="gate" style="display:none">
+            先に「⚙ 接続設定」でGitHubにつないでください。
+          </div>
+          <div id="panel-pub" style="display:none">
+            <div class="field">
+              <label>動画のURL または ID</label>
+              <input id="p-video" placeholder="https://www.youtube.com/watch?v=…">
+              <div class="hint">生成が終わるとDiscordに限定公開のURLが届きます。それを貼ってください。</div>
+            </div>
+            <div class="field">
+              <label>公開日</label>
+              <select id="p-date"></select>
+            </div>
+            <div class="field">
+              <label>公開時刻（日本時間）</label>
+              <select id="p-time"></select>
+              <div class="hint">日付を「おまかせ」にすると、次に空いている19時の枠へ自動で入ります。</div>
+            </div>
+            <div class="btnrow"><button class="primary" id="b-publish">予約する</button></div>
+            <div id="pub-status"></div>
+          </div>
+        </div></div>
+
+        <div class="card"><h2>サムネイル</h2><div class="body">
+          <div class="field">
+            <label>背景</label>
+            <select id="th-bg">
+              <option value="plain">無地（ブランド色のグラデーション）</option>
+            </select>
+            <div class="hint">生成した画像やスライドがあれば、ここから選べます</div>
+          </div>
+          <div class="field">
+            <label>文字（1行目・大きく出ます）</label>
+            <input id="th-main" placeholder="縄文文化が消えた日">
+          </div>
+          <div class="field">
+            <label>文字（2行目・小さく。空でも可）</label>
+            <input id="th-sub" placeholder="7300年前・過去1万年で世界最大">
+          </div>
+          <div class="field">
+            <label>文字の位置</label>
+            <select id="th-pos">
+              <option value="center">中央</option>
+              <option value="left">左寄せ</option>
+              <option value="bottom">下寄せ</option>
+            </select>
+          </div>
+          <canvas id="th-canvas" width="1280" height="720"
+                  style="width:100%;border-radius:6px;display:block;margin-top:10px"></canvas>
+          <div class="btnrow">
+            <button id="th-download">画像を保存</button>
+            <button class="primary" id="th-commit">リポジトリにコミット</button>
+          </div>
+          <div id="th-status" style="font-size:12px;margin-top:8px"></div>
+        </div></div>
+
+        <div class="card"><h2>BGMの流れ</h2><div class="body">
+          <div class="row" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <b style="flex:none">動画全体の既定BGM</b>
+            <select id="default-bgm" style="flex:1"
+                    title="シーン側で個別指定（BGM:前のまま 以外）が無い区間はこの曲が流れます"></select>
+            <button class="mv bgm-play" id="default-bgm-play" data-bgm=""></button>
+          </div>
+          <div class="row" style="display:flex;justify-content:flex-end;margin-bottom:10px">
+            <button class="mv" id="bgm-unify"
+                    title="選んだ曲を動画全体に適用し、各シーンの個別指定（章ごとの切り替え）をすべて解除します">
+              この曲で全編を統一
+            </button>
+          </div>
+          <div id="bgm-seek" style="display:none;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;color:var(--dim)">
+            <span id="bgm-seek-name" style="flex:none;color:var(--text);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+            <span id="bgm-seek-cur" style="flex:none;font-variant-numeric:tabular-nums">0:00</span>
+            <input type="range" id="bgm-seek-bar" min="0" max="1000" value="0" style="flex:1">
+            <span id="bgm-seek-dur" style="flex:none;font-variant-numeric:tabular-nums">0:00</span>
+          </div>
+          <ul class="chapters" id="bgmruns"></ul>
+          <div class="hint" style="font-size:11px;color:var(--dim);margin-top:8px">
+            同じ曲が続く区間はひと続きに流れます。変わるところは3秒かけて重ねるので、
+            切り替わりで音が途切れることはありません。
+          </div>
+
+          <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">
+            <b style="font-size:13px">BGM素材を追加</b>
+            <div class="hint" style="font-size:11px;color:var(--dim);margin-top:4px">
+              自作アンビエント以外の曲を使いたいときはここから。
+              <a href="https://studio.youtube.com/channel/UC/music" target="_blank" rel="noopener">YouTube Studio → オーディオ ライブラリ</a>
+              で気に入った曲を探し（フィルタで「帰属表示 不要」を選ぶと表記が要らず楽です）、mp3でダウンロード。
+              下でそのファイルを選んで名前を付け「追加」を押すと、すぐこのリポジトリに保存されて選択肢に出ます。
+            </div>
+            <div class="btnrow" style="margin-top:8px;flex-wrap:wrap;gap:8px">
+              <input type="file" id="bgm-file" accept="audio/*" style="flex:1;min-width:160px">
+              <input type="text" id="bgm-name" placeholder="曲名（空欄ならファイル名）" style="flex:1;min-width:140px">
+              <button class="primary" id="bgm-add">追加</button>
+            </div>
+            <div id="bgm-add-result" style="font-size:12px;margin-top:6px"></div>
+            <ul class="chapters" id="bgm-assets" style="margin-top:10px"></ul>
+          </div>
+        </div></div>
+        <div class="card"><h2>チャプター（概要欄に入るもの）</h2><div class="body"><ul class="chapters" id="chapters"></ul></div></div>
+        <div class="card"><h2>画の種別と、実際に出るもの</h2><div class="body">
+          <div class="hint" style="font-size:11px;color:var(--dim);margin-bottom:10px">
+            種別は「何の画か」と「誰がその画を作るか」の2つで決まります。
+            シーンごとの<b style="color:var(--text)">今のまま生成すると何が出るか</b>は、
+            各シーンの種別欄のすぐ下に表示しています。
+          </div>
+          <ul class="chapters" id="kindlegend"></ul>
+          <div class="hint" style="font-size:11px;color:var(--dim);margin-top:10px">
+            <b style="color:var(--warn)">図解・位置図・グラフの注意</b><br>
+            この3つは <code>diagram_render.py</code> に<b style="color:var(--text)">そのシーン専用の描画関数を
+            1つずつ手で書き起こして</b>初めて絵になります。関数が無いシーンは、種別を変えても
+            本番では文字スライドに落ちます。<br><br>
+            いま関数が入っているのは鬼界カルデラ回だけです。新しい台本で画を持たせたいなら、
+            <b style="color:var(--text)">種別を「生成画像」に変えてComfyUIで作る</b>のがいちばん早く、
+            構造をきちんと図で見せたい場合だけ図解の作成を別途依頼してください。
+          </div>
+        </div></div>
+        <div class="card"><h2>安全領域</h2><div class="body" style="font-size:12px;color:var(--dim)">
+          赤い帯は<b style="color:var(--text)">文字を置いてはいけない範囲</b>です。<br><br>
+          下18% … 字幕帯<br>左右11%・上8% … ケンバーンズの寄りで画面外に出る<br><br>
+          デザイン画像でここに文字がかかっていると、動画では切れます。
+        </div></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ── 生成パイプライン側と揃えている定数（変えるときは両方直すこと）────────────
+// 実測値: 2026-08-09 の1本目（3,164字・30シーン・実測8:58）から逆算して 6.36 字/秒。
+// 話者(config.yaml の voicevox.speaker)や話速を変えたら、実測して合わせ直すこと
+const CPS = 6.36;         // VOICEVOXの読み上げ速度（字/秒）
+const PAUSE = 0.28;       // narration.py の文間ポーズ
+const TAIL = 0.45;        // longform_build.py の読み終わりの余韻
+const MAX_SENT = 46;      // narration.py の1字幕あたり上限
+const MIN_CHAP_SEC = 10, MIN_CHAPS = 3;   // YouTubeのチャプター要件
+const SAFE = {bottom:.18, side:.11, top:.08};
+const SCENE_CHARS = [60,120];             // 1シーンの推奨文字数（画面の変化を保つため短め）
+const TARGET_MIN = [8,12];
+
+// ComfyUI（写真生成）。config.yaml の comfyui: と揃えている値（変えるときは両方直すこと）。
+// 生成はブラウザから直接 ComfyUI のAPIを叩く。Claude Codeは経由しない
+// （同じPC同士なので、経由する必然性が無い）
+// モデルの置き場所は1つではない。全部入りの checkpoints/ に置く形式と、
+// 本体・テキストエンコーダ・VAEを別々に置く形式（diffusion_models/ + clip/ + vae/）がある。
+// FLUX系は後者で配布されることが多いので、両方から選べるようにしている
+const CF_DEFAULT = {base:"http://127.0.0.1:8188", mode:"checkpoint",
+                     checkpoint:"flux1-schnell-fp8.safetensors",
+                     unet:"", clip1:"", clip2:"", vae:"", clipType:"flux",
+                     width:1344, height:768, steps:1, cfg:1.0, sampler:"euler", scheduler:"simple"};
+// FLUX.1-schnellはcfg=1で動くため、ネガティブは数式上まったく効かない。
+// 空にしておく（中身を書くと「効いているつもり」で誤解のもとになる）。
+// 除外したいものは、プロンプト側に肯定形で書くこと
+//   ✗ no orange tones  →  モデルは否定を扱えず、むしろorangeを呼び込む
+//   ◎ cold blue-grey palette throughout
+const CF_NEGATIVE = "";
+// 生成ボタンを出すビジュアル種別。空なら全シーンに出す
+const CF_KINDS = [];
+// 空なら全シーンが対象。段階表示のシーンだけは、生成画像にすると構図が揃わず
+// 演出が壊れるので除く（図解として描くのが正しい）
+const isStaged = s => Array.isArray(s.vis?.steps) && s.vis.steps.length > 0;
+const canGenerate = s => (!CF_KINDS.length || CF_KINDS.includes(s.kind)) && !isStaged(s);
+// 「一括生成」がまとめて作る種別。個別の「生成」ボタンはどのシーンにも出るが、
+// 一括のほうは写真として作るつもりのシーンだけに絞る。
+// 図解・地図・グラフは diagram_render.py が、文字スライドは slide_render.py が描くもので、
+// これらをComfyUIの写真で置き換えると図が絵に化けて筋が通らなくなる。
+// 全部を生成画像にしたいときは「全シーンを生成画像にする」で種別ごと変えてから回すこと
+const CF_BULK_KINDS = ["generated", "photo"];
+const isBulkKind = s => CF_BULK_KINDS.includes(s.kind);
+const bulkTarget = s => canGenerate(s) && isBulkKind(s) && !s.image && !photoState(s).bytes;
+// 「動画クリップを一括選択」の対象。clip_motion指定（こちらが自動で描く）は除く
+const bulkClipTarget = s => s.kind === "clip" && !s.vis.clip_motion && !s.image && !photoState(s).bytes;
+
+// BGM。make_bgm.py の ROOTS と対（変えるときは両方直すこと）。
+// 番号が大きいほど主音が低く、重い。ブラウザでの試聴は make_bgm.py の tones() と
+// 同じ組み方（主音・その2倍下・完全5度、各0.25Hzずらした相方つき）を鳴らしている
+const BGM_ROOTS = [110.00, 103.75, 98.00, 92.50, 87.25, 82.50];
+const BGM_DETUNE = 0.25, BGM_SWELL_HZ = 0.1, BGM_SWELL_DEPTH = 0.3;
+const BGM_BEDS = BGM_ROOTS.map((hz, i) => ({
+  name: `bed_${i + 1}`, hz,
+  label: `bed_${i + 1}（${hz}Hz${i === 0 ? "・最も高い" : i === BGM_ROOTS.length - 1 ? "・最も低い" : ""}）`,
+}));
+
+// 自前生成ではない、リポジトリに置いた実ファイルのBGM（YouTubeオーディオライブラリ等からの曲）。
+// assets/audio/bgm/ の中身を audio_mix.find_bgm() と同じ「拡張子抜きのファイル名」で突き合わせる
+let customBgm = [];           // [{name, file, path, sha, size}]
+const BGM_EXT_RE = /\.(mp3|wav|m4a|ogg)$/i;
+const customBgmByName = name => customBgm.find(c => c.name === name);
+const isKnownBgm = name => BGM_BEDS.some(b => b.name === name) || !!customBgmByName(name);
+
+// ビジュアル種別（script_loader.py の VISUAL_KINDS と対）。
+// 文字スライドが続くと内容が良くても離脱するので、ここで比率と連続を見張る
+const KIND_LABEL = {clip:"動画クリップ", diagram:"図解", map:"位置図", photo:"写真",
+                    generated:"生成画像", data:"グラフ", slide:"文字スライド"};
+const RICH_KINDS = ["clip","diagram","map","photo","generated","data"];
+
+// ビジュアル種別の定義。「何を指す種別か」と「実際に誰がその画を作るか」は別の話で、
+// ここを曖昧にしていたせいで、図解を選んでも文字スライドが出る、という食い違いが起きていた。
+//
+//   ASSET_KINDS … コンソールから素材（png/mp4）を用意して差し込む種別
+//   DRAWN_KINDS … 素材を置かず、こちらのコードが毎回描き起こす種別
+//
+// 種別をASSET→DRAWNへ変えたときに素材を外すのも、この区別に従っている
+const ASSET_KINDS = ["clip", "photo", "generated"];
+const DRAWN_KINDS = ["diagram", "map", "data", "slide"];
+
+// 各種別の定義。console の凡例と、シーンごとの「実際に何が出るか」表示に使う。
+// prompts/longform_scriptwriting.md の表と対（変えるときは両方直すこと）
+const KIND_SPEC = {
+  clip: {
+    what: "5秒前後の実写・生成の動く画",
+    use: "冒頭・章の核心・中盤の離脱帯。静止画の連続に動きを差して目を戻す",
+    who: "コンソール（Pixabay動画検索／手動アップロード）",
+    asset: "assets/video_clips/<シーンID>.mp4",
+  },
+  photo: {
+    what: "実在する物・場所・機材が写った写真",
+    use: "現物を見せたいとき。実在しないものには使わない",
+    who: "コンソール（Pixabay写真検索／ComfyUI生成）",
+    asset: "assets/images/generated/<シーンID>.png",
+  },
+  generated: {
+    what: "実写では撮れない情景・スケール感のイメージ画",
+    use: "言葉だけでは像を結ばない情景。宇宙・地下・体内など",
+    who: "コンソール（ComfyUI生成）",
+    asset: "assets/images/generated/<シーンID>.png",
+  },
+  diagram: {
+    what: "構造・仕組み・時間の流れを線と図形で示した模式図",
+    use: "「どうなっているか」を説明するとき。断面図・関係図・年表・分岐図",
+    who: "src/diagram_render.py（台本ごとに関数を書き起こす）",
+    asset: null,
+  },
+  map: {
+    what: "地名・場所の位置関係を示す図",
+    use: "地名が出たとき。視聴者は地名だけでは位置を思い浮かべられない",
+    who: "src/diagram_render.py（台本ごとに関数を書き起こす）",
+    asset: null,
+  },
+  data: {
+    what: "量・推移・比較を大きさとして見せるグラフ",
+    use: "数字を出すとき。文字で書くより大小として見せたい場合",
+    who: "src/diagram_render.py（台本ごとに関数を書き起こす）",
+    asset: null,
+  },
+  slide: {
+    what: "文字が主役のスライド",
+    use: "言い切り・引用・章扉・まとめ。ここぞの一言だけに絞る",
+    who: "src/slide_render.py（slide定義から自動生成）",
+    asset: null,
+  },
+};
+
+// diagram/map/data は diagram_render.py が描くが、あの中身は台本ごとの描き下ろしで、
+// SCRIPT_STEM の台本のシーンしか関数が無い。ほかの台本では関数が見つからず、
+// 実際には文字スライドに落ちる。台本を選んだ時点でどちらになるか分かるよう、
+// コンソール側にも同じ判定を持たせて、シーンごとに正直に表示する
+const DIAGRAM_SCRIPT_STEM = "2026-08-09-long";
+const DIAGRAM_SCENES = ["scene_03","scene_05","scene_06","scene_07","scene_08","scene_09",
+  "scene_12","scene_13","scene_14","scene_15","scene_19","scene_20","scene_21","scene_22",
+  "scene_26","scene_27","scene_29","scene_30","scene_33"];
+const hasDrawnFigure = s =>
+  (state.name || "").replace(/\.json$/i, "").endsWith(DIAGRAM_SCRIPT_STEM)
+  && DIAGRAM_SCENES.includes(s.id);
+
+// このシーンを今の状態で生成したとき、実際に画面へ出るもの。
+// {text, ok} を返す。ok=false は「選んだ種別どおりの画にはならない」という意味
+function actualOutput(s){
+  if(s.image) return {ok:true, text:`素材 ${esc(s.image.name)} が入っています`};
+  if(ASSET_KINDS.includes(s.kind)){
+    const g = photoGen[s.id];
+    if(g && g.bytes) return {ok:false, text:"候補はありますが未コミットです。「採用してコミット」を押すと反映されます"};
+    return {ok:false, text:`${KIND_LABEL[s.kind]}の素材が未着です。今のまま生成すると文字スライドになります`};
+  }
+  if(s.kind === "slide") return {ok:true, text:"slide定義から文字スライドを自動生成します"};
+  if(s.vis.clip_motion) return {ok:true, text:`clip_render.py の ${esc(s.vis.clip_motion)} で描きます`};
+  if(hasDrawnFigure(s)) return {ok:true, text:`diagram_render.py の ${esc(s.id)}() で描きます`};
+  return {ok:false, text:
+    `${KIND_LABEL[s.kind]}はdiagram_render.pyに描画関数を書いて初めて絵になります。`
+    + `この台本にはまだ ${esc(s.id)} の関数が無いため、今のまま生成すると文字スライドになります。`
+    + `絵にするなら、種別を「生成画像」に変えてComfyUIで作るか、図解の作成を依頼してください`};
+}
+const CLIP_SEC = 5;         // クリップの想定尺（秒）
+const MAX_STRETCH = 2;      // 引き延ばせる上限（longform_build.MAX_STRETCH と対）
+const MAX_CLIPS = 12;       // 1本に入れるクリップの上限。ZIPの60MB上限（下のb-save-repo参照）に対し20本は危険なため引き下げ
+const MAX_RUN_SLIDE = 2;    // 文字スライドが続いてよい上限
+const MAX_RUN_SAME  = 3;    // 同じ種別が続いてよい上限（写真ばかりでも飽きる）
+const MIN_RICH_RATIO = .55; // 画（文字スライド以外）の下限
+
+const $ = s => document.querySelector(s);
+// bgmSnapshot: 「この曲で全編を統一」を押す直前の、章ごとのBGM指定。
+// 統一は指定を消す操作なので、これを取っておかないと元の流れへ戻せない
+let state = {script:null, scenes:[], images:[], name:"script.json", id:null, bgmSnapshot:null};
+
+// ── 保存（IndexedDB）─────────────────────────────────────────────
+// 画像も丸ごと持つのでlocalStorageでは容量が足りない。案件ごとに1レコード。
+const STORE = "projects";
+function db(){
+  return new Promise((res, rej) => {
+    const r = indexedDB.open("sekai-byoyomi-console", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(STORE, {keyPath:"id"});
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function dbRun(mode, fn){
+  const d = await db();
+  return new Promise((res, rej) => {
+    const req = fn(d.transaction(STORE, mode).objectStore(STORE));
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+const dbAll = () => dbRun("readonly", s => s.getAll());
+const dbGet = id => dbRun("readonly", s => s.get(id));
+const dbDel = id => dbRun("readwrite", s => s.delete(id));
+const dbPut = v => dbRun("readwrite", s => s.put(v));
+
+function projectId(script, name){
+  // 同じ台本を再ドロップしたら上書きしたいので、日付＋タイトルを鍵にする
+  return `${script.date || ""}_${script.title || name}`.slice(0, 200);
+}
+
+async function save(){
+  if(!state.script) return;
+  state.id = state.id || projectId(state.script, state.name);
+  await dbPut({
+    id: state.id, name: state.name, savedAt: Date.now(),
+    title: state.script.title || state.name,
+    script: state.script,
+    bgmSnapshot: state.bgmSnapshot,
+    images: state.images.map(i => ({name:i.name, bytes:i.bytes})),
+  });
+  await refreshSaved();
+}
+
+async function refreshSaved(){
+  const rows = (await dbAll()).sort((a,b) => b.savedAt - a.savedAt);
+  const sel = $("#s-saved");
+  sel.innerHTML = `<option value="">保存した案件…（${rows.length}件）</option>` +
+    rows.map(r => `<option value="${esc(r.id)}"${r.id === state.id ? " selected" : ""}>${esc(r.title)}</option>`).join("");
+}
+
+async function load(id){
+  const row = await dbGet(id);
+  if(!row) return;
+  state.images.forEach(i => URL.revokeObjectURL(i.url));
+  photoResetAll();          // 別の台本を開くので、前の台本のプロンプトを持ち越さない
+  state.id = row.id; state.name = row.name; state.script = row.script;
+  state.bgmSnapshot = row.bgmSnapshot || null;
+  state.images = toImages(row.images || []);
+  state.scenes = normalize(state.script);
+  // 台本を切り替えたので、前の台本の保存先・生成対象が残っていると別の台本のZIPを
+  // 指したまま動画生成が走ってしまう（実際に前日のZIPを探しに行って失敗した実績あり）
+  $("#p-script").value = ""; $("#p-zip").value = "";
+  render();
+  toast("読み込みました");
+}
+
+function toast(msg){
+  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("on"), 1800);
+}
+
+// ── ZIP展開（ブラウザ標準のDecompressionStreamのみ。外部ライブラリ不要）──────
+async function readZip(buf){
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  // End of Central Directory を末尾から探す
+  let eocd = -1;
+  for(let i = u8.length - 22; i >= 0 && i > u8.length - 66000; i--){
+    if(dv.getUint32(i, true) === 0x06054b50){ eocd = i; break; }
+  }
+  if(eocd < 0) throw new Error("ZIPの終端レコードが見つかりません（壊れているか、ZIPではありません）");
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const out = [];
+  for(let n = 0; n < count; n++){
+    if(dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true);
+    const csize  = dv.getUint32(p + 20, true);
+    const nlen   = dv.getUint16(p + 28, true);
+    const elen   = dv.getUint16(p + 30, true);
+    const clen   = dv.getUint16(p + 32, true);
+    const lho    = dv.getUint32(p + 42, true);
+    const name   = new TextDecoder("utf-8").decode(u8.subarray(p + 46, p + 46 + nlen));
+    p += 46 + nlen + elen + clen;
+    if(name.endsWith("/")) continue;
+    // ローカルヘッダ側の可変長を読み直してデータ開始位置を出す
+    const lnlen = dv.getUint16(lho + 26, true), lelen = dv.getUint16(lho + 28, true);
+    const start = lho + 30 + lnlen + lelen;
+    const raw = u8.subarray(start, start + csize);
+    let bytes;
+    if(method === 0){ bytes = raw; }
+    else if(method === 8){
+      const ds = new DecompressionStream("deflate-raw");
+      bytes = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(ds)).arrayBuffer());
+    } else { continue; }   // 対応しない圧縮方式は無視する
+    out.push({name: name.split("/").pop(), bytes});
+  }
+  return out;
+}
+
+const IMG_EXT = /\.(png|jpe?g|webp)$/i;
+const VID_EXT = /\.(mp4|mov|webm|m4v)$/i;   // 動画クリップ（visual.kind=clip）の素材
+const ASSET_EXT = /\.(png|jpe?g|webp|mp4|mov|webm|m4v)$/i;
+function toImages(files){
+  // bytes は保存用に持ち続ける（url は表示用の使い捨て）
+  return files.filter(f => ASSET_EXT.test(f.name) && !f.name.startsWith("."))
+    .map(f => ({name:f.name, stem:f.name.replace(/\.[^.]+$/,""), bytes:f.bytes,
+                video:VID_EXT.test(f.name),
+                url:URL.createObjectURL(new Blob([f.bytes],
+                  {type:VID_EXT.test(f.name) ? "video/mp4" : ""}))}))
+    .sort((a,b) => a.name.localeCompare(b.name));
+}
+
+// ── シーン正規化（script_loader.py と同じ規則）──────────────────────────
+const TYPE_LABELS = {hook:"イントロ", opening:"この動画で扱うこと", body:"本編",
+                     chapter:"本編", summary:"まとめ", cta:"おわりに"};
+
+function normalize(script){
+  let scenes;
+  if(script.narrative_structure){
+    scenes = script.narrative_structure.map((r,i) => ({
+      index:i, id:r.id || `scene_${String(i+1).padStart(2,"0")}`, type:r.type || "body",
+      text:(r.text || r.narration || "").trim(), slide:r.slide || null,
+      vis:r.visual || {}, kind:(r.visual && r.visual.kind) || "slide",
+      visual:r.visual_instruction || "", audio:r.audio_instruction || "",
+      se:r.se || null, motion:r.motion || null, chapter:r.chapter_label || null, raw:r,
+    }));
+  } else if(script.sections){
+    scenes = []; let chap = 0;
+    for(const sec of script.sections){
+      const st = sec.type || "body";
+      if(st === "chapter") chap++;
+      (sec.slides || []).forEach((sl,i) => {
+        let label = null;
+        if(i === 0) label = sec.chapter_title ||
+          (st === "chapter" ? `第${chap}章` : (TYPE_LABELS[st] || "本編"));
+        scenes.push({index:scenes.length, id:`scene_${String(scenes.length+1).padStart(2,"0")}`,
+          type:st, text:(sl.narration || "").trim(), slide:sl,
+          vis:{}, kind:"slide", visual:"", audio:"",
+          se:sl.se || null, motion:sl.motion || null, chapter:label, raw:sl});
+      });
+    }
+  } else throw new Error("台本に narrative_structure も sections もありません");
+
+  if(!scenes.length) throw new Error("シーンが1つもありません");
+  // chapter_label が1つも無ければ type の切り替わりを章の起点にする
+  if(!scenes.some(s => s.chapter)){
+    let prev = null, no = 0;
+    for(const s of scenes){
+      if(s.type === prev) continue;
+      prev = s.type;
+      s.chapter = (s.type === "body" || s.type === "chapter") ? `第${++no}章`
+                : (TYPE_LABELS[s.type] || s.type);
+    }
+  }
+  return scenes;
+}
+
+// ── 尺の推定（narration.py の文分割と揃える）──────────────────────────
+function sentences(text){
+  const parts = text.split(/(?<=[。！？])/).map(s => s.trim()).filter(Boolean);
+  const out = [];
+  const split = p => {
+    if(p.length <= MAX_SENT){ out.push(p); return; }
+    const pos = [...p.matchAll(/、/g)].map(m => m.index + 1);
+    if(!pos.length){ out.push(p); return; }
+    const mid = p.length / 2;
+    const cut = pos.reduce((a,b) => Math.abs(b-mid) < Math.abs(a-mid) ? b : a);
+    split(p.slice(0,cut)); split(p.slice(cut));
+  };
+  parts.forEach(split);
+  return out.length ? out : [text];
+}
+const estimate = t => t.length / CPS + (sentences(t).length - 1) * PAUSE + TAIL;
+const ts = s => { s = Math.floor(s); const h = (s/3600)|0, m = ((s%3600)/60)|0, x = s%60;
+  return h ? `${h}:${String(m).padStart(2,"0")}:${String(x).padStart(2,"0")}`
+           : `${m}:${String(x).padStart(2,"0")}`; };
+
+// ── 画像の割当（design_assets.py と同じ3段の解決）────────────────────
+function bind(scenes, images){
+  const thumb = images.find(i => /^(thumbnail|thumb|サムネ)/i.test(i.stem)) || null;
+  const pool = images.filter(i => i !== thumb);
+  const byStem = new Map(pool.map(i => [i.stem.toLowerCase(), i]));
+  let n = 0;
+  for(const s of scenes){
+    const k = s.id.toLowerCase();
+    let hit = byStem.get(k) || pool.find(i => i.stem.toLowerCase().startsWith(k)) || null;
+    s.image = hit; if(hit) n++;
+  }
+  if(n === 0 && pool.length === scenes.length){
+    scenes.forEach((s,i) => s.image = pool[i]); n = scenes.length;
+  }
+  return {assigned:n, thumb};
+}
+
+// ── チャプター（produce_longform.build_chapters と同じ規則）──────────────
+function chapters(marks, total){
+  if(!marks.length) return [];
+  marks = marks.slice().sort((a,b) => a.start - b.start);
+  marks[0] = {...marks[0], start:0};
+  const merged = [];
+  for(const m of marks){
+    if(merged.length && m.start - merged[merged.length-1].start < MIN_CHAP_SEC) continue;
+    merged.push(m);
+  }
+  if(merged.length && total - merged[merged.length-1].start < MIN_CHAP_SEC) merged.pop();
+  return merged.length >= MIN_CHAPS ? merged : [];
+}
+
+// ── ビジュアルの単調さ（design_request.py の audit と同じ規則）─────────────
+// 何枚が「画」で何枚が文字か、同じ種別が続いていないかを見る
+function visualAudit(scenes){
+  const counts = {}; Object.keys(KIND_LABEL).forEach(k => counts[k] = 0);
+  scenes.forEach(s => counts[s.kind] = (counts[s.kind] || 0) + 1);
+  const rich = RICH_KINDS.reduce((a,k) => a + counts[k], 0);
+  const perScene = scenes.map(() => []);
+
+  // 同じ種別が続く区間を拾う
+  let start = 0;
+  for(let i = 1; i <= scenes.length; i++){
+    if(i < scenes.length && scenes[i].kind === scenes[start].kind) continue;
+    const kind = scenes[start].kind, n = i - start;
+    const limit = kind === "slide" ? MAX_RUN_SLIDE : MAX_RUN_SAME;
+    if(n > limit) perScene[start].push(
+      `${KIND_LABEL[kind]}が${n}枚続いています（${limit}枚まで）。間に別の種別を挟んでください`);
+    start = i;
+  }
+  // 画の主題が書かれていない「画」のシーン、およびクリップ固有の点検
+  scenes.forEach((s,i) => {
+    if(RICH_KINDS.includes(s.kind) && !(s.vis.subject || s.visual))
+      perScene[i].push(`${KIND_LABEL[s.kind]}なのに画の主題が書かれていません`);
+    if(s.kind !== "clip") return;
+    // clip_motion があるものは clip_render.py がこちらで描くので、外注のプロンプトは要らない
+    if(!s.vis.clip_motion && !s.vis.prompt_en)
+      perScene[i].push("動画クリップですが英語プロンプト（prompt_en）がありません");
+    const sec = s.vis.clip_sec || CLIP_SEC;
+    const limit = sec * MAX_STRETCH * CPS;   // 引き延ばしても足りなくなる字数
+    if(s.text.length > limit)
+      perScene[i].push(`本文が${s.text.length}字あり、${sec}秒のクリップでは尺が足りません`
+        + `（${Math.floor(limit)}字まで）。短くするか静止画のシーンに分けてください`);
+  });
+  if(counts.clip > MAX_CLIPS){
+    const first = scenes.findIndex(s => s.kind === "clip");
+    if(first >= 0) perScene[first].push(`動画クリップが${counts.clip}本あります（${MAX_CLIPS}本まで）`);
+  }
+
+  const ratio = scenes.length ? rich / scenes.length : 0;
+  return {counts, rich, ratio, perScene, thin: ratio < MIN_RICH_RATIO};
+}
+
+// ── ComfyUI（写真生成）───────────────────────────────────────────
+// comfyui_client.py の _workflow() と同じグラフをJSで組む。
+// 生成はブラウザ→ComfyUIのAPI（同じPC内）で完結し、Claude Codeを経由しない
+const cf = {...CF_DEFAULT};
+function cfLoad(){ try{ Object.assign(cf, JSON.parse(localStorage.getItem("tas.comfy") || "{}")); }catch{} }
+function cfStore(){ localStorage.setItem("tas.comfy", JSON.stringify(cf)); }
+
+// ── Pixabay（実写素材の検索）──────────────────────────────────────
+const PX_DEFAULT = {apiKey:""};
+const px = {...PX_DEFAULT};
+function pxLoad(){ try{ Object.assign(px, JSON.parse(localStorage.getItem("tas.pixabay") || "{}")); }catch{} }
+function pxStore(){ localStorage.setItem("tas.pixabay", JSON.stringify(px)); }
+const pxReady = () => !!px.apiKey;
+
+// シーンの英語プロンプトから検索語の初期値を作る。
+// 生成AI向けプロンプトは一文が長く、最初のカンマまでを丸ごと渡すと
+// ①Pixabayの文字数制限に引っかかって400エラーになる ②単語が多すぎて
+// ストックフォト検索に乗らず狙った写真に辿り着けない、の両方が起きる。
+// 「カメラ・画づくりの指示語」と「機能語」を削り、残った名詞的な単語だけを
+// 数語に絞ることで、短く具体的なキーワード検索にする
+const PX_BOILERPLATE_RE = /\b(photorealistic|photographic|photograph(?:y)?|documentary|scientific|cinematic|studio|wide|close[- ]?up|macro|overhead|composition(?:al)?|centered|centred|shot|image|images|render(?:ed|ing)?|angle|lighting|background|foreground|frame(?:d)?|no text|watermark|resolution|second|seconds|audio|desaturated|near|monochrome|deep|blacks?|people|slow|almost|imperceptible|motion)\b/gi;
+const PX_STOPWORDS_RE = /^(a|an|the|of|in|on|with|and|or|its|into|from|at|by|to|for|as|is|are|this|that|their|it|two|one|three|some|each|being|showing|shows|seen|view|against|over|under|between|through|very|highly|no|not|without|all|more|less)$/i;
+function pxDefaultQuery(s){
+  // 写真/生成画像は image_prompt_en、動画クリップは prompt_en に書く決まり（別フィールド）。
+  // クリップのprompt_enは "Cinematic 5-second shot, 16:9, no audio. (被写体)..." のように
+  // 最初の1文がほぼ定型のboilerplateなので、最初の節だけに絞らず全文からキーワードを拾う
+  const p = s.vis.image_prompt_en || s.vis.prompt_en || "";
+  const words = p
+    .replace(PX_BOILERPLATE_RE, " ")
+    .replace(/[^a-zA-Z\s]/g, " ")
+    .split(/\s+/)
+    .filter(w => w && !PX_STOPWORDS_RE.test(w));
+  if(words.length) return words.slice(0, 4).join(" ");
+  // 名詞が全部boilerplateやstopwordで消えた場合は、素の単語を数語だけ使う
+  return p.replace(/[^a-zA-Z\s]/g, " ").trim().split(/\s+/).slice(0, 4).join(" ");
+}
+
+// ── ナレーションから画の候補を出す ──────────────────────────────────
+// 台本の英語プロンプトは抽象的になりがちで、そのまま検索・生成に投げても
+// 「暗い空間に光の粒」ばかりが返ってくる。実際に効くのは、ナレーションが語っている
+// 中身そのものを写した具体的な画（宇宙を見上げる少年、顕微鏡をのぞく研究者…）。
+//
+// コンソールはブラウザだけで動く静的HTMLで、LLMを呼べない。そこで
+// 「日本語の手がかり → 具体的な画（日本語表示／英語4〜6語）」の対応表を持たせ、
+// ナレーション本文に当たった順で候補を出す。表示は日本語、コピーは英語。
+//
+// re  … ナレーションに当てる手がかり
+// ja  … 画面に出す日本語（社長が選ぶためのもの）
+// en  … 実際に使う英語4〜6語（ComfyUIの主題／Pixabayの検索語を兼ねる）
+// w   … 同点のときの優先度。具体的な画ほど高く
+const VISUAL_VOCAB = [
+  // 人・視点
+  {re:/見上げ|夜空|星空|星を/, ja:"夜空を見上げる人影", en:"silhouette looking up starry sky", w:3},
+  {re:/子ども|子供|少年|幼い/, ja:"夜空を見上げる少年", en:"young boy looking up sky", w:3},
+  {re:/研究者|研究チーム|科学者|学者/, ja:"顕微鏡をのぞく研究者", en:"scientist looking through microscope", w:3},
+  {re:/観測|望遠鏡|天文台/, ja:"夜の天文台のドーム", en:"observatory dome open night sky", w:3},
+  {re:/発表|論文|学術誌|ネイチャー/, ja:"机に広げた論文とペン", en:"open research paper desk lamp", w:2},
+  {re:/研究|調査|分析|解析/, ja:"モニターに映るデータ", en:"researcher analyzing data monitor", w:2},
+  {re:/人類|人間|私たち|人々/, ja:"群衆のシルエット", en:"crowd silhouettes walking dusk", w:1},
+  {re:/技術者|エンジニア|作業員|職人/, ja:"作業する技術者の手元", en:"engineer hands working machinery", w:2},
+  {re:/会議|議論|交渉|合意/, ja:"会議室のテーブル", en:"empty conference room table", w:2},
+  {re:/旅|旅先|訪れ/, ja:"荒野を歩く人影", en:"lone figure walking vast landscape", w:2},
+
+  // 宇宙・天体
+  {re:/ブラックホール/, ja:"渦を巻く光の円盤", en:"glowing accretion disk dark center", w:3},
+  {re:/銀河/, ja:"渦巻銀河", en:"spiral galaxy deep space", w:3},
+  {re:/宇宙|深宇宙|ビッグバン/, ja:"深宇宙の星々", en:"deep space starfield nebula", w:2},
+  {re:/太陽|恒星/, ja:"燃える恒星の表面", en:"burning star surface plasma", w:3},
+  {re:/赤い点|赤く|赤み/, ja:"暗闇に浮かぶ赤い球体", en:"small red glowing sphere darkness", w:3},
+  {re:/地球/, ja:"宇宙から見た地球", en:"earth from orbit night lights", w:3},
+  {re:/月|衛星/, ja:"暗い空に浮かぶ月", en:"moon dark sky closeup", w:2},
+  {re:/光|輝/, ja:"暗闇を貫く一筋の光", en:"single beam light through darkness", w:1},
+  {re:/ガス|雲/, ja:"渦巻くガスの雲", en:"swirling gas cloud nebula", w:2},
+  {re:/重力|引き寄せ|吸い込/, ja:"渦に吸い込まれる水", en:"water spiraling into dark vortex", w:3},
+
+  // 地球・自然
+  {re:/火山|噴火|マグマ|溶岩/, ja:"噴煙を上げる火山", en:"volcano erupting smoke plume", w:3},
+  {re:/地震|地下|断層|プレート/, ja:"ひび割れた大地", en:"cracked dry earth ground", w:3},
+  {re:/海|海底|海洋/, ja:"うねる暗い海面", en:"dark ocean waves surface", w:3},
+  {re:/氷|氷河|南極|北極/, ja:"崩れる氷河", en:"glacier ice calving cold", w:3},
+  {re:/森|樹木|木々/, ja:"霧のかかる森", en:"misty forest tall trees", w:3},
+  {re:/砂漠|乾燥/, ja:"風紋の砂漠", en:"desert sand dunes wind", w:3},
+  {re:/山|山脈/, ja:"連なる山並み", en:"mountain range distant peaks", w:2},
+  {re:/川|河川|流れ/, ja:"流れる川の水面", en:"flowing river water closeup", w:2},
+  {re:/雨|嵐|台風/, ja:"窓を打つ雨", en:"rain drops window glass", w:2},
+  {re:/空|大空|上空/, ja:"大空を旋回する鷹", en:"hawk soaring open sky", w:2},
+  {re:/鳥|渡り/, ja:"群れで飛ぶ鳥", en:"flock birds flying sky", w:3},
+  {re:/夜明け|朝|日の出/, ja:"地平線からの日の出", en:"sunrise over quiet horizon", w:2},
+  {re:/夕|日没|夕暮/, ja:"沈む夕日", en:"sunset silhouette calm horizon", w:2},
+
+  // 生命・体
+  {re:/細胞|細菌|ウイルス|微生物/, ja:"顕微鏡下の細胞", en:"cells under microscope closeup", w:3},
+  {re:/遺伝子|DNA/, ja:"らせん構造の模型", en:"dna helix structure glowing", w:3},
+  {re:/脳|神経/, ja:"光る神経のネットワーク", en:"glowing neural network connections", w:3},
+  {re:/心臓|血管|血液/, ja:"脈打つ血管", en:"blood vessels pulsing red", w:3},
+  {re:/病|感染|治療|医療/, ja:"病院の廊下", en:"empty hospital corridor light", w:2},
+
+  // 都市・産業・経済
+  {re:/工場|生産|製造/, ja:"稼働する工場のライン", en:"factory production line machinery", w:3},
+  {re:/都市|街|都会/, ja:"夜の都市の俯瞰", en:"city skyline night aerial", w:3},
+  {re:/港|貿易|輸出|輸入|物流/, ja:"コンテナが積まれた港", en:"container ship cargo port", w:3},
+  {re:/電力|発電|エネルギー/, ja:"並ぶ送電線の鉄塔", en:"power transmission towers dusk", w:3},
+  {re:/太陽光|再生可能/, ja:"並ぶ太陽光パネル", en:"solar panels field rows", w:3},
+  {re:/半導体|チップ|基板/, ja:"回路基板の拡大", en:"circuit board macro closeup", w:3},
+  {re:/鉄道|列車|新幹線/, ja:"走る列車", en:"train moving fast tracks", w:3},
+  {re:/自動車|車|運転/, ja:"夜の道路の光跡", en:"car light trails night road", w:3},
+  {re:/飛行機|航空|空港/, ja:"離陸する飛行機", en:"airplane taking off runway", w:3},
+  {re:/経済|市場|株|投資|価格/, ja:"変動するチャート画面", en:"stock market chart screen", w:2},
+  {re:/金|資金|費用|コスト|予算/, ja:"積まれた硬貨", en:"stacked coins close macro", w:2},
+  {re:/建設|建物|工事/, ja:"建設中の鉄骨", en:"construction site steel frame", w:2},
+  {re:/農業|作物|収穫|食料/, ja:"実った作物の畑", en:"crop field harvest golden", w:3},
+  {re:/水|水道|飲料/, ja:"落ちる水滴", en:"water drop falling ripple", w:2},
+
+  // 情報・時間・抽象
+  {re:/データ|統計|数値|計測/, ja:"流れるデータの画面", en:"streaming data screen numbers", w:2},
+  {re:/計算|コンピュータ|AI|人工知能/, ja:"サーバーラックの列", en:"server racks data center", w:3},
+  {re:/通信|ネットワーク|接続/, ja:"光ファイバーの束", en:"fiber optic cables glowing", w:3},
+  {re:/記録|歴史|過去|昔/, ja:"古い書物のページ", en:"old book pages turning", w:2},
+  {re:/時間|年|時代|世紀/, ja:"落ちる砂時計の砂", en:"hourglass sand falling slowly", w:2},
+  {re:/謎|不明|分からない|正体/, ja:"霧の中の輪郭", en:"silhouette in thick fog", w:2},
+  {re:/変化|転換|逆転/, ja:"割れるガラス", en:"glass cracking slow motion", w:2},
+  {re:/始まり|誕生|生まれ/, ja:"芽吹く新芽", en:"seedling sprouting soil macro", w:2},
+  {re:/終わ|消え|失/, ja:"消えていく煙", en:"smoke dissipating dark background", w:2},
+  {re:/積み重|蓄積|溜ま/, ja:"積み上がる層", en:"layered sediment rock strata", w:2},
+  {re:/分か(れ|か)|二つ|選択|仮説/, ja:"分岐する道", en:"forked path diverging road", w:2},
+  {re:/証拠|決め手|裏付/, ja:"指紋を照合する拡大鏡", en:"magnifying glass examining detail", w:3},
+  {re:/温|熱|摩擦/, ja:"揺らめく熱気", en:"heat shimmer rising air", w:2},
+  {re:/速|急|猛烈/, ja:"流れる長時間露光の光", en:"long exposure motion blur lights", w:2},
+];
+
+// ナレーションに当たった候補を、当たりの強い順に返す。
+// 同じ画が並ぶと選ぶ意味がないので、日本語が重複するものは1つに畳む
+function visualCandidates(s, limit = 6){
+  const text = s.text || "";
+  const hits = [];
+  for(const v of VISUAL_VOCAB){
+    const m = text.match(new RegExp(v.re.source, "g"));
+    if(m) hits.push({...v, score: v.w * 10 + m.length});
+  }
+  hits.sort((a, b) => b.score - a.score);
+  const seen = new Set(), out = [];
+  for(const h of hits){
+    if(seen.has(h.ja)) continue;
+    seen.add(h.ja); out.push(h);
+    if(out.length >= limit) break;
+  }
+  return out;
+}
+// 一括処理で「ふさわしい1つ」を選ぶときの基準。当たりがいちばん強いものを採る
+const bestCandidate = s => visualCandidates(s, 1)[0] || null;
+
+async function pxSearch(query){
+  if(!pxReady()) throw new Error("Pixabayが未設定です。「⚙ 接続設定」でAPIキーを入れてください");
+  const url = `https://pixabay.com/api/?key=${encodeURIComponent(px.apiKey)}`
+    + `&q=${encodeURIComponent(query)}&image_type=photo&safesearch=true&per_page=12`;
+  let r;
+  try{ r = await fetch(url); }
+  catch{ throw new Error("Pixabayに接続できません（通信環境を確認してください）"); }
+  if(!r.ok){
+    if(r.status === 400) throw new Error("Pixabayが検索語を受け付けませんでした（短くしてみてください）");
+    if(r.status === 429) throw new Error("Pixabayの利用回数上限です。しばらく待ってから試してください");
+    throw new Error(`Pixabay ${r.status}: ${r.statusText}`);
+  }
+  const json = await r.json();
+  return json.hits || [];
+}
+
+async function pxFetchImage(url){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error(`画像の取得に失敗しました（${r.status}）`);
+  return new Uint8Array(await r.arrayBuffer());
+}
+
+// Pixabayの動画検索（kind=clip用）。画像検索と同じAPIキー・エラー処理を使う
+async function pxSearchVideo(query){
+  if(!pxReady()) throw new Error("Pixabayが未設定です。「⚙ 接続設定」でAPIキーを入れてください");
+  // per_page は写真検索より少なめ。動画は自動再生プレビューの負荷が高く、
+  // 件数を絞らないとブラウザが重くなって次の検索ができなくなる
+  const url = `https://pixabay.com/api/videos/?key=${encodeURIComponent(px.apiKey)}`
+    + `&q=${encodeURIComponent(query)}&safesearch=true&per_page=6`;
+  let r;
+  try{ r = await fetch(url); }
+  catch{ throw new Error("Pixabayに接続できません（通信環境を確認してください）"); }
+  if(!r.ok){
+    if(r.status === 400) throw new Error("Pixabayが検索語を受け付けませんでした（短くしてみてください）");
+    if(r.status === 429) throw new Error("Pixabayの利用回数上限です。しばらく待ってから試してください");
+    throw new Error(`Pixabay ${r.status}: ${r.statusText}`);
+  }
+  const json = await r.json();
+  return json.hits || [];
+}
+
+// large→medium→small→tinyの順で、そのクリップにある最良の画質を選ぶ
+// （動画は必ず1920x1080相当へスケールされるので、元が高解像度なほど綺麗に縮まる）
+function pxBestVideo(hit){
+  const v = hit.videos || {};
+  return v.large || v.medium || v.small || v.tiny || null;
+}
+
+function cfWorkflow(prompt, negative, seed){
+  // モデル本体・テキストエンコーダ・VAEをどのノードから取るかだけが2方式で違う。
+  // 以降の組み立て（サンプラ・エンコード・デコード・保存）は共通
+  const g = {};
+  let MODEL, CLIP, VAE;
+  if(cf.mode === "unet"){
+    g["41"] = {class_type:"UNETLoader", inputs:{unet_name:cf.unet, weight_dtype:"default"}};
+    g["42"] = {class_type:"DualCLIPLoader",
+               inputs:{clip_name1:cf.clip1, clip_name2:cf.clip2, type:cf.clipType || "flux"}};
+    g["43"] = {class_type:"VAELoader", inputs:{vae_name:cf.vae}};
+    MODEL = ["41",0]; CLIP = ["42",0]; VAE = ["43",0];
+  }else{
+    g["4"] = {class_type:"CheckpointLoaderSimple", inputs:{ckpt_name:cf.checkpoint}};
+    MODEL = ["4",0]; CLIP = ["4",1]; VAE = ["4",2];
+  }
+  g["3"] = {class_type:"KSampler", inputs:{seed, steps:cf.steps, cfg:cf.cfg, sampler_name:cf.sampler,
+    scheduler:cf.scheduler, denoise:1.0, model:MODEL, positive:["6",0], negative:["7",0], latent_image:["5",0]}};
+  g["5"] = {class_type:"EmptyLatentImage", inputs:{width:cf.width, height:cf.height, batch_size:1}};
+  g["6"] = {class_type:"CLIPTextEncode", inputs:{text:prompt, clip:CLIP}};
+  g["7"] = {class_type:"CLIPTextEncode", inputs:{text:negative, clip:CLIP}};
+  g["8"] = {class_type:"VAEDecode", inputs:{samples:["3",0], vae:VAE}};
+  g["9"] = {class_type:"SaveImage", inputs:{images:["8",0], filename_prefix:"trend_auto_studio"}};
+  return g;
+}
+
+// crypto.randomUUID は file:// では使えない環境があるため、自前で作る
+const randId = () => Array.from({length:16}, () => Math.floor(Math.random()*16).toString(16)).join("");
+
+async function cfFetch(path, opt){
+  let r;
+  try{ r = await fetch(`${cf.base}${path}`, opt); }
+  catch{
+    throw new Error("ComfyUIに接続できません。起動しているか、"
+      + "起動時に --enable-cors-header を付けているか確認してください。");
+  }
+  if(!r.ok) throw new Error(`ComfyUI ${r.status}: ${r.statusText}`);
+  return r;
+}
+
+// ノードごとに「その入力欄で選べるファイル名の一覧」をComfyUIが返す。
+// 見つからないノード（未導入の形式）は空配列にして、あるものだけ拾う
+async function cfOptions(node, field){
+  try{
+    const r = await cfFetch(`/object_info/${node}`);
+    const j = await r.json();
+    const v = j?.[node]?.input?.required?.[field]?.[0];
+    return Array.isArray(v) ? v : [];
+  }catch(e){
+    // 接続そのものが駄目なときは呼び出し側に伝える。ノードが無いだけなら空で返す
+    if(/接続できません/.test(e.message)) throw e;
+    return [];
+  }
+}
+
+async function cfScanModels(){
+  const [ckpt, unet, clip, vae] = await Promise.all([
+    cfOptions("CheckpointLoaderSimple", "ckpt_name"),
+    cfOptions("UNETLoader", "unet_name"),
+    cfOptions("DualCLIPLoader", "clip_name1"),
+    cfOptions("VAELoader", "vae_name"),
+  ]);
+  return {ckpt, unet, clip, vae};
+}
+
+// グラフのノードIDから「今なにをしているか」の日本語ラベルへ。cfWorkflow() のノード構成と対応させる
+const CF_NODE_LABEL = {"41":"モデルを読み込み中…", "42":"モデルを読み込み中…", "43":"モデルを読み込み中…",
+  "4":"モデルを読み込み中…", "5":"準備中…", "6":"プロンプトを解釈中…", "7":"プロンプトを解釈中…",
+  "3":"生成中…", "8":"画像に変換中…", "9":"保存中…"};
+
+// 進捗バーはシーンごとに直接DOMを書き換える（render()を呼ぶと右パネル全体が
+// 再構築されてスクロール位置が飛ぶため、生成中に何度も呼ぶわけにいかない）
+function cfSetProgress(sceneId, pct, text){
+  if(!sceneId) return;
+  const el = document.getElementById(`pg-progress-${sceneId}`);
+  if(!el) return;
+  const fill = el.querySelector(".pg-bar-fill");
+  if(fill) fill.style.width = `${Math.max(2, Math.min(100, pct))}%`;
+  const txt = el.querySelector(".pg-progress-text");
+  if(txt) txt.textContent = text;
+}
+
+async function cfGenerate(prompt, seed, sceneId){
+  // 設定漏れのままComfyUIへ投げると分かりにくいエラーになるので、手前で止める
+  if(cf.mode === "unet"){
+    if(!cf.unet || !cf.clip1 || !cf.clip2 || !cf.vae)
+      throw new Error("ComfyUIのモデル設定が未完了です。「⚙ 接続設定」で本体・テキストエンコーダ2つ・VAEを選んでください");
+  }else if(!cf.checkpoint){
+    throw new Error("ComfyUIのチェックポイントが未設定です。「⚙ 接続設定」で選んでください");
+  }
+  const client_id = randId();
+
+  // ComfyUIのWebSocketからステップ単位の進捗を受け取る。つながらない・使えない
+  // 環境でも本体の生成自体は/historyのポーリングで完了検知するので、進捗表示だけ諦める
+  let ws = null, myPromptId = null;
+  try{
+    ws = new WebSocket(`${cf.base.replace(/^http/, "ws")}/ws?clientId=${client_id}`);
+    ws.onmessage = ev => {
+      if(!myPromptId) return;   // 自分のジョブがまだ無いうちのメッセージは他人のもの
+      let msg; try{ msg = JSON.parse(ev.data); }catch{ return; }
+      if(msg.data && msg.data.prompt_id && msg.data.prompt_id !== myPromptId) return;
+      if(msg.type === "progress" && msg.data && msg.data.max){
+        const {value, max} = msg.data;
+        cfSetProgress(sceneId, Math.round(value / max * 100), `生成中… ${value}/${max}ステップ`);
+      }else if(msg.type === "executing" && msg.data){
+        cfSetProgress(sceneId, msg.data.node ? 60 : 95,
+          msg.data.node ? (CF_NODE_LABEL[msg.data.node] || "処理中…") : "仕上げています…");
+      }
+    };
+  }catch{ ws = null; }
+
+  cfSetProgress(sceneId, 5, "ComfyUIに送信しています…");
+  const body = JSON.stringify({prompt: cfWorkflow(prompt, CF_NEGATIVE, seed), client_id});
+  const q = await cfFetch("/prompt", {method:"POST", headers:{"Content-Type":"application/json"}, body});
+  const {prompt_id} = await q.json();
+  if(!prompt_id) throw new Error("ComfyUIがprompt_idを返しませんでした");
+  myPromptId = prompt_id;
+  cfSetProgress(sceneId, 10, "キューに入りました…");
+
+  try{
+    const deadline = Date.now() + 5 * 60000;
+    while(Date.now() < deadline){
+      await new Promise(res => setTimeout(res, 2000));
+      const h = await cfFetch(`/history/${prompt_id}`);
+      const hist = await h.json();
+      const imgs = hist[prompt_id]?.outputs?.["9"]?.images;
+      if(imgs && imgs.length){
+        cfSetProgress(sceneId, 100, "画像を受け取っています…");
+        const im = imgs[0];
+        const q2 = `filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder || "")}`
+                 + `&type=${encodeURIComponent(im.type || "output")}`;
+        const res = await cfFetch(`/view?${q2}`);
+        return new Uint8Array(await res.arrayBuffer());
+      }
+    }
+    throw new Error("生成が5分以内に終わりませんでした（ComfyUIの画面で詰まっていないか確認してください）");
+  } finally {
+    if(ws) ws.close();
+  }
+}
+
+// プロンプト欄には「何を写すか」＝主題だけを英語4〜6語で書く。
+// トーン・画づくり・禁止事項はここでは書かず、生成時に CF_STYLE_SUFFIX が付く。
+//
+// 以前は1件ごとに60〜120語の長文を書いていたが、FLUX.1-schnellは蒸留モデルで
+// ステップ数も少なく、修飾を重ねるほど主題が薄まって「暗い空間に光の粒」ばかりになった。
+// 短い主題＋固定の作風のほうが、狙った画に当たる
+const CF_STYLE_SUFFIX =
+  "cinematic documentary photo, desaturated near-monochrome, dark low-key lighting, "
+  + "shallow depth of field, no text, no watermark, no logos";
+const PROMPT_WORDS = [3, 8];   // 主題の語数（design_request.py の PROMPT_MIN/MAX_WORDS と対）
+
+// 台本に image_prompt_en があればそれを使う（各シーン用に書き下ろした主題）。
+// 無ければナレーションから候補を引き、それも無ければ visual 指定から組み立てる
+function photoDefaultPrompt(s){
+  if(s.vis.image_prompt_en) return s.vis.image_prompt_en;
+  const best = bestCandidate(s);
+  if(best) return best.en;
+  const subject = s.vis.subject || s.visual || s.text.split("。")[0];
+  return subject.slice(0, 60);
+}
+// scene.id -> {prompt, seed, busy, bytes, url, msg, ok}
+// シーンIDは台本が変われば別の中身を指すので、台本を読み込むたびに捨てる。
+// 残しておくと、前の台本の scene_01 のプロンプトが次の台本に出てしまう
+let photoGen = {};
+// 台本を読み込むたびに増やす世代番号。入力欄にも焼き込んでおき、
+// 遅れて発火したイベントが別の台本へ書き込むのを防ぐ。
+// シーンIDだけでは足りない（どの台本にも scene_07 があるため）
+let photoEpoch = 0;
+const photoResetAll = () => { photoGen = {}; photoEpoch++; genAll = null; commitAllBusy = false; };
+const photoState = s => photoGen[s.id] || (photoGen[s.id] = {prompt: photoDefaultPrompt(s), seed:"", pxQuery: pxDefaultQuery(s)});
+let genAllBusy = false;   // 一括生成の実行中フラグ（render()のたびに参照する）
+// 一括生成の全体進捗。1枚ごとのバー（.pg-progress）は個々のシーンの中にあるので、
+// 何枚目まで進んだのか・あと何分かかるのかは、こちらでまとめて見せる
+let genAll = null;   // {ids, ok:Set, fail:Set, cur, t0, times:[], done:bool, stopped:bool}
+// 「停止」が押されたことを示すフラグ。処理中の1件が終わった直後にループ側が見て抜ける
+// （fetch自体を中断はしない。中途半端なバイト列を残さないため、今の1件はきちんと終わらせる）
+let genAllStop = false;
+
+const mmss = sec => `${Math.floor(sec/60)}分${String(Math.round(sec%60)).padStart(2,"0")}秒`;
+
+// 全体バーは直接DOMを書き換える。render()を呼ぶとシーン一覧が組み直されて
+// スクロール位置が飛ぶため、生成中に何度も呼ぶわけにいかない
+function genAllRender(){
+  const box = $("#genall");
+  if(!genAll){ box.style.display = "none"; return; }
+  box.style.display = "block";
+  const verb = genAll.verb || "生成";   // クリップの一括選択では「検索」に差し替える
+  const total = genAll.ids.length;
+  const finished = genAll.ok.size + genAll.fail.size;
+  $("#genall-fill").style.width = `${Math.round(finished / total * 100)}%`;
+
+  const stopBtn = $("#genall-stop");
+  stopBtn.style.display = genAll.done ? "none" : "inline-block";
+  if(!genAll.done){ stopBtn.disabled = false; stopBtn.textContent = "停止"; }
+
+  const elapsed = (Date.now() - genAll.t0) / 1000;
+  if(genAll.done){
+    const stoppedNote = genAll.stopped ? "（途中で停止）　" : "";
+    $("#genall-label").textContent = genAll.fail.size
+      ? `${stoppedNote}一括${verb}が終わりました　成功 ${genAll.ok.size}件 ／ 失敗 ${genAll.fail.size}件`
+      : `${stoppedNote}一括${verb}が終わりました　${genAll.ok.size}件成功`;
+    $("#genall-eta").textContent = `所要 ${mmss(elapsed)}`;
+  }else{
+    $("#genall-label").textContent =
+      `一括${verb}中… ${finished}/${total}件　いま ${genAll.cur || ""} を${verb}しています`;
+    // 残り時間は、ここまでに実際にかかった時間の平均から見積もる
+    const avg = genAll.times.length
+      ? genAll.times.reduce((a,b) => a+b, 0) / genAll.times.length : 0;
+    $("#genall-eta").textContent = avg
+      ? `経過 ${mmss(elapsed)}　残り約 ${mmss(avg * (total - finished))}`
+      : `経過 ${mmss(elapsed)}`;
+  }
+  $("#genall-dots").innerHTML = genAll.ids.map(id => {
+    const cls = genAll.ok.has(id) ? "done" : genAll.fail.has(id) ? "fail"
+              : id === genAll.cur ? "cur" : "";
+    return `<span class="gd ${cls}" title="${esc(id)}"></span>`;
+  }).join("");
+}
+
+async function generateAllPhotos(){
+  const targets = state.scenes.filter(bulkTarget);
+  if(!targets.length) return;
+  const kinds = [...new Set(targets.map(s => KIND_LABEL[s.kind] || s.kind))].join("・");
+  if(!confirm(`${kinds}のシーン${targets.length}件を、順番にComfyUIで生成します。`
+    + `\n図解・グラフ・文字スライドのシーンは含みません（それぞれ専用の描画で作られます）。`
+    + `\n\n1枚あたり数十秒〜数分かかります。よろしいですか？`)) return;
+  genAllBusy = true; genAllStop = false;
+  genAll = {ids: targets.map(s => s.id), ok:new Set(), fail:new Set(),
+            cur:null, t0:Date.now(), times:[], done:false, stopped:false};
+  // 経過時間は待っているあいだも進むので、秒ごとに描き直す
+  const tick = setInterval(genAllRender, 1000);
+  for(const s of targets){
+    if(genAllStop){ genAll.stopped = true; break; }
+    const g = photoState(s);
+    g.busy = true; g.msg = "";
+    genAll.cur = s.id;
+    // 一括では、ナレーションに当たった候補のうち最も強いものを主題にする。
+    // 台本に書き下ろした主題がある場合はそちらを優先（人が選んだものを上書きしない）
+    if(!s.vis.image_prompt_en){
+      const best = bestCandidate(s);
+      if(best) g.prompt = best.en;
+    }
+    render();          // このシーンの1枚ぶんの進捗バーを出すために組み直す
+    genAllRender();
+    const started = Date.now();
+    try{
+      const seed = g.seed ? parseInt(g.seed, 10) : Math.floor(Math.random() * 2**31);
+      const bytes = await cfGenerate(cfPrompt(g.prompt), seed, s.id);
+      if(g.url) URL.revokeObjectURL(g.url);
+      g.bytes = bytes; g.url = URL.createObjectURL(new Blob([bytes], {type:"image/png"}));
+      g.source = "comfyui"; g.isVideo = false;
+      // seed欄は書き戻さない。書き戻すと次の生成が同じseedを拾って
+      // 「もう一度生成」を押しても同じ画像しか出なくなる。seedは結果の文言にだけ出す
+      g.msg = `生成しました（seed ${seed}）`; g.ok = true;
+      genAll.ok.add(s.id);
+      genAll.times.push((Date.now() - started) / 1000);
+    }catch(err){ g.msg = err.message; g.ok = false; genAll.fail.add(s.id); }
+    finally{ g.busy = false; }
+  }
+  clearInterval(tick);
+  genAllBusy = false; genAllStop = false;
+  genAll.cur = null; genAll.done = true;
+  render();
+  genAllRender();
+  toast(genAll.stopped
+    ? `一括生成を停止しました（${genAll.ok.size + genAll.fail.size}/${genAll.ids.length}件で中断）`
+    : genAll.fail.size
+      ? `一括生成が終わりました（失敗 ${genAll.fail.size}件）。失敗したシーンは個別に生成し直せます`
+      : "一括生成が終わりました。内容を確認して、良ければ個別に「採用してコミット」してください");
+}
+
+// 動画クリップのシーンについて、prompt_enから作った検索語でPixabayを順に検索し、
+// 最初に見つかった動画（Pixabayの一致度・人気順の先頭）を「ふさわしい候補」として仮選択する。
+// AIが逐一見比べて選ぶわけではないが、検索語自体をprompt_enの主題語から作っているので
+// 見当違いにはなりにくい。最終判断は「採用してコミット」前のプレビューで人が行う
+async function selectAllClips(){
+  const targets = state.scenes.filter(bulkClipTarget);
+  if(!targets.length) return;
+  if(!pxReady()){ toast("先に「⚙ 接続設定」でPixabayのAPIキーを入れてください"); return; }
+  if(!confirm(`動画クリップのシーン${targets.length}件について、Pixabayでいちばん合いそうな動画を`
+    + `自動検索して仮選択します（確定はしません）。\n\n検索語はprompt_enから自動で作ります。`
+    + `結果はあとで確認・差し替えできます。よろしいですか？`)) return;
+  genAllBusy = true; genAllStop = false;
+  genAll = {ids: targets.map(s => s.id), ok:new Set(), fail:new Set(),
+            cur:null, t0:Date.now(), times:[], done:false, stopped:false, verb:"検索"};
+  const tick = setInterval(genAllRender, 1000);
+  for(const s of targets){
+    if(genAllStop){ genAll.stopped = true; break; }
+    const g = photoState(s);
+    g.cvBusy = true; g.cvMsg = "";
+    genAll.cur = s.id;
+    render();
+    genAllRender();
+    const started = Date.now();
+    try{
+      // 一括では、ナレーションに当たった候補のうち最も強いものを選ぶ。
+      // 当たらなかったときだけ、台本のprompt_enから機械的に検索語を作る
+      const cand = bestCandidate(s);
+      const query = (cand ? cand.en : (g.pxQuery || pxDefaultQuery(s))).trim();
+      if(!query) throw new Error("ナレーションからも prompt_en からも検索語を作れませんでした");
+      g.pxQuery = query;
+      const hits = await pxSearchVideo(query);
+      g.cvResults = hits;
+      if(!hits.length) throw new Error(`「${query}」で見つかりませんでした`);
+      const hit = hits[0];   // Pixabayが返す並び（一致度・人気）の先頭をふさわしい候補とみなす
+      const best = pxBestVideo(hit);
+      if(!best) throw new Error("動画データを取得できませんでした");
+      const bytes = await pxFetchImage(best.url);
+      if(g.url) URL.revokeObjectURL(g.url);
+      g.bytes = bytes; g.url = URL.createObjectURL(new Blob([bytes], {type:"video/mp4"}));
+      g.source = "pixabay-video"; g.isVideo = true;
+      g.msg = `Pixabayの動画を自動選択しました（${esc(hit.user)}／「${esc(query)}」で検索）`;
+      g.ok = true; g.cvOk = true; g.cvMsg = "";
+      genAll.ok.add(s.id);
+      genAll.times.push((Date.now() - started) / 1000);
+    }catch(err){
+      g.msg = err.message; g.ok = false; g.cvMsg = err.message; g.cvOk = false;
+      genAll.fail.add(s.id);
+    }
+    finally{ g.cvBusy = false; }
+  }
+  clearInterval(tick);
+  genAllBusy = false; genAllStop = false;
+  genAll.cur = null; genAll.done = true;
+  render();
+  genAllRender();
+  toast(genAll.stopped
+    ? `一括検索を停止しました（${genAll.ok.size + genAll.fail.size}/${genAll.ids.length}件で中断）`
+    : genAll.fail.size
+      ? `一括検索が終わりました（失敗 ${genAll.fail.size}件）。失敗したシーンは個別に検索し直せます`
+      : "一括検索が終わりました。プレビューを確認して、良ければ個別に「採用してコミット」してください");
+}
+
+// ComfyUIで生成済み（g.bytesがある）だが、まだリポジトリに反映していないシーン。
+// 「反映済みか」は state.images に同じbytesの参照が載っているかで判定する。
+// コミット時に state.images へ同じ参照を積むので、以後の再生成で参照が変わらない限り
+// 「もう反映済み」と分かる。一括生成の直後に続けて回すことを想定した動線
+const uncommittedAny = s => {
+  const g = photoGen[s.id];
+  return !!(g && g.bytes && !state.images.some(
+    x => x.stem.toLowerCase() === s.id.toLowerCase() && x.bytes === g.bytes));
+};
+const uncommittedPhoto = s => uncommittedAny(s) && !photoGen[s.id].isVideo;
+const uncommittedClip = s => uncommittedAny(s) && !!photoGen[s.id].isVideo;
+let commitAllBusy = false;
+let commitClipsBusy = false;
+
+// 写真・クリップの一括コミットは同じ手順を共有する（保存先だけ isVideo で分岐）
+async function commitAllStaged(targets, statusElId, busySetter){
+  if(!targets.length) return;
+  if(!ghReady()){ toast("先に「⚙ 接続設定」でGitHubにつないでください"); return; }
+  const kind = targets.every(s => photoState(s).isVideo) ? "動画クリップ" : "写真";
+  if(!confirm(`${targets.length}件の${kind}を、順番にリポジトリへコミットします。よろしいですか？`)) return;
+  busySetter(true);
+  for(const [idx, s] of targets.entries()){
+    const g = photoState(s);
+    g.busy = true; g.msg = "コミットしています…";
+    $(statusElId).textContent = `一括コミット中… (${idx + 1}/${targets.length}) ${s.id}`;
+    render();
+    try{
+      const ext = g.isVideo ? "mp4" : "png";
+      const dir = g.isVideo ? "assets/video_clips" : "assets/images/generated";
+      const label = g.isVideo ? "動画クリップ" : "写真";
+      await putFile(`${GH_DIR}/${dir}/${s.id}.${ext}`, g.bytes,
+        `${s.id}の${label}を追加（コンソールから・一括コミット）`);
+      state.images = state.images.filter(x => x.stem.toLowerCase() !== s.id.toLowerCase())
+        .concat({name:`${s.id}.${ext}`, stem:s.id, bytes:g.bytes, video:!!g.isVideo, url:g.url});
+      g.msg = `${dir}/${s.id}.${ext} にコミットしました`; g.ok = true;
+    }catch(err){ g.msg = err.message; g.ok = false; }
+    finally{ g.busy = false; }
+  }
+  busySetter(false);
+  await save();
+  render();
+  toast("一括コミットが終わりました");
+}
+
+// シーンから素材を外す。コミット済みならリポジトリからも消し、未コミットの候補も捨てる。
+// 「×で削除」と「種別を変えたので外す」で同じ処理を使う（片方だけ残る事故を防ぐ）
+async function dropAsset(s){
+  const g = photoGen[s.id];
+  if(g){
+    if(g.url) URL.revokeObjectURL(g.url);
+    g.bytes = null; g.url = null; g.msg = ""; g.ok = undefined; g.source = null; g.isVideo = false;
+  }
+  if(!s.image) return;
+  const img = s.image;
+  if(ghReady()){
+    const ext = img.video ? "mp4" : "png";
+    const dir = img.video ? "assets/video_clips" : "assets/images/generated";
+    const label = img.video ? "動画クリップ" : "画像";
+    // ZIP経由で入った素材はこの命名規則に無いことがある。404は「元から無い」なので無視される
+    await deleteFile(`${GH_DIR}/${dir}/${s.id}.${ext}`, `${s.id}の${label}を削除（コンソールから）`);
+  }
+  state.images = state.images.filter(x => x !== img);
+  s.image = null;
+  await save();
+}
+
+async function commitAllPhotos(){
+  await commitAllStaged(state.scenes.filter(uncommittedPhoto), "#commit-all-status",
+    v => { commitAllBusy = v; });
+}
+
+async function commitAllClips(){
+  await commitAllStaged(state.scenes.filter(uncommittedClip), "#commit-clips-status",
+    v => { commitClipsBusy = v; });
+}
+
+// 実際にComfyUIへ送る文字列。主題のうしろに共通の作風を足す。
+// プロンプト欄には主題だけを残しておきたい（短いほうが読みやすく、直しやすい）
+const cfPrompt = subject => `${subject.trim().replace(/[.,\s]+$/, "")}, ${CF_STYLE_SUFFIX}`;
+
+// プロンプトの決まり（design_request.py と対。変えるときは両方直すこと）。
+// 主題は短く保つ。修飾を重ねるほど主題が薄まり、狙った画から遠ざかる
+const [PROMPT_MIN_WORDS, PROMPT_MAX_WORDS] = PROMPT_WORDS;
+
+function promptCheck(p){
+  const words = p.trim() ? p.trim().split(/\s+/).length : 0;
+  // 日本語のまま残っているとComfyUIがほぼ解釈できない（生成が空振りする）
+  const ascii = !/[^\x00-\x7F]/.test(p);
+  return {words, ascii,
+          ok: words >= PROMPT_MIN_WORDS && words <= PROMPT_MAX_WORDS && ascii};
+}
+
+// ナレーションから引いた画の候補。日本語で見せて、押すと英語がプロンプト欄に入る
+function candidateHtml(s, cls){
+  const cands = visualCandidates(s);
+  if(!cands.length) return "";
+  return `<div class="cands">
+    <div class="cands-t">ナレーションに沿った画の候補（押すと英語が入ります）</div>
+    ${cands.map(c => `<button class="cand ${cls}" data-id="${esc(s.id)}"
+        data-en="${esc(c.en)}" title="${esc(c.en)}">${esc(c.ja)}</button>`).join("")}
+  </div>`;
+}
+
+function photoGenHtml(s, i){
+  const g = photoState(s);
+  const c = promptCheck(g.prompt);
+  const miss = [];
+  if(c.words < PROMPT_MIN_WORDS) miss.push(`主題が短すぎます（${PROMPT_MIN_WORDS}〜${PROMPT_MAX_WORDS}語）`);
+  if(c.words > PROMPT_MAX_WORDS) miss.push(`${PROMPT_MAX_WORDS}語まで。${c.words - PROMPT_MAX_WORDS}語多く、主題が修飾に埋もれます`);
+  if(!c.ascii) miss.push("日本語が残っています。ComfyUIはほぼ解釈できないので英語にしてください");
+  return `<div class="photogen">
+    <div class="row"><b>ComfyUI</b><span>この画面から直接、社長のPCのComfyUIに写真を作らせます</span></div>
+    ${candidateHtml(s, "cand-photo")}
+    <textarea class="pg-prompt" data-id="${esc(s.id)}" data-epoch="${photoEpoch}" rows="2">${esc(g.prompt)}</textarea>
+    <div style="font-size:11px;margin-top:4px;color:var(--${c.ok ? "ok" : "warn"})">
+      主題${c.words}語${c.ok ? "　この後ろに共通の作風が自動で付きます" : "　← " + esc(miss.join(" ／ "))}
+    </div>
+    <div class="ctl">
+      <input class="pg-seed" data-id="${esc(s.id)}" placeholder="seed（空欄でランダム）" value="${esc(g.seed)}" style="width:150px">
+      <button class="pg-run" data-id="${esc(s.id)}" ${g.busy?"disabled":""}>${g.busy?"生成しています…":(g.url?"もう一度生成":"生成")}</button>
+      ${g.url && !g.busy ? `<button class="pg-accept primary" data-id="${esc(s.id)}">採用してコミット</button>
+      <button class="pg-discard bad" data-id="${esc(s.id)}">この候補を破棄</button>` : ""}
+    </div>
+    ${g.busy ? `<div class="pg-progress" id="pg-progress-${esc(s.id)}">
+      <div class="pg-bar"><div class="pg-bar-fill" style="width:2%"></div></div>
+      <span class="pg-progress-text">ComfyUIに送信しています…</span>
+    </div>` : ""}
+    ${g.url ? `<img class="pg-preview" src="${g.url}" alt="生成結果">` : ""}
+    ${g.msg ? `<div class="flag ${g.ok===false?"bad":""}" style="margin-top:6px">${esc(g.msg)}</div>` : ""}
+    <div class="row" style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+      <b>Pixabay</b><span>既存の実写・イラスト素材を検索して、そのまま採用できます</span>
+    </div>
+    ${candidateHtml(s, "cand-px")}
+    <div class="ctl">
+      <input class="px-query" data-id="${esc(s.id)}" value="${esc(g.pxQuery || "")}"
+             placeholder="検索語（英語が通りやすい）" style="flex:1;min-width:160px">
+      <button class="px-search" data-id="${esc(s.id)}" ${g.pxBusy?"disabled":""}
+              ${pxReady()?"":"title=\"「⚙ 接続設定」でPixabayのAPIキーを入れてください\""}>
+        ${g.pxBusy?"検索しています…":"検索"}
+      </button>
+    </div>
+    ${g.pxMsg ? `<div class="flag ${g.pxOk===false?"bad":""}" style="margin-top:6px">${esc(g.pxMsg)}</div>` : ""}
+    ${g.pxResults && g.pxResults.length ? `<div class="px-results">
+      ${g.pxResults.map(h => `<button class="px-thumb" data-id="${esc(s.id)}" data-hit="${h.id}"
+          title="${esc(h.tags)}"><img src="${esc(h.previewURL)}" alt="${esc(h.tags)}" loading="lazy"></button>`).join("")}
+    </div>` : ""}
+  </div>`;
+}
+
+// kind=clip 専用。Pixabayの動画検索と、Mixkitなど他サイトからの手動アップロードを並べる。
+// ComfyUIは静止画しか作れないので、ここには出さない
+// 検索結果のプレビュー動画（自動再生）を同時に何本もDOMへ出すとブラウザが重くなり、
+// 次の検索すらできなくなる。そのため結果グリッドは「今アクティブな1シーンぶん」しか描かない。
+// 他のシーンは件数だけ示し、もう一度「検索」を押すとそちらがアクティブに切り替わる
+let clipSearchActiveId = null;
+
+function clipGenHtml(s, i){
+  const g = photoState(s);
+  const isActive = clipSearchActiveId === s.id;
+  const hasResults = g.cvResults && g.cvResults.length;
+  return `<div class="photogen">
+    <div class="row"><b>Pixabay動画</b><span>実写のストック動画クリップを検索して、そのまま採用できます</span></div>
+    ${candidateHtml(s, "cand-clip")}
+    <div class="ctl">
+      <input class="cv-query" data-id="${esc(s.id)}" value="${esc(g.pxQuery || "")}"
+             placeholder="検索語（英語が通りやすい）" style="flex:1;min-width:160px">
+      <button class="cv-search" data-id="${esc(s.id)}" ${g.cvBusy?"disabled":""}
+              ${pxReady()?"":"title=\"「⚙ 接続設定」でPixabayのAPIキーを入れてください\""}>
+        ${g.cvBusy?"検索しています…":"検索"}
+      </button>
+    </div>
+    ${g.cvMsg ? `<div class="flag ${g.cvOk===false?"bad":""}" style="margin-top:6px">${esc(g.cvMsg)}</div>` : ""}
+    ${hasResults && !isActive ? `<div class="flag" style="margin-top:6px">
+      検索結果 ${g.cvResults.length}件（重くなるため非表示。もう一度「検索」を押すと表示します）</div>` : ""}
+    ${hasResults && isActive ? `<div class="px-results">
+      ${g.cvResults.map(h => {
+        const prev = h.videos.tiny || h.videos.small || h.videos.medium || h.videos.large;
+        return `<button class="px-thumb cv-thumb" data-id="${esc(s.id)}" data-hit="${h.id}"
+          title="${esc(h.tags)}（${h.duration}秒）">
+          ${prev ? `<video src="${esc(prev.url)}" muted loop autoplay playsinline></video>` : ""}
+        </button>`;
+      }).join("")}
+    </div>` : ""}
+    <div class="row" style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+      <b>手動アップロード</b><span>Mixkitなど、APIの無いサイトから落としたファイルはここから追加できます</span>
+    </div>
+    <div class="ctl">
+      <input type="file" class="cv-file" data-id="${esc(s.id)}" accept="video/mp4,video/webm,video/quicktime">
+    </div>
+    ${g.msg ? `<div class="flag ${g.ok===false?"bad":""}" style="margin-top:6px">${esc(g.msg)}</div>` : ""}
+    ${g.url && g.isVideo ? `<video class="pg-preview" src="${g.url}" controls
+         style="max-width:100%;margin-top:8px;border-radius:6px"></video>` : ""}
+    ${g.url && g.isVideo && !g.busy ? `<div class="ctl" style="margin-top:8px">
+      <button class="pg-accept primary" data-id="${esc(s.id)}">採用してコミット</button>
+      <button class="pg-discard bad" data-id="${esc(s.id)}">この候補を破棄</button>
+    </div>` : ""}
+  </div>`;
+}
+
+// ── BGMの試聴 ────────────────────────────────────────────────────
+// 実ファイル（out/bgm/*.wav）はgit管理外でブラウザから読めないので、
+// make_bgm.py と同じ組み方をWeb Audioで鳴らして代わりにする。
+// 主音・完全5度・その1オクターブ下、それぞれに0.25Hzずらした相方を重ねてうなりを作る
+let audioCtx = null, bgmPlaying = null;
+
+function bgmStop(){
+  if(!bgmPlaying) return;
+  const {nodes, gain} = bgmPlaying;
+  const t = audioCtx.currentTime;
+  gain.gain.cancelScheduledValues(t);
+  gain.gain.setValueAtTime(gain.gain.value, t);
+  gain.gain.linearRampToValueAtTime(0, t + 0.25);   // ぶつ切りにしない
+  nodes.forEach(n => n.stop(t + 0.3));
+  bgmPlaying = null;
+  render();
+}
+
+function bgmPlay(name){
+  const bed = BGM_BEDS.find(b => b.name === name);
+  if(!bed) return;
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  bgmStop();
+  const root = bed.hz, fifth = Math.round(root * 1.5 * 4) / 4;
+  // (周波数, 音量dB) は make_bgm.tones() と同じ
+  const layers = [[root/2, -20], [root, -10], [root + BGM_DETUNE, -10],
+                  [fifth, -15], [fifth + BGM_DETUNE, -15]];
+  const master = audioCtx.createGain();
+  master.gain.setValueAtTime(0, audioCtx.currentTime);
+  master.gain.linearRampToValueAtTime(0.9, audioCtx.currentTime + 0.4);
+  master.connect(audioCtx.destination);
+
+  // 全体をゆっくり呼吸させる揺らぎ（LFO）
+  const swell = audioCtx.createOscillator(), swellGain = audioCtx.createGain();
+  swell.frequency.value = BGM_SWELL_HZ;
+  swellGain.gain.value = BGM_SWELL_DEPTH;
+  swell.connect(swellGain);
+
+  const nodes = [swell];
+  for(const [hz, db] of layers){
+    const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = hz;
+    g.gain.value = Math.pow(10, db / 20) * 0.5;
+    swellGain.connect(g.gain);       // 揺らぎを音量に効かせる
+    osc.connect(g).connect(master);
+    osc.start();
+    nodes.push(osc);
+  }
+  swell.start();
+  bgmPlaying = {name, nodes, gain: master};
+  render();
+}
+
+// ── 自作BGM（合成音）と、追加した実ファイルのBGMを同じボタンで試聴する ──────────
+// 合成音は bgmPlay/bgmStop（Web Audio）、実ファイルは <audio> 要素で鳴らす。
+// どちらか片方しか同時に鳴らさない
+let customAudioEl = null;
+let customAudioPlaying = null;      // 再生中の実ファイルBGMの名前
+const customBgmUrlCache = {};
+
+const previewPlaying = name => (bgmPlaying && bgmPlaying.name === name) || customAudioPlaying === name;
+
+function previewStop(){
+  bgmStop();
+  if(customAudioEl){ customAudioEl.pause(); customAudioEl.currentTime = 0; }
+  if(customAudioPlaying){ customAudioPlaying = null; render(); }
+}
+
+async function customBgmUrl(asset){
+  if(customBgmUrlCache[asset.name]) return customBgmUrlCache[asset.name];
+  const blob = await api(repoPath(`/git/blobs/${asset.sha}`));
+  const bytes = Uint8Array.from(atob(blob.content.replace(/\n/g, "")), c => c.charCodeAt(0));
+  const ext = (asset.file.match(/\.([^.]+)$/) || [, "mp3"])[1].toLowerCase();
+  const mime = {wav:"audio/wav", ogg:"audio/ogg", m4a:"audio/mp4"}[ext] || "audio/mpeg";
+  const url = URL.createObjectURL(new Blob([bytes], {type: mime}));
+  customBgmUrlCache[asset.name] = url;
+  return url;
+}
+
+// 実ファイルBGM試聴中の早送りバー。ドラッグ中はtimeupdateでバーを上書きしない
+let bgmSeekDragging = false;
+function bgmSeekSync(){
+  if(!customAudioEl || bgmSeekDragging) return;
+  $("#bgm-seek-bar").value = customAudioEl.currentTime || 0;
+  $("#bgm-seek-cur").textContent = ts(customAudioEl.currentTime || 0);
+}
+function ensureCustomAudioEl(){
+  if(customAudioEl) return customAudioEl;
+  customAudioEl = new Audio();
+  customAudioEl.addEventListener("timeupdate", bgmSeekSync);
+  customAudioEl.addEventListener("loadedmetadata", () => {
+    $("#bgm-seek-bar").max = customAudioEl.duration || 0;
+    $("#bgm-seek-dur").textContent = ts(customAudioEl.duration || 0);
+  });
+  return customAudioEl;
+}
+$("#bgm-seek-bar").addEventListener("input", e => {
+  bgmSeekDragging = true;
+  $("#bgm-seek-cur").textContent = ts(+e.target.value);
+});
+$("#bgm-seek-bar").addEventListener("change", e => {
+  if(customAudioEl) customAudioEl.currentTime = +e.target.value;
+  bgmSeekDragging = false;
+});
+
+async function previewToggle(name){
+  if(previewPlaying(name)){ previewStop(); return; }
+  if(BGM_BEDS.some(b => b.name === name)){ previewStop(); bgmPlay(name); return; }  // bgmPlayがrender()まで行う
+  const asset = customBgmByName(name);
+  if(!asset) return;
+  previewStop();
+  try{
+    const url = await customBgmUrl(asset);
+    const el = ensureCustomAudioEl();
+    el.loop = true;
+    el.src = url;
+    await el.play();
+    customAudioPlaying = name;
+    render();
+  }catch(e){
+    toast("再生に失敗しました: " + (e.message || e));
+  }
+}
+
+$("#default-bgm").addEventListener("change", e => {
+  if(!state.script) return;
+  const v = e.target.value;
+  state.script.audio_design = state.script.audio_design || {};
+  if(v) state.script.audio_design.bgm = v; else delete state.script.audio_design.bgm;
+  if(v) previewToggle(v); else render();   // 選んだらすぐ音で確かめられるようにする（c-bgmと同じ挙動）
+  save();
+});
+$("#default-bgm-play").addEventListener("click", e => {
+  if(e.currentTarget.dataset.bgm) previewToggle(e.currentTarget.dataset.bgm);
+});
+// 章ごとのBGM指定が残っているか。統一するとこれが false になる
+const hasBgmOverrides = () => state.scenes.some(s => s.raw?.bgm);
+// 統一前の指定を控えてあるか。あれば「章ごとに戻す」が押せる
+const canRestoreBgm = () => !!state.bgmSnapshot && Object.keys(state.bgmSnapshot).length > 0;
+
+function bgmUnify(){
+  const v = state.script.audio_design?.bgm || "";
+  if(!v){ toast("先に既定BGMを選んでください"); return; }
+  const targets = state.scenes.filter(s => s.raw?.bgm);
+  if(!confirm(`動画全体を「${v}」1曲に統一します。\n`
+    + `各シーンの個別指定（${targets.length}件）は解除されますが、\n`
+    + `「章ごとのBGMに戻す」でいつでも元に戻せます。よろしいですか？`)) return;
+  // 消す前に控える。これがないと章ごとの流れを二度と作り直せない
+  const snap = {};
+  for(const s of targets){ snap[s.id] = s.raw.bgm; delete s.raw.bgm; }
+  state.bgmSnapshot = snap;
+  reflow();
+  toast(`全編を「${v}」に統一しました（元に戻せます）`);
+}
+
+function bgmRestore(){
+  const snap = state.bgmSnapshot || {};
+  let n = 0;
+  for(const s of state.scenes){
+    if(snap[s.id]){ s.raw.bgm = snap[s.id]; n++; }
+  }
+  state.bgmSnapshot = null;
+  reflow();
+  toast(n ? `章ごとのBGM（${n}件）に戻しました` : "戻せる指定がありませんでした");
+}
+
+$("#bgm-unify").addEventListener("click", () => {
+  if(!state.script) return;
+  // 統一済みで控えがあるときは「戻す」ボタンとして働く
+  if(!hasBgmOverrides() && canRestoreBgm()) bgmRestore();
+  else bgmUnify();
+});
+
+// ── BGM素材（実ファイル）のリポジトリへの追加・一覧・削除 ─────────────────────
+async function bgmAssetsRefresh(){
+  if(!ghReady()) return;
+  try{
+    const items = await api(repoPath(`/contents/${GH_DIR}/assets/audio/bgm?ref=${encodeURIComponent(gh.branch)}`));
+    customBgm = (Array.isArray(items) ? items : [])
+      .filter(f => f.type === "file" && BGM_EXT_RE.test(f.name))
+      .map(f => ({name: f.name.replace(BGM_EXT_RE, ""), file: f.name, path: f.path, sha: f.sha, size: f.size}))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }catch(e){ customBgm = []; }
+  render();
+}
+
+async function deleteRepoFile(path, sha, message){
+  return api(repoPath(`/contents/${path}`), {
+    method: "DELETE",
+    body: JSON.stringify({message, sha, branch: gh.branch}),
+  });
+}
+
+$("#bgm-add").addEventListener("click", async () => {
+  const btn = $("#bgm-add"), out = $("#bgm-add-result"), fileInput = $("#bgm-file");
+  const file = fileInput.files[0];
+  if(!ghReady()){ out.innerHTML = `<span style="color:var(--bad)">先に⚙接続設定でGitHubを接続してください</span>`; return; }
+  if(!file){ out.innerHTML = `<span style="color:var(--bad)">ファイルを選んでください</span>`; return; }
+  const ext = (file.name.match(/\.([^.]+)$/) || [, ""])[1].toLowerCase();
+  if(!["mp3", "wav", "m4a", "ogg"].includes(ext)){
+    out.innerHTML = `<span style="color:var(--bad)">対応形式は mp3 / wav / m4a / ogg です</span>`;
+    return;
+  }
+  let name = ($("#bgm-name").value.trim() || file.name.replace(/\.[^.]+$/, ""))
+    .replace(/[^\w\-一-龠ぁ-んァ-ヶー]/g, "_");
+  if(!name){ out.innerHTML = `<span style="color:var(--bad)">曲名が空になってしまいました</span>`; return; }
+  if(customBgmByName(name) && !confirm(`『${name}』は既に追加済みです。上書きしますか？`)) return;
+  btn.disabled = true;
+  out.innerHTML = `<span style="color:var(--dim)">追加しています…</span>`;
+  try{
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    await putFile(`${GH_DIR}/assets/audio/bgm/${name}.${ext}`, bytes, `BGM素材: ${name} を追加（コンソールから）`);
+    delete customBgmUrlCache[name];
+    fileInput.value = ""; $("#bgm-name").value = "";
+    out.innerHTML = `<span style="color:var(--ok)">追加しました。「${esc(name)}」として選べます</span>`;
+    await bgmAssetsRefresh();
+  }catch(e){
+    out.innerHTML = `<span style="color:var(--bad)">失敗しました: ${esc(e.message || e)}</span>`;
+  }finally{
+    btn.disabled = false;
+  }
+});
+
+// ── スライドのライブプレビュー ──────────────────────────────────────
+// slide_render.py の _css()/_body() をそのままJSに移植し、iframeでその場描画する。
+// px指定だった箇所は 1vw に置き換えることで、iframeの実際の表示サイズに追従させている
+// （Python版は1回限りのスクリーンショットなので固定pxで足りるが、ここは画面幅が変わる）。
+const BRAND = {accent:"#3d79d5", bg_top:"#000000", bg_bottom:"#1a1a1a", text:"#ffffff", text_dim:"#9aa3b2"};
+const CHANNEL_NAME = "セカイ秒読み";     // config.yaml の channel.name
+const SUBTITLES_FULL = true;             // config.yaml の longform.subtitles === "full"
+
+function slideFor(s){
+  // script_loader.py の slide_for() と同じ規則
+  return s.slide || {layout:"statement", headline: s.text.split("。")[0].slice(0, 24)};
+}
+
+const HEADLINE_STEPS = [[9,8.0],[12,6.4],[15,5.4],[24,4.6]], HEADLINE_MIN = 3.8;
+const COMPACT_STEPS = [[12,5.6],[18,4.8],[26,4.0]], COMPACT_MIN = 3.4;
+function headlineSize(text, compact){
+  const [steps, floor] = compact ? [COMPACT_STEPS, COMPACT_MIN] : [HEADLINE_STEPS, HEADLINE_MIN];
+  const hit = steps.find(([limit]) => text.length <= limit);
+  return hit ? hit[1] : floor;
+}
+
+function slideCss(){
+  const b = BRAND, safeBottom = SUBTITLES_FULL ? 15 : 6;
+  return `
+* { margin:0; padding:0; box-sizing:border-box; overflow-wrap:break-word; word-break:break-word; }
+html, body { width:100%; height:100%; }
+html { font-size:1vw; }
+body { overflow:hidden; position:relative; font-family:system-ui,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  color:${b.text}; background:linear-gradient(160deg,${b.bg_top} 0%,${b.bg_bottom} 100%); }
+body::after { content:""; position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(ellipse at 50% 35%,${b.accent}1f 0%,transparent 62%); }
+.stage { position:absolute; inset:0; padding:8rem 11rem ${safeBottom}rem 11rem; display:flex; flex-direction:column; justify-content:center; }
+.fit { width:100%; transform-origin:center center; }
+.brandbar { position:absolute; top:5.2rem; left:11rem; display:flex; align-items:center; gap:1.1rem;
+  font-size:1.5rem; letter-spacing:.35rem; color:${b.text_dim}; }
+.brandbar i { display:block; width:.35rem; height:1.7rem; background:${b.accent}; }
+.eyebrow { font-size:1.9rem; font-weight:700; letter-spacing:.3rem; color:${b.accent}; margin-bottom:2.2rem; }
+.headline { font-weight:900; line-height:1.24; letter-spacing:-.05rem; }
+.sub { font-size:2.6rem; line-height:1.6; color:${b.text_dim}; margin-top:2.6rem; }
+.source { position:absolute; left:11rem; bottom:${safeBottom - 3.2}rem; font-size:1.5rem; color:${b.text_dim}; }
+.bullets { margin-top:3.4rem; display:flex; flex-direction:column; gap:2.2rem; }
+.bullets li { list-style:none; display:flex; align-items:flex-start; gap:1.8rem; font-size:3.2rem; line-height:1.45; }
+.bullets li::before { content:""; flex:none; width:.5rem; height:2.6rem; margin-top:.7rem; background:${b.accent}; }
+.numwrap { display:flex; align-items:baseline; gap:1.6rem; }
+.number { font-size:19rem; font-weight:900; line-height:1; color:${b.accent}; letter-spacing:-.6rem; }
+.unit { font-size:5rem; font-weight:700; }
+.numlabel { font-size:3.4rem; margin-top:2.4rem; line-height:1.45; }
+.cols2 { display:flex; gap:4.5rem; margin-top:2.4rem; }
+.col { flex:1; padding:2.8rem 3rem; background:#ffffff0a; border-top:.45rem solid ${b.accent}; }
+.col.dim { border-top-color:${b.text_dim}; }
+.col .k { font-size:2.3rem; color:${b.text_dim}; letter-spacing:.2rem; }
+.col .v { font-weight:900; margin-top:1.6rem; line-height:1.2; }
+.col .n { font-size:2.2rem; color:${b.text_dim}; margin-top:1.8rem; line-height:1.5; }
+.cardgrid { display:grid; grid-template-columns:1fr 1fr; gap:2.6rem; margin-top:3.2rem; }
+.card { padding:2.6rem 2.8rem; background:#ffffff0a; border-top:.35rem solid ${b.accent};
+  display:flex; flex-direction:column; gap:1.4rem; }
+.card .ico { flex:none; width:3.6rem; height:3.6rem; border-radius:50%; background:${b.accent}; color:${b.text};
+  font-size:1.7rem; font-weight:900; display:flex; align-items:center; justify-content:center; }
+.card .lb { font-size:2.5rem; font-weight:800; line-height:1.3; }
+.card .val { font-size:1.9rem; color:${b.text_dim}; line-height:1.5; }
+.quote { border-left:.6rem solid ${b.accent}; padding-left:3.4rem; font-size:4.4rem; line-height:1.5; font-weight:700; }
+.cite { font-size:2.2rem; color:${b.text_dim}; margin-top:2.6rem; }
+.stage.chapter { align-items:flex-start; }
+.chapno { font-size:2.4rem; font-weight:700; letter-spacing:.5rem; color:${b.accent};
+  padding-bottom:1.6rem; border-bottom:.3rem solid ${b.accent}; }
+.sumlist { margin-top:3.2rem; display:flex; flex-direction:column; gap:2.6rem; }
+.sumlist li { list-style:none; display:flex; gap:2.4rem; align-items:flex-start; }
+.sumlist .no { flex:none; width:5.4rem; height:5.4rem; border-radius:50%; background:${b.accent}; color:${b.text};
+  font-size:2.6rem; font-weight:900; display:flex; align-items:center; justify-content:center; }
+.sumlist .t { font-size:3.2rem; line-height:1.45; padding-top:.6rem; }
+.stage.cta { align-items:center; text-align:center; }
+.ctabox { border:.35rem solid ${b.accent}; padding:3.4rem 6rem; font-size:3.4rem; font-weight:700; margin-top:3.4rem; }
+.subscribe { display:inline-flex; align-items:center; gap:1.6rem; margin-top:4rem; padding:1.8rem 4.4rem;
+  border-radius:99rem; background:${b.accent}; color:${b.text}; font-size:2.8rem; font-weight:900; letter-spacing:.1rem; }
+.subscribe .bell { width:2.6rem; height:2.6rem; border-radius:50%; border:.22rem solid ${b.text};
+  display:flex; align-items:center; justify-content:center; font-size:1.5rem; font-weight:700; line-height:1; }
+`;
+}
+
+function slideBody(slide){
+  const layout = slide.layout || "statement";
+  const head = slide.headline || "";
+  const sub = slide.sub ? `<p class="sub">${esc(slide.sub)}</p>` : "";
+  const eyebrow = slide.eyebrow ? `<div class="eyebrow">${esc(slide.eyebrow)}</div>` : "";
+  const source = slide.source ? `<div class="source">${esc(slide.source)}</div>` : "";
+  const brandbar = `<div class="brandbar"><i></i>${esc(CHANNEL_NAME)}</div>`;
+  const h1 = (text, compact, extra) =>
+    `<h1 class="headline" style="font-size:${headlineSize(text, compact)}rem;${extra||""}">${esc(text)}</h1>`;
+  let inner, stageClass = "stage";
+  if(layout === "title" || layout === "statement"){
+    inner = `${eyebrow}${h1(head,false)}${sub}`;
+  }else if(layout === "bullets"){
+    const items = (slide.bullets||[]).slice(0,4).map(x => `<li>${esc(x)}</li>`).join("");
+    inner = `${eyebrow}${h1(head,true)}<ul class="bullets">${items}</ul>`;
+  }else if(layout === "big_number"){
+    const unit = slide.unit ? `<span class="unit">${esc(slide.unit)}</span>` : "";
+    const label = slide.label ? `<div class="numlabel">${esc(slide.label)}</div>` : "";
+    inner = `${eyebrow}<div class="numwrap"><span class="number">${esc(slide.number||"")}</span>${unit}</div>${label}`;
+  }else if(layout === "compare"){
+    const longest = Math.max(...["left","right"].map(k => String((slide[k]||{}).value||"").length));
+    const vHit = [[4,6.0],[6,4.6],[9,3.6]].find(([l]) => longest <= l);
+    const vSize = vHit ? vHit[1] : 3.0;
+    const col = (side, dim) => {
+      side = side || {};
+      const note = side.note ? `<div class="n">${esc(side.note)}</div>` : "";
+      return `<div class="col${dim?" dim":""}"><div class="k">${esc(side.label||"")}</div>`
+           + `<div class="v" style="font-size:${vSize}rem">${esc(side.value||"")}</div>${note}</div>`;
+    };
+    inner = `${eyebrow}${h1(head,true)}<div class="cols2">${col(slide.left,false)}${col(slide.right,true)}</div>`;
+  }else if(layout === "cards"){
+    const items = (slide.cards||[]).slice(0,4).map((item,i) => {
+      const val = item.value ? `<div class="val">${esc(item.value)}</div>` : "";
+      return `<div class="card"><div class="ico">${i+1}</div><div class="lb">${esc(item.label||"")}</div>${val}</div>`;
+    }).join("");
+    inner = `${eyebrow}${h1(head,true)}<div class="cardgrid">${items}</div>`;
+  }else if(layout === "quote"){
+    const cite = slide.cite ? `<div class="cite">${esc(slide.cite)}</div>` : "";
+    inner = `${eyebrow}<blockquote class="quote">${esc(slide.quote||head)}</blockquote>${cite}`;
+  }else if(layout === "chapter"){
+    inner = `<div class="chapno">CHAPTER ${esc(slide.chapter_no||"")}</div>${h1(head,false,"margin-top:3rem")}${sub}`;
+    stageClass = "stage chapter";
+  }else if(layout === "summary"){
+    const items = (slide.bullets||[]).slice(0,3)
+      .map((x,i) => `<li><span class="no">${i+1}</span><span class="t">${esc(x)}</span></li>`).join("");
+    inner = `${eyebrow}${h1(head,true)}<ul class="sumlist">${items}</ul>`;
+  }else{   // cta
+    const box = slide.sub ? `<div class="ctabox">${esc(slide.sub)}</div>` : "";
+    // ctaは定義上「登録を促す締め」なので既定で登録ボタンを出す（slide_render.py と対）
+    const button = slide.subscribe === false ? ""
+      : `<div class="subscribe"><span class="bell">!</span>チャンネル登録</div>`;
+    inner = `${eyebrow}${h1(head,false)}${box}${button}`;
+    stageClass = "stage cta";
+  }
+  return `${brandbar}<div class="${stageClass}"><div class="fit">${inner}</div></div>${source}`;
+}
+
+// stage内に収まらないときだけ縮小する（slide_render.py の FIT_SCRIPT と同じ規則）
+// src/slide_render.py の FIT_SCRIPT と対（変えるときは両方直すこと）。
+// 0.55で下限を切っていたため、それでも収まらないほど文字が多いスライドは
+// stageのoverflow:hiddenでそのまま下端が欠けていた（実際に発生した不具合）。
+// 小さくなってでも全文が見える方が、欠けるより必ずましなので下限は設けない
+const SLIDE_FIT_SCRIPT = `
+window.addEventListener('load', () => {
+  const stage = document.querySelector('.stage'), fit = document.querySelector('.fit');
+  if(!stage || !fit) return;
+  const cs = getComputedStyle(stage);
+  const avail = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const need = fit.scrollHeight;
+  if(need <= avail) return;
+  fit.style.transform = 'scale(' + Math.max(avail / need, 0.15) + ')';
+});`;
+
+function slideDoc(slide){
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${slideCss()}</style></head>`
+       + `<body>${slideBody(slide)}<script>${SLIDE_FIT_SCRIPT}<\/script></body></html>`;
+}
+
+function flagsFor(s){
+  const f = [];
+  // 章扉と動画クリップは短くて当然なので、短文の指摘から外す
+  // （クリップは5秒しかないので、むしろ短い決め台詞であることが正しい）
+  const isCard = s.slide?.layout === "chapter" || s.kind === "clip";
+  if(!s.text) f.push({bad:true, msg:"ナレーション本文が空です。生成時にエラーで止まります"});
+  else if(!isCard && s.text.length < SCENE_CHARS[0]) f.push({msg:`本文が短い（${s.text.length}字）。画がすぐ切り替わって忙しなく見えます`});
+  else if(s.text.length > SCENE_CHARS[1]) f.push({msg:`本文が長い（${s.text.length}字）。1枚の画が${Math.round(estimate(s.text))}秒止まります`});
+  if(!s.image && !s.slide) f.push({msg:"画像も slide 定義も無いので、本文の冒頭から仮の見出しが作られます"});
+  if(s.slide?.layout === "compare"){
+    for(const side of ["left","right"]){
+      const v = s.slide[side]?.value || "";
+      if(v.length > 6) f.push({msg:`compare の ${side}.value が${v.length}字（6字以内推奨。カラム幅が画面の半分しかありません）`});
+    }
+  }
+  return f;
+}
+
+function render(){
+  const scenes = state.scenes;
+  const {assigned, thumb} = bind(scenes, state.images);
+  let cursor = 0; const marks = [];
+  for(const s of scenes){
+    s.start = cursor; s.dur = estimate(s.text);
+    if(s.chapter) marks.push({start:cursor, label:s.chapter});
+    cursor += s.dur;
+  }
+  const total = cursor;
+  const chaps = chapters(marks, total);
+  const vis = visualAudit(scenes);
+  const flagged = scenes.map((s,i) => [
+    ...flagsFor(s),
+    ...vis.perScene[i].map(msg => ({msg})),
+  ]);
+  const nFlags = flagged.reduce((a,f) => a + f.length, 0);
+  const inRange = total >= TARGET_MIN[0]*60 && total <= TARGET_MIN[1]*60;
+  const mix = ["clip","diagram","map","photo","generated","data"]
+    .filter(k => vis.counts[k])
+    .map(k => `${k === "clip" ? "動画" : KIND_LABEL[k]}${vis.counts[k]}`).join(" ");
+
+  // 一括生成の残り。数えるのはボタンが実際に作るシーン（写真・生成画像）だけにする。
+  // ここを canGenerate で数えると、図解や文字スライドまで「未生成」に見えてしまう
+  const photoTargets = scenes.filter(bulkTarget);
+  const photoScenes = scenes.filter(s => canGenerate(s) && isBulkKind(s));
+  const clipTargets = scenes.filter(bulkClipTarget);
+  const clipScenes = scenes.filter(s => s.kind === "clip" && !s.vis.clip_motion);
+  const commitTargets = scenes.filter(uncommittedPhoto);
+  const commitClipTargets = scenes.filter(uncommittedClip);
+  $("#scenes-toolbar").style.display = "flex";
+  $("#b-gen-all").disabled = genAllBusy || !photoTargets.length;
+  $("#b-clip-all").disabled = genAllBusy || !clipTargets.length;
+  $("#b-commit-all").disabled = commitAllBusy || !commitTargets.length;
+  $("#b-commit-clips").disabled = commitClipsBusy || !commitClipTargets.length;
+  $("#b-all-generated").disabled = genAllBusy || !canReorder();
+  if(!genAllBusy){
+    $("#gen-all-status").textContent = photoTargets.length
+      ? `写真・生成画像のシーン 未生成 ${photoTargets.length}/${photoScenes.length}件`
+      : (photoScenes.length ? `写真・生成画像のシーン ${photoScenes.length}件とも生成済み`
+                            : "写真・生成画像のシーンはありません");
+    $("#clip-all-status").textContent = clipTargets.length
+      ? `動画クリップのシーン 未選択 ${clipTargets.length}/${clipScenes.length}件`
+      : (clipScenes.length ? `動画クリップのシーン ${clipScenes.length}件とも選択済み` : "");
+  }
+  if(!commitAllBusy){
+    $("#commit-all-status").textContent = commitTargets.length
+      ? `写真: 未コミット ${commitTargets.length}件`
+      : "";
+  }
+  if(!commitClipsBusy){
+    $("#commit-clips-status").textContent = commitClipTargets.length
+      ? `クリップ: 未コミット ${commitClipTargets.length}件`
+      : "";
+  }
+  genAllRender();   // 全体進捗はシーン一覧の外にあるので、組み直しのたびに描き直す
+
+  $("#stats").innerHTML = [
+    `<div class="stat"><div class="k">シーン</div><div class="v">${scenes.length}</div><div class="n">ナレーション ${scenes.reduce((a,s)=>a+s.text.length,0)}字</div></div>`,
+    `<div class="stat ${inRange?"ok":"warn"}"><div class="k">推定の尺</div><div class="v">${ts(total)}</div><div class="n">目標 ${TARGET_MIN[0]}〜${TARGET_MIN[1]}分${inRange?"":" ← 外れています"}</div></div>`,
+    `<div class="stat ${assigned===scenes.length?"ok":""}"><div class="k">デザイン素材</div><div class="v">${assigned}<span style="font-size:15px;color:var(--dim)">/${scenes.length}</span></div><div class="n">${assigned===scenes.length?"全シーン割当済み":`${scenes.length-assigned}件は自動生成`}</div></div>`,
+    `<div class="stat ${vis.thin?"warn":"ok"}"><div class="k">画の比率</div><div class="v">${Math.round(vis.ratio*100)}<span style="font-size:15px;color:var(--dim)">%</span></div><div class="n">${mix || "図解・写真の指定なし"}${vis.thin?` ← ${Math.round(MIN_RICH_RATIO*100)}%以上に`:""}</div></div>`,
+    `<div class="stat ${chaps.length?"":"warn"}"><div class="k">チャプター</div><div class="v">${chaps.length}</div><div class="n">${chaps.length?"概要欄に入ります":"要件を満たさず省略されます"}</div></div>`,
+    `<div class="stat ${nFlags?"warn":"ok"}"><div class="k">指摘</div><div class="v">${nFlags}</div><div class="n">${thumb?"サムネ画像あり":"サムネは自動生成"}</div></div>`,
+  ].join("");
+
+  // 動画全体の既定BGM。audio_design.bgm を直接編集する
+  const defaultBgm = state.script?.audio_design?.bgm || "";
+  $("#default-bgm").innerHTML =
+    `<option value=""${!defaultBgm?" selected":""}>（指定なし）</option>` +
+    `<optgroup label="自作アンビエント">` +
+    BGM_BEDS.map(b =>
+      `<option value="${b.name}"${defaultBgm===b.name?" selected":""}>${esc(b.label)}</option>`).join("") +
+    `</optgroup>` +
+    (customBgm.length ? `<optgroup label="追加した素材">` +
+      customBgm.map(c =>
+        `<option value="${esc(c.name)}"${defaultBgm===c.name?" selected":""}>${esc(c.name)}</option>`).join("") +
+      `</optgroup>` : "");
+  $("#default-bgm-play").dataset.bgm = defaultBgm;
+  $("#default-bgm-play").style.display = isKnownBgm(defaultBgm) ? "" : "none";
+  $("#default-bgm-play").textContent = previewPlaying(defaultBgm) ? "■停止" : "▶試聴";
+  const overrides = hasBgmOverrides(), restorable = canRestoreBgm();
+  const unifyBtn = $("#bgm-unify");
+  if(!overrides && restorable){
+    // 統一したあと。曲はプルダウンで変えられるので、ここは「戻す」に切り替える
+    unifyBtn.disabled = false;
+    unifyBtn.textContent = "章ごとのBGMに戻す";
+    unifyBtn.title = `統一する前の章ごとの指定（${Object.keys(state.bgmSnapshot).length}件）に戻します`;
+  }else{
+    unifyBtn.textContent = "この曲で全編を統一";
+    unifyBtn.disabled = !defaultBgm || !overrides;
+    unifyBtn.title = !defaultBgm
+      ? "先に既定BGMを選んでください"
+      : !overrides
+        ? "すでに1曲で統一されています。曲を変えるなら上のプルダウンを選び直してください"
+        : `選んだ曲（${defaultBgm}）を動画全体に適用し、各シーンの個別指定（章ごとの切り替え）をすべて解除します`;
+  }
+
+  // 実ファイルBGM試聴中だけ早送りバーを出す（合成音はループ音源で長さが無いため対象外）
+  $("#bgm-seek").style.display = customAudioPlaying ? "flex" : "none";
+  if(customAudioPlaying){
+    $("#bgm-seek-name").textContent = customAudioPlaying;
+    $("#bgm-seek-name").title = customAudioPlaying;
+    if(!bgmSeekDragging) bgmSeekSync();
+  }
+
+  // BGM素材（実ファイル）の一覧。追加・削除・試聴
+  $("#bgm-assets").innerHTML = customBgm.length
+    ? customBgm.map(c => `<li>
+        <span style="flex:1">${esc(c.name)}<span style="color:var(--dim)"> ／ ${(c.size/1024/1024).toFixed(1)}MB</span></span>
+        <button class="mv bgm-play" data-bgm="${esc(c.name)}">${previewPlaying(c.name) ? "■" : "▶"}</button>
+        <button class="mv" data-del-bgm="${esc(c.path)}" data-del-sha="${esc(c.sha)}" data-del-name="${esc(c.name)}"
+                style="color:var(--bad)">削除</button>
+      </li>`).join("")
+    : `<li style="color:var(--dim)">まだ追加されていません</li>`;
+  $("#bgm-assets").querySelectorAll(".bgm-play").forEach(el => el.addEventListener("click", e => {
+    previewToggle(e.currentTarget.dataset.bgm);
+  }));
+  $("#bgm-assets").querySelectorAll("[data-del-bgm]").forEach(el => el.addEventListener("click", async e => {
+    const {delBgm, delSha, delName} = e.currentTarget.dataset;
+    if(!confirm(`『${delName}』をリポジトリから削除します。元に戻せません。よろしいですか？`)) return;
+    try{
+      await deleteRepoFile(delBgm, delSha, `BGM素材: ${delName} を削除（コンソールから）`);
+      delete customBgmUrlCache[delName];
+      await bgmAssetsRefresh();
+    }catch(err){ toast("削除に失敗しました: " + (err.message || err)); }
+  }));
+
+  // BGMの区間（audio_mix.bgm_runs と同じまとめ方）。同じ曲が続くところは1区間にする
+  const bgmRuns = [];
+  let curBgm = state.script?.audio_design?.bgm || null;
+  for(const s of scenes){
+    curBgm = s.raw?.bgm || curBgm;
+    if(!curBgm) continue;
+    if(bgmRuns.length && bgmRuns[bgmRuns.length-1].name === curBgm) continue;
+    if(bgmRuns.length) bgmRuns[bgmRuns.length-1].end = s.start;
+    bgmRuns.push({name:curBgm, start:s.start, end:total});
+  }
+  $("#bgmruns").innerHTML = bgmRuns.length
+    ? bgmRuns.map(r => {
+        return `<li><span class="t">${ts(r.start)}</span>
+          <span style="flex:1">${esc(r.name)}<span style="color:var(--dim)"> ／ ${ts(Math.max(r.end-r.start,0))}</span></span>
+          ${isKnownBgm(r.name) ? `<button class="mv bgm-play" data-bgm="${esc(r.name)}">${
+            previewPlaying(r.name) ? "■" : "▶"}</button>` : ""}</li>`;
+      }).join("")
+    : `<li style="color:var(--dim)">BGMの指定がありません</li>`;
+  $("#bgmruns").querySelectorAll(".bgm-play").forEach(el => el.addEventListener("click", e => {
+    previewToggle(e.currentTarget.dataset.bgm);
+  }));
+
+  // 種別の凡例。使われている種別の件数も出して、比率を見ながら組み替えられるようにする
+  $("#kindlegend").innerHTML = Object.entries(KIND_SPEC).map(([k, spec]) => {
+    const n = scenes.filter(s => s.kind === k).length;
+    return `<li style="display:block;padding:6px 0">
+      <span class="tag kind k-${k}">${esc(KIND_LABEL[k])}</span>
+      <span style="color:var(--dim)">${n}件</span><br>
+      <span style="font-size:11px">${esc(spec.what)}</span><br>
+      <span style="font-size:11px;color:var(--dim)">使いどころ: ${esc(spec.use)}</span><br>
+      <span style="font-size:11px;color:var(--dim)">作るのは: ${esc(spec.who)}</span>
+    </li>`;
+  }).join("");
+
+  $("#chapters").innerHTML = chaps.length
+    ? chaps.map(c => `<li><span class="t">${ts(c.start)}</span><span>${esc(c.label)}</span></li>`).join("")
+    : `<li style="color:var(--dim)">チャプターは付きません。本編の各かたまりの先頭に chapter_label を付けてください（3つ以上・各10秒以上必要）</li>`;
+
+  const pct = n => (n*100).toFixed(2) + "%";
+  $("#scenes").innerHTML = scenes.map((s,i) => {
+    const f = flagged[i];
+    // 画像が無いシーンは、実際の生成と同じ規則（slide_render.py）でスライドを描いてプレビューする。
+    // kind=diagram/map/data/photo/clip でも、素材が無ければ本番でも同じくスライドに落ちるため、これは「今のまま生成したときの見た目」そのもの
+    const out = actualOutput(s);
+    const badge = out.ok ? out.text : `今はスライド代わり（${KIND_LABEL[s.kind]||s.kind}未着）`;
+    const shot = s.image
+      ? (s.image.video
+          ? `<video src="${s.image.url}" muted loop autoplay playsinline></video>`
+          : `<img src="${s.image.url}" alt="${esc(s.id)}">`)
+        + `<button class="del shot-del" data-id="${esc(s.id)}" title="この${s.image.video?"動画クリップ":"画像"}を削除">×</button>`
+      : `<iframe class="slide-frame" srcdoc="${esc(slideDoc(slideFor(s)))}" tabindex="-1"></iframe>
+         <div class="badge">${esc(badge)}</div>`;
+    return `<div class="scene ${f.length?"flagged":""}">
+      <div class="head">
+        <span class="id">${esc(s.id)}</span>
+        <span class="tag">${esc(s.type)}</span>
+        <span class="tag kind k-${esc(s.kind)}">${esc(KIND_LABEL[s.kind] || s.kind)}</span>
+        ${s.chapter ? `<span class="tag chap">▎${esc(s.chapter)}</span>` : ""}
+        <span class="tag ${s.image?"src-design":"src-auto"}">${s.image ? "Design画像" : "自動生成"}</span>
+        ${s.se ? `<span class="tag">SE:${esc(s.se)}</span>` : ""}
+        ${s.motion ? `<span class="tag">${esc(s.motion)}</span>` : ""}
+        <span class="dur">${ts(s.start)} 〜 ／ ${s.dur.toFixed(1)}秒</span>
+      </div>
+      <div class="grid">
+        <div class="shot">${shot}
+          <div class="safe ${$("#t-safe").checked?"on":""}">
+            <div class="zone" style="left:0;right:0;top:0;height:${pct(SAFE.top)}"></div>
+            <div class="zone" style="left:0;right:0;bottom:0;height:${pct(SAFE.bottom)}"></div>
+            <div class="zone" style="left:0;width:${pct(SAFE.side)};top:${pct(SAFE.top)};bottom:${pct(SAFE.bottom)}"></div>
+            <div class="zone" style="right:0;width:${pct(SAFE.side)};top:${pct(SAFE.top)};bottom:${pct(SAFE.bottom)}"></div>
+            <div class="box" style="left:${pct(SAFE.side)};right:${pct(SAFE.side)};top:${pct(SAFE.top)};bottom:${pct(SAFE.bottom)}"></div>
+            <div class="lbl">安全領域</div>
+          </div>
+        </div>
+        <div class="meta">
+          <textarea class="text" rows="4" data-i="${i}">${esc(s.text)}</textarea>
+          ${!canReorder() ? "" : `<div class="ctl">
+            <select class="c-kind" data-i="${i}" title="このシーンで用意する画の種類">
+              ${Object.entries(KIND_LABEL).map(([k,v]) =>
+                `<option value="${k}"${s.kind===k?" selected":""}>${v}</option>`).join("")}
+            </select>
+            <input class="chap c-chap" data-i="${i}" value="${esc(s.raw?.chapter_label || "")}"
+                   placeholder="${esc(s.chapter ? "章: " + s.chapter : "チャプターにしない")}"
+                   title="ここに名前を入れると、この位置からYouTubeのチャプターが始まります">
+            <select class="c-se" data-i="${i}" title="このシーンの頭で鳴らす効果音">
+              ${["","transition","accent","chapter"].map(v =>
+                `<option value="${v}"${(s.se||"")===v?" selected":""}>${v ? "SE:"+v : "SE:自動"}</option>`).join("")}
+            </select>
+            <select class="c-bgm" data-i="${i}"
+                    title="このシーンからBGMを変えます。指定しなければ前のシーンのまま流れ続けます">
+              <option value=""${!s.raw?.bgm?" selected":""}>BGM:前のまま</option>
+              ${BGM_BEDS.map(b =>
+                `<option value="${b.name}"${(s.raw?.bgm||"")===b.name?" selected":""}>BGM:${esc(b.label)}</option>`).join("")}
+              ${customBgm.map(c =>
+                `<option value="${esc(c.name)}"${(s.raw?.bgm||"")===c.name?" selected":""}>BGM:${esc(c.name)}</option>`).join("")}
+            </select>
+            ${s.raw?.bgm ? `<button class="mv bgm-play" data-bgm="${esc(s.raw.bgm)}"
+              title="この音を試聴します">${previewPlaying(s.raw.bgm) ? "■停止" : "▶試聴"}</button>` : ""}
+            <span class="spacer"></span>
+            <button class="mv" data-mv="up" data-i="${i}" title="1つ前へ">↑</button>
+            <button class="mv" data-mv="down" data-i="${i}" title="1つ後ろへ">↓</button>
+            <button class="mv" data-mv="del" data-i="${i}" title="このシーンを削除">削除</button>
+          </div>`}
+          <div class="row"><b>種別</b><span>
+            <b>${esc(KIND_LABEL[s.kind]||s.kind)}</b>＝${esc(KIND_SPEC[s.kind]?.what || "")}
+            <span style="color:var(--dim)">／作るのは ${esc(KIND_SPEC[s.kind]?.who || "")}</span>
+          </span></div>
+          <div class="flag ${out.ok?"":"bad"}" style="margin:6px 0">${
+            out.ok ? "▶ " : "⚠ "}${out.text}</div>
+          ${s.vis.subject ? `<div class="row"><b>画</b><span>${esc(s.vis.subject)}</span></div>` : ""}
+          ${s.vis.must_include ? `<div class="row"><b>必須</b><span>${esc([].concat(s.vis.must_include).join(" ／ "))}</span></div>` : ""}
+          ${s.vis.avoid ? `<div class="row"><b>禁止</b><span>${esc([].concat(s.vis.avoid).join(" ／ "))}</span></div>` : ""}
+          ${s.vis.text_on_image ? `<div class="row"><b>文字</b><span>${esc(s.vis.text_on_image)}</span></div>` : ""}
+          ${s.vis.clip_motion ? `<div class="row"><b>描画</b><span>clip_render.py の <code>${esc(s.vis.clip_motion)}</code> でこちらが作ります（外注不要）</span></div>` : ""}
+          ${s.visual ? `<div class="row"><b>補足</b><span>${esc(s.visual)}</span></div>` : ""}
+          ${s.audio ? `<div class="row"><b>音</b><span>${esc(s.audio)}</span></div>` : ""}
+          ${s.slide ? `<div class="row"><b>slide</b><span>${esc(s.slide.layout || "statement")}${s.slide.headline ? " / " + esc(s.slide.headline) : ""}</span></div>` : ""}
+          ${f.length ? `<div class="flags">${f.map(x => `<div class="flag ${x.bad?"bad":""}">${esc(x.msg)}</div>`).join("")}</div>` : ""}
+          ${canGenerate(s)
+            ? (s.kind === "clip" ? (s.vis.clip_motion ? "" : clipGenHtml(s, i)) : photoGenHtml(s, i))
+            : ""}
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+
+  // 本文を直すとその場で尺と指摘が計算し直される
+  $("#scenes").querySelectorAll("textarea.text").forEach(t => {
+    t.addEventListener("change", e => {
+      state.scenes[+e.target.dataset.i].text = e.target.value.trim();
+      reflow();
+    });
+  });
+  // 画の種別・チャプター名・SE も画面から直せる。どれも元のJSONへ書き戻す
+  $("#scenes").querySelectorAll(".c-kind").forEach(el => el.addEventListener("change", async e => {
+    const s = state.scenes[+e.target.dataset.i];
+    const to = e.target.value, from = s.kind;
+    // 生成画像・動画クリップから「こちらが描く種別」へ移すときは、素材を外さないと
+    // bind() が拾い続けて、種別を変えたのに前の絵がそのまま出る（種別と画がずれる）
+    const wasAsset = ASSET_KINDS.includes(from), nowDrawn = DRAWN_KINDS.includes(to);
+    if(wasAsset && nowDrawn && (s.image || photoGen[s.id]?.bytes)){
+      const what = s.image ? (s.image.video ? "コミット済みの動画クリップ" : "コミット済みの画像")
+                           : "未コミットの候補";
+      if(!confirm(`${s.id} を「${KIND_LABEL[from]}」から「${KIND_LABEL[to]}」に変えます。\n`
+        + `${KIND_LABEL[to]}はこちらで描く種別なので、${what}は外します。\n\n`
+        + (s.image && ghReady() ? "リポジトリからも削除します。よろしいですか？"
+                                : "よろしいですか？"))){
+        e.target.value = from; return;      // 取り消したら選択を戻す
+      }
+      await dropAsset(s);
+    }
+    s.raw.visual = {...(s.raw.visual || {}), kind:to};
+    reflow();
+  }));
+  $("#scenes").querySelectorAll(".c-chap").forEach(el => el.addEventListener("change", e => {
+    const s = state.scenes[+e.target.dataset.i], v = e.target.value.trim();
+    if(v) s.raw.chapter_label = v; else delete s.raw.chapter_label;
+    reflow();
+  }));
+  $("#scenes").querySelectorAll(".c-se").forEach(el => el.addEventListener("change", e => {
+    const s = state.scenes[+e.target.dataset.i], v = e.target.value;
+    if(v) s.raw.se = v; else delete s.raw.se;
+    reflow();
+  }));
+  $("#scenes").querySelectorAll(".c-bgm").forEach(el => el.addEventListener("change", e => {
+    const s = state.scenes[+e.target.dataset.i], v = e.target.value;
+    if(v) s.raw.bgm = v; else delete s.raw.bgm;
+    reflow();
+    if(v) previewToggle(v);           // 選んだらすぐ音で確かめられるようにする
+  }));
+  $("#scenes").querySelectorAll(".bgm-play").forEach(el => el.addEventListener("click", e => {
+    previewToggle(e.currentTarget.dataset.bgm);
+  }));
+  $("#scenes").querySelectorAll("button.mv:not(.bgm-play)").forEach(el => el.addEventListener("click", e => {
+    moveScene(+e.currentTarget.dataset.i, e.currentTarget.dataset.mv);
+  }));
+  // ComfyUIでの写真生成（プロンプト編集・生成・採用してコミット）
+  $("#scenes").querySelectorAll(".pg-prompt").forEach(el => el.addEventListener("change", e => {
+    // change はフォーカスが外れたときにも発火するので、台本を切り替えた拍子に
+    // 古い入力が新しい台本へ流れ込むことがある。世代番号が変わっていたら捨てる
+    if(+e.target.dataset.epoch !== photoEpoch) return;
+    const s = state.scenes.find(x => x.id === e.target.dataset.id);
+    if(!s) return;
+    const v = e.target.value.trim();
+    photoState(s).prompt = v;
+    // 台本側にも書き戻す。こうしないと「①保存」でリポジトリに反映されず、
+    // 画面を閉じた時点で直したプロンプトが消えてしまう
+    s.raw.visual = {...(s.raw.visual || {})};
+    if(v) s.raw.visual.image_prompt_en = v; else delete s.raw.visual.image_prompt_en;
+    save();
+  }));
+  $("#scenes").querySelectorAll(".pg-seed").forEach(el => el.addEventListener("change", e => {
+    const s = state.scenes.find(x => x.id === e.target.dataset.id);
+    if(s) photoState(s).seed = e.target.value.trim();
+  }));
+  $("#scenes").querySelectorAll(".pg-run").forEach(el => el.addEventListener("click", async e => {
+    const s = state.scenes.find(x => x.id === e.currentTarget.dataset.id);
+    if(!s) return;
+    const g = photoState(s);
+    g.busy = true; g.msg = ""; render();
+    try{
+      const seed = g.seed ? parseInt(g.seed, 10) : Math.floor(Math.random() * 2**31);
+      const bytes = await cfGenerate(cfPrompt(g.prompt), seed, s.id);
+      if(g.url) URL.revokeObjectURL(g.url);
+      g.bytes = bytes; g.url = URL.createObjectURL(new Blob([bytes], {type:"image/png"}));
+      g.source = "comfyui"; g.isVideo = false;
+      // seed欄は書き戻さない（理由はgenerateAllPhotos側のコメントを参照）
+      g.msg = `生成しました（seed ${seed}）。気に入らなければもう一度生成してください`; g.ok = true;
+    }catch(err){ g.msg = err.message; g.ok = false; }
+    finally{ g.busy = false; render(); }
+  }));
+  $("#scenes").querySelectorAll(".pg-accept").forEach(el => el.addEventListener("click", async e => {
+    const s = state.scenes.find(x => x.id === e.currentTarget.dataset.id);
+    if(!s) return;
+    const g = photoState(s);
+    if(!g.bytes) return;
+    if(!ghReady()){ g.msg = "先に「⚙ 接続設定」でGitHubにつないでください"; g.ok = false; render(); return; }
+    g.busy = true; g.msg = "コミットしています…"; render();
+    try{
+      const ext = g.isVideo ? "mp4" : "png";
+      const dir = g.isVideo ? "assets/video_clips" : "assets/images/generated";
+      const via = g.source === "pixabay" ? "Pixabayの写真から選ぶ"
+                : g.source === "pixabay-video" ? "Pixabayの動画から選ぶ"
+                : g.source === "upload" ? "手動アップロード"
+                : "ComfyUIで生成する";
+      await putFile(`${GH_DIR}/${dir}/${s.id}.${ext}`, g.bytes,
+        `${s.id}の${g.isVideo ? "動画クリップ" : "写真"}を${via}（コンソールから）`);
+      // ローカルの素材一覧にも反映して、シーンの画にその場で使う
+      state.images = state.images.filter(x => x.stem.toLowerCase() !== s.id.toLowerCase())
+        .concat({name:`${s.id}.${ext}`, stem:s.id, bytes:g.bytes, video:!!g.isVideo, url:g.url});
+      g.msg = `${dir}/${s.id}.${ext} にコミットしました`; g.ok = true;
+      toast(`${s.id}.${ext} をコミットしました`);
+      await save();
+    }catch(err){ g.msg = err.message; g.ok = false; }
+    finally{ g.busy = false; render(); }
+  }));
+
+  // ナレーションから引いた候補。押すと英語が該当の入力欄へ入り、クリップボードにも乗る。
+  // どの欄に入れるかはボタンのクラスで決まる（ComfyUIの主題／Pixabay写真／Pixabay動画）
+  $("#scenes").querySelectorAll(".cand").forEach(el => el.addEventListener("click", e => {
+    const btn = e.currentTarget;
+    const s = state.scenes.find(x => x.id === btn.dataset.id);
+    if(!s) return;
+    const en = btn.dataset.en, g = photoState(s);
+    if(btn.classList.contains("cand-photo")){
+      g.prompt = en;
+      s.raw.visual = {...(s.raw.visual || {})};
+      s.raw.visual.image_prompt_en = en;   // 台本にも残す（画面を閉じても消えないように）
+      save();
+    }else{
+      g.pxQuery = en;
+    }
+    navigator.clipboard?.writeText(en).catch(() => {});
+    toast(`「${btn.textContent.trim()}」→ ${en}`);
+    render();
+  }));
+
+  // まだコミットしていない候補（生成・検索した直後のもの）を破棄する。
+  // リポジトリには触れない。ローカルの状態を空に戻すだけ
+  $("#scenes").querySelectorAll(".pg-discard").forEach(el => el.addEventListener("click", e => {
+    const s = state.scenes.find(x => x.id === e.currentTarget.dataset.id);
+    if(!s) return;
+    const g = photoState(s);
+    if(g.url) URL.revokeObjectURL(g.url);
+    g.bytes = null; g.url = null; g.msg = ""; g.ok = undefined; g.source = null;
+    render();
+  }));
+
+  // すでにコミット済みの画像・動画クリップを削除する。リポジトリからも消える
+  $("#scenes").querySelectorAll(".shot-del").forEach(el => el.addEventListener("click", async e => {
+    const btn = e.currentTarget;
+    const s = state.scenes.find(x => x.id === btn.dataset.id);
+    if(!s || !s.image) return;
+    const label = s.image.video ? "動画クリップ" : "画像";
+    if(!confirm(`${s.id}の${label}を削除します。\n`
+      + (ghReady() ? "リポジトリからも削除します。" : "（GitHub未接続なので画面上だけ外します）")
+      + "よろしいですか？")) return;
+    btn.disabled = true;
+    try{
+      await dropAsset(s);
+      toast(`${s.id}の${label}を削除しました`);
+      render();
+    }catch(err){ toast(err.message); btn.disabled = false; }
+  }));
+
+  // Pixabayでの検索語の編集（写真・動画で共有）
+  $("#scenes").querySelectorAll(".px-query, .cv-query").forEach(el => el.addEventListener("change", e => {
+    const s = state.scenes.find(x => x.id === e.target.dataset.id);
+    if(s) photoState(s).pxQuery = e.target.value.trim();
+  }));
+  // Pixabay写真検索。結果はサムネの配列としてシーンの状態に持たせる
+  $("#scenes").querySelectorAll(".px-search").forEach(el => el.addEventListener("click", async e => {
+    const s = state.scenes.find(x => x.id === e.currentTarget.dataset.id);
+    if(!s) return;
+    const g = photoState(s);
+    const query = ($(`.px-query[data-id="${CSS.escape(s.id)}"]`)?.value || g.pxQuery || "").trim();
+    if(!query){ g.pxMsg = "検索語を入れてください"; g.pxOk = false; render(); return; }
+    g.pxQuery = query; g.pxBusy = true; g.pxMsg = ""; render();
+    try{
+      g.pxResults = await pxSearch(query);
+      g.pxMsg = g.pxResults.length ? "" : "見つかりませんでした。検索語を変えてみてください";
+      g.pxOk = true;
+    }catch(err){ g.pxMsg = err.message; g.pxOk = false; g.pxResults = []; }
+    finally{ g.pxBusy = false; render(); }
+  }));
+  // サムネをクリックしたら本画像を取得し、ComfyUI生成結果と同じ枠（g.bytes/g.url）に載せる。
+  // こうすると「採用してコミット」以降の動線をまったく変えずに使い回せる
+  $("#scenes").querySelectorAll(".px-thumb:not(.cv-thumb)").forEach(el => el.addEventListener("click", async e => {
+    const btn = e.currentTarget;
+    const s = state.scenes.find(x => x.id === btn.dataset.id);
+    if(!s) return;
+    const g = photoState(s);
+    const hit = (g.pxResults || []).find(h => String(h.id) === btn.dataset.hit);
+    if(!hit) return;
+    g.pxBusy = true; g.pxMsg = "画像を取得しています…"; render();
+    try{
+      const bytes = await pxFetchImage(hit.largeImageURL || hit.webformatURL);
+      if(g.url) URL.revokeObjectURL(g.url);
+      g.bytes = bytes; g.url = URL.createObjectURL(new Blob([bytes], {type:"image/jpeg"}));
+      g.source = "pixabay"; g.isVideo = false;
+      g.msg = `Pixabayの写真を選びました（${esc(hit.user)} / pixabay.com、帰属表示なしで商用利用可）`;
+      g.ok = true; g.pxMsg = ""; g.pxOk = true;
+    }catch(err){ g.pxMsg = err.message; g.pxOk = false; }
+    finally{ g.pxBusy = false; render(); }
+  }));
+
+  // Pixabay動画検索（kind=clip用）
+  $("#scenes").querySelectorAll(".cv-search").forEach(el => el.addEventListener("click", async e => {
+    const s = state.scenes.find(x => x.id === e.currentTarget.dataset.id);
+    if(!s) return;
+    const g = photoState(s);
+    const query = ($(`.cv-query[data-id="${CSS.escape(s.id)}"]`)?.value || g.pxQuery || "").trim();
+    if(!query){ g.cvMsg = "検索語を入れてください"; g.cvOk = false; render(); return; }
+    // 前回・他シーンの検索結果は残さず消す。溜まったままだと再生中の自動再生動画も
+    // 積み重なって重くなるため、「次の検索をしたら前の結果は消える」を徹底する
+    if(clipSearchActiveId && clipSearchActiveId !== s.id){
+      const prevScene = state.scenes.find(x => x.id === clipSearchActiveId);
+      if(prevScene) photoState(prevScene).cvResults = [];
+    }
+    g.cvResults = [];
+    g.pxQuery = query; g.cvBusy = true; g.cvMsg = "";
+    clipSearchActiveId = s.id;   // 結果が出そろう前に切り替えて、他シーンの自動再生グリッドを畳んでおく
+    render();
+    try{
+      g.cvResults = await pxSearchVideo(query);
+      g.cvMsg = g.cvResults.length ? "" : "見つかりませんでした。検索語を変えてみてください";
+      g.cvOk = true;
+    }catch(err){ g.cvMsg = err.message; g.cvOk = false; g.cvResults = []; }
+    finally{ g.cvBusy = false; render(); }
+  }));
+  // サムネをクリックしたら選んだ動画（large優先）を取得する。
+  // Pixabayの素材は5秒より長いことが多いが、生成時に自動で先頭を尺分だけ使うので問題ない
+  $("#scenes").querySelectorAll(".cv-thumb").forEach(el => el.addEventListener("click", async e => {
+    const btn = e.currentTarget;
+    const s = state.scenes.find(x => x.id === btn.dataset.id);
+    if(!s) return;
+    const g = photoState(s);
+    const hit = (g.cvResults || []).find(h => String(h.id) === btn.dataset.hit);
+    const best = hit && pxBestVideo(hit);
+    if(!best) return;
+    g.cvBusy = true; g.cvMsg = "動画を取得しています…"; render();
+    try{
+      const bytes = await pxFetchImage(best.url);   // 汎用のバイト取得。画像専用の名前だが動画でも使える
+      if(g.url) URL.revokeObjectURL(g.url);
+      g.bytes = bytes; g.url = URL.createObjectURL(new Blob([bytes], {type:"video/mp4"}));
+      g.source = "pixabay-video"; g.isVideo = true;
+      g.msg = `Pixabayの動画を選びました（${esc(hit.user)} / pixabay.com、帰属表示なしで商用利用可）`;
+      g.ok = true; g.cvMsg = ""; g.cvOk = true;
+    }catch(err){ g.cvMsg = err.message; g.cvOk = false; }
+    finally{ g.cvBusy = false; render(); }
+  }));
+  // Mixkitなど、APIの無いサイトから落とした動画をローカルから追加
+  $("#scenes").querySelectorAll(".cv-file").forEach(el => el.addEventListener("change", async e => {
+    const input = e.currentTarget;
+    const file = input.files[0];
+    const s = state.scenes.find(x => x.id === input.dataset.id);
+    if(!s || !file) return;
+    const g = photoState(s);
+    try{
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if(g.url) URL.revokeObjectURL(g.url);
+      g.bytes = bytes; g.url = URL.createObjectURL(new Blob([bytes], {type: file.type || "video/mp4"}));
+      g.source = "upload"; g.isVideo = true;
+      g.msg = `${file.name} を選びました（採用してコミットを押すと確定します）`; g.ok = true;
+    }catch(err){ g.msg = err.message; g.ok = false; }
+    finally{ render(); }
+  }));
+
+  $("#empty").style.display = "none";
+  $("#view").style.display = "";
+  for(const id of ["#b-export", "#b-design", "#b-delete"]) $(id).disabled = false;
+  syncPanels();
+  // サムネの背景候補は生成の進み具合で増えるので、描き直すたびに作り直す
+  thSyncBg();
+  if(!$("#th-main").value) $("#th-main").value = state.script?.thumbnail_text || "";
+  thRender();
+}
+
+// 並べ替え・削除はシーンの配列を直接いじるので、新形式のときだけ許す
+const canReorder = () => Array.isArray(state.script?.narrative_structure);
+
+// 直した内容を元のJSONへ戻し、そこから組み直して描き直す。
+// 章の自動割り当てや画の比率も、この経路を通ることで必ず計算し直される
+function reflow(){
+  writeBack();
+  state.scenes = normalize(state.script);
+  render();
+  save();
+}
+
+function moveScene(i, dir){
+  const arr = state.script.narrative_structure;
+  if(!arr) return;
+  writeBack();
+  if(dir === "del"){
+    if(arr.length <= 1){ toast("最後の1シーンは削除できません"); return; }
+    if(!confirm(`${state.scenes[i].id} を削除します。元に戻せません。よろしいですか？`)) return;
+    arr.splice(i, 1);
+  }else{
+    const j = dir === "up" ? i - 1 : i + 1;
+    if(j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  state.scenes = normalize(state.script);
+  render();
+  save();
+}
+
+function writeBack(){
+  // 画面で直した本文を元のJSONへ戻す（書き出し用）
+  for(const s of state.scenes){
+    if(state.script.narrative_structure) s.raw.text = s.text;
+    else s.raw.narration = s.text;
+  }
+}
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function fail(e){ $("#err").style.display = ""; $("#err").textContent = "読み込みに失敗しました: " + (e.message || e); }
+
+// ── 企画案（配列JSON）の表示 ──────────────────────────────────────
+// Claude Code が最初に出す企画案。台本ではないので、選ぶための一覧として見せる
+function renderPlans(plans){
+  $("#plans").innerHTML =
+    `<div class="err" style="background:rgba(61,121,213,.12);border-color:var(--accent);color:var(--text)">
+       これは<b>企画案</b>のJSONです（台本ではありません）。採用する番号を決めて、
+       Claude Code に台本を書かせてください。その台本JSONをここにドロップすると、画の確認ができます。
+     </div>` +
+    plans.map(p => `<div class="plan">
+      <h3>${esc(p.no ?? "")}. ${esc(p.title ?? "(タイトルなし)")}</h3>
+      ${p.hook ? `<div class="row"><b>フック</b><span>${esc(p.hook)}</span></div>` : ""}
+      ${p.structural_view ? `<div class="row"><b>切り口</b><span>${esc(p.structural_view)}</span></div>` : ""}
+      ${p.chapters ? `<div class="row"><b>構成</b><span>${esc([].concat(p.chapters).join(" / "))}</span></div>` : ""}
+      ${p.duration_min ? `<div class="row"><b>尺</b><span>${esc(p.duration_min)}分</span></div>` : ""}
+    </div>`).join("");
+  $("#plans").style.display = "";
+  $("#empty").style.display = "none";
+  $("#view").style.display = "none";
+}
+
+// ── Claude Design への依頼文 ─────────────────────────────────────
+// design_request.py と同じ内容を出す（あちらはCI用、こちらは画面から即コピーする用）
+function designBrief(){
+  const b = state.script.design_brief || {};
+  const p = b.palette || {};
+  const vis = visualAudit(state.scenes);
+  const mix = Object.keys(KIND_LABEL).filter(k => vis.counts[k])
+    .map(k => `${KIND_LABEL[k]} ${vis.counts[k]}枚`).join("、");
+  const lines = [
+    `# Claude Design 依頼書｜${state.script.title || ""}`,
+    "",
+    `チャンネル: ${b.channel || "セカイ秒読み"}　／　シーン数: ${state.scenes.length}　／　画の内訳: ${mix}`,
+    "",
+    "## 1. 書き出しかた",
+    "",
+    `- カンバス ${b.canvas || "2592×1458px"}（16:9）。動画は1920×1080ですが、ゆっくりした寄りをかけるため大きめに作ります`,
+    "- 形式は PNG",
+    `- ファイル名は ${state.scenes[0]?.id || "scene_01"}.png 〜 ${state.scenes[state.scenes.length-1]?.id || "scene_XX"}.png（下のシーン番号と一致させてください）`,
+    "- サムネイルは thumbnail.png（1280×720）",
+    "- 全部まとめて1つのZIPにしてください",
+    "- 一部だけでも構いません。無いシーンは自動で文字スライドが入ります",
+    "",
+    "## 2. 画面の安全領域（ここを外すと切れます）",
+    "",
+    "動画では画をゆっくり拡大・移動させるので、端に置いた要素は画面外へ出ます。下部には字幕が重なります。",
+    `重要な文字と主役の被写体は、下${Math.round(SAFE.bottom*100)}%・左右${Math.round(SAFE.side*100)}%・上${Math.round(SAFE.top*100)}%を空けた内側に収めてください。`,
+    "背景（写真・グラデーション・図の地）は端まで塗って構いません。",
+    "",
+    "## 3. トーンと配色",
+    "",
+    `- トーン: ${b.tone || "サイエンス・ドキュメンタリー風。洗練されたダークモード基調。煽らず、静かに"}`,
+    `- 背景 ${p.base || "#000000〜#1a1a1a"} ／ 文字 ${p.text || "#ffffff"} ／ 補助文字 ${p.muted || "#9aa3b2"} ／ アクセント ${p.accent || "#3d79d5"}`,
+    "- アクセント色は1画面に1箇所だけ",
+    ...(b.rules || []).map(r => `- ${r}`),
+    "",
+    "## 4. 全体の狙い",
+    "",
+    "文字だけのスライドが続くと、内容が良くても離脱します。",
+    "図解・位置図・写真・生成画像で「見て分かる」瞬間を絶えず作ってください。",
+    "",
+    "- 数字は文字で書くより、大きさ・深さ・面積として見えるほうが伝わります",
+    "- 場所の話が出たら位置図を出す（地名だけでは位置を思い浮かべられません）",
+    "- 構造・仕組みの話は断面図や関係図に落とす",
+    "- 同じ種類の絵を続けない",
+    "",
+  ];
+  const issues = vis.perScene.flatMap((m,i) => m.map(x => `- シーン${i+1}: ${x}`));
+  if(vis.thin) issues.unshift(`- 画が${vis.rich}/${state.scenes.length}枚（${Math.round(vis.ratio*100)}%）しかありません`);
+  if(issues.length) lines.push("**⚠ この台本について気づいた点**", "", ...issues, "");
+
+  lines.push("## 5. シーンごとの指定", "");
+  for(const s of state.scenes){
+    lines.push(`### ${s.id} ─ ${KIND_LABEL[s.kind] || s.kind}`);
+    if(s.chapter) lines.push(`*（ここから ${s.chapter}）*`);
+    lines.push(`- 画の主題: ${s.vis.subject || s.visual || s.slide?.headline || s.text.split("。")[0]}`);
+    if(s.vis.must_include) lines.push("- 必ず入れる:", ...[].concat(s.vis.must_include).map(x => `  - ${x}`));
+    if(s.vis.avoid) lines.push("- 入れない:", ...[].concat(s.vis.avoid).map(x => `  - ${x}`));
+    if(s.vis.text_on_image) lines.push(`- 画面に置く文字: ${s.vis.text_on_image}`);
+    if(s.visual && s.visual !== s.vis.subject) lines.push(`- 補足: ${s.visual}`);
+    lines.push(`- このとき流れるナレーション: 「${s.text}」`);
+    if(s.kind === "clip"){
+      const sec = s.vis.clip_sec || CLIP_SEC;
+      if(s.vis.clip_motion){
+        lines.push("", `**このクリップは制作不要です。** clip_render.py の ${s.vis.clip_motion} で`
+          + "こちらが描いて差し込みます。");
+      }else{
+        lines.push("", `**動画生成用プロンプト**（${sec}秒・16:9・音声なし）— 下をそのまま貼ってください`, "",
+          "```text", s.vis.prompt_en || "(prompt_en が台本に書かれていません)", "```", "",
+          `書き出し: ${s.id}.mp4（16:9・1920×1080以上・${sec}秒前後）。音声は入れないでください。`);
+      }
+    }
+    lines.push("");
+  }
+  lines.push("## 6. サムネイル", "",
+    `- 文字: ${state.script.thumbnail_text || state.script.title || ""}`,
+    "- 1280×720。スマホで小さく表示されても読める字の大きさで",
+    "- 本編と同じトーン。煽り表現・赤い矢印・驚き顔は使いません", "");
+  return lines.join("\n");
+}
+
+// ── GitHub連携 ────────────────────────────────────────────────────
+// 動画の書き出しには ffmpeg・VOICEVOX・Chromium が要る。ブラウザでは動かせないので、
+// 実処理は GitHub Actions に投げ、この画面は「保存 → 実行 → 予約」を操作する管理卓に徹する。
+const GH_DIR = "CMO/YouTube/trend-auto-studio";
+const WF_PRODUCE = "trend-auto-studio-produce-long.yml";
+const WF_PUBLISH = "trend-auto-studio-publish.yml";
+const gh = {owner:"kohaku0521", repo:"kaitai-check", branch:"main", token:""};
+
+function ghLoad(){ try{ Object.assign(gh, JSON.parse(localStorage.getItem("tas.gh") || "{}")); }catch{} }
+function ghStore(){ localStorage.setItem("tas.gh", JSON.stringify(gh)); }
+const ghReady = () => !!(gh.token && gh.owner && gh.repo && gh.branch);
+
+async function api(path, opt = {}){
+  const r = await fetch("https://api.github.com" + path, {...opt, headers:{
+    "Accept":"application/vnd.github+json",
+    "X-GitHub-Api-Version":"2022-11-28",
+    "Authorization":"Bearer " + gh.token,
+    ...(opt.headers || {}),
+  }});
+  if(r.status === 204) return null;
+  const j = await r.json().catch(() => null);
+  if(!r.ok) throw new Error(`GitHub ${r.status}: ${(j && j.message) || r.statusText}`);
+  return j;
+}
+const repoPath = p => `/repos/${gh.owner}/${gh.repo}${p}`;
+
+function b64(bytes){
+  let s = "";
+  const CH = 0x8000;   // 一度に渡す長さ。大きすぎると呼び出しスタックが溢れる
+  for(let i = 0; i < bytes.length; i += CH) s += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  return btoa(s);
+}
+
+// Contents API（PUT /contents/...）は、ドキュメント上は100MBまで受け付ける建前だが、
+// 実際には25MB前後で「Sorry, the file is too large to be processed.
+// Consider creating/updating the file in a local clone and pushing it to GitHub.」
+// という422を返すことがある（差分表示のための内部処理がここで詰まる模様）。
+// 大きいファイル（動画クリップの素材ZIPなど）は、差分処理を経由しない
+// Git Data API（blob/tree/commitを直接組む）で書く
+const PUT_FILE_GITDATA_THRESHOLD = 20 * 1024 * 1024;
+
+async function putFileGitData(path, bytes, message){
+  const ref = await api(repoPath(`/git/ref/heads/${encodeURIComponent(gh.branch)}`));
+  const baseCommitSha = ref.object.sha;
+  const baseCommit = await api(repoPath(`/git/commits/${baseCommitSha}`));
+  const blob = await api(repoPath(`/git/blobs`), {
+    method: "POST",
+    body: JSON.stringify({content: b64(bytes), encoding: "base64"}),
+  });
+  const tree = await api(repoPath(`/git/trees`), {
+    method: "POST",
+    body: JSON.stringify({
+      base_tree: baseCommit.tree.sha,
+      tree: [{path, mode: "100644", type: "blob", sha: blob.sha}],
+    }),
+  });
+  const commit = await api(repoPath(`/git/commits`), {
+    method: "POST",
+    body: JSON.stringify({message, tree: tree.sha, parents: [baseCommitSha]}),
+  });
+  await api(repoPath(`/git/refs/heads/${encodeURIComponent(gh.branch)}`), {
+    method: "PATCH",
+    body: JSON.stringify({sha: commit.sha}),
+  });
+  return commit;
+}
+
+async function putFile(path, bytes, message){
+  if(bytes.length > PUT_FILE_GITDATA_THRESHOLD) return putFileGitData(path, bytes, message);
+  let sha = null;
+  try{
+    const cur = await api(repoPath(`/contents/${path}?ref=${encodeURIComponent(gh.branch)}`));
+    sha = cur.sha;                       // 既存ファイルの上書きには sha が要る
+  }catch(e){ if(!/GitHub 404/.test(e.message)) throw e; }
+  return api(repoPath(`/contents/${path}`), {
+    method:"PUT",
+    body: JSON.stringify({message, content:b64(bytes), branch:gh.branch, ...(sha ? {sha} : {})}),
+  });
+}
+
+async function deleteFile(path, message){
+  let sha = null;
+  try{
+    const cur = await api(repoPath(`/contents/${path}?ref=${encodeURIComponent(gh.branch)}`));
+    sha = cur.sha;
+  }catch(e){ if(/GitHub 404/.test(e.message)) return null; throw e; }   // 既に無ければ何もしない
+  return api(repoPath(`/contents/${path}`), {
+    method:"DELETE",
+    body: JSON.stringify({message, sha, branch:gh.branch}),
+  });
+}
+
+const dispatch = (file, inputs) =>
+  api(repoPath(`/actions/workflows/${file}/dispatches`), {
+    method:"POST", body: JSON.stringify({ref:gh.branch, inputs}),
+  });
+
+// ── 無圧縮ZIPの組み立て（画像をまとめてリポジトリへ置くため）──────────────
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for(let n = 0; n < 256; n++){
+    let c = n;
+    for(let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(buf){
+  let c = 0xFFFFFFFF;
+  for(let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function makeZip(files){
+  // PNG/JPEGは既に圧縮済みなので stored（無圧縮）で十分。deflateを持ち込まずに済む
+  const te = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0;
+  for(const f of files){
+    const name = te.encode(f.name), crc = crc32(f.bytes), size = f.bytes.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+    lh.setUint16(8, 0, true); lh.setUint16(10, 0, true); lh.setUint16(12, 0, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, size, true); lh.setUint32(22, size, true);
+    lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), name, f.bytes);
+
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, 0, true); ch.setUint16(14, 0, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, size, true); ch.setUint32(24, size, true);
+    ch.setUint16(28, name.length, true); ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), name);
+    offset += 30 + name.length + size;
+  }
+  const cdSize = central.reduce((a, b) => a + b.length, 0);
+  const eo = new DataView(new ArrayBuffer(22));
+  eo.setUint32(0, 0x06054b50, true);
+  eo.setUint16(8, files.length, true); eo.setUint16(10, files.length, true);
+  eo.setUint32(12, cdSize, true); eo.setUint32(16, offset, true);
+  const all = [...parts, ...central, new Uint8Array(eo.buffer)];
+  const out = new Uint8Array(all.reduce((a, b) => a + b.length, 0));
+  let p = 0;
+  for(const a of all){ out.set(a, p); p += a.length; }
+  return out;
+}
+
+// ── 実行状況の監視 ────────────────────────────────────────────────
+const RUN_LABEL = {queued:"順番待ち", in_progress:"実行中", requested:"順番待ち", waiting:"順番待ち",
+                   pending:"順番待ち", success:"完了", failure:"失敗", cancelled:"中止",
+                   skipped:"実行されませんでした", timed_out:"時間切れ"};
+const watchers = {};
+
+async function latestRun(file, since){
+  const j = await api(repoPath(`/actions/workflows/${file}/runs?per_page=5&event=workflow_dispatch`));
+  // 押した瞬間より前の実行を拾わないよう、時刻でふるいにかける（時計のずれを1分みる）
+  return (j.workflow_runs || []).find(r => new Date(r.created_at).getTime() >= since - 60000) || null;
+}
+
+function watchRun(key, file, since, el){
+  clearInterval(watchers[key]);
+  const tick = async () => {
+    try{
+      const r = await latestRun(file, since);
+      if(!r){
+        el.innerHTML = `<div class="run queued"><span class="st">開始を待っています…</span>
+          <span>数十秒かかることがあります</span></div>`;
+        return;
+      }
+      const st = r.status === "completed" ? (r.conclusion || "completed") : r.status;
+      const min = Math.round((Date.now() - new Date(r.run_started_at || r.created_at)) / 60000);
+      el.innerHTML = `<div class="run ${esc(st)}">
+        <span class="st">${esc(RUN_LABEL[st] || st)}</span>
+        <span>${r.status === "completed" ? "所要 " : "経過 "}${min}分</span>
+        <a href="${esc(r.html_url)}" target="_blank" rel="noopener">GitHubで実行ログを見る</a>
+      </div>`;
+      if(r.status === "completed") clearInterval(watchers[key]);
+    }catch(e){
+      el.innerHTML = `<div class="run failure"><span class="st">状況を確認できません</span>
+        <span>${esc(e.message)}</span></div>`;
+    }
+  };
+  tick();
+  watchers[key] = setInterval(tick, 15000);
+}
+
+// ── 実行パネルの出し入れ ──────────────────────────────────────────
+function syncPanels(){
+  const ok = ghReady() && state.scenes.length > 0;
+  for(const [gate, panel] of [["#gate-save","#panel-save"], ["#gate-run","#panel-run"], ["#gate-pub","#panel-pub"]]){
+    $(gate).style.display = ok ? "none" : "";
+    $(panel).style.display = ok ? "" : "none";
+  }
+  if(!ok) return;
+  const stem = state.name.replace(/\.json$/i, "");
+  if(!$("#p-script").value) $("#p-script").value = `data/scripts/${stem}.json`;
+  const hasImages = state.images.length > 0;
+  $("#f-zippath").style.display = hasImages ? "" : "none";
+  if(hasImages && !$("#p-zip").value) $("#p-zip").value = `data/design/${stem}/`;
+}
+
+function videoIdOf(input){
+  const s = String(input || "").trim();
+  const m = s.match(/[?&]v=([A-Za-z0-9_-]{11})/)
+        || s.match(/youtu\.be\/([A-Za-z0-9_-]{11})/)
+        || s.match(/\/(?:shorts|live|embed)\/([A-Za-z0-9_-]{11})/);
+  if(m) return m[1];
+  return /^[A-Za-z0-9_-]{11}$/.test(s) ? s : "";
+}
+
+// ── ファイルの受け取り（ボタン・ドロップ共通）────────────────────────
+async function acceptFiles(files){
+  $("#err").style.display = "none";
+  try{
+    const imgs = [];
+    for(const f of files){
+      const name = f.name.toLowerCase();
+      if(name.endsWith(".json")){
+        const parsed = JSON.parse(await f.text());
+        if(Array.isArray(parsed)){ renderPlans(parsed); continue; }
+        state.images.forEach(i => URL.revokeObjectURL(i.url));
+        photoResetAll();      // 別の台本を開くので、前の台本のプロンプトを持ち越さない
+        state.script = parsed; state.name = f.name; state.images = [];
+        state.bgmSnapshot = null;   // 別の台本のBGM控えを持ち越さない
+        state.id = projectId(parsed, f.name);
+        state.scenes = normalize(parsed);
+        // 台本を切り替えたので、前の台本の保存先・生成対象が残っていると別の台本のZIPを
+        // 指したまま動画生成が走ってしまう（実際に前日のZIPを探しに行って失敗した実績あり）
+        $("#p-script").value = ""; $("#p-zip").value = "";
+        $("#plans").style.display = "none";
+        // 同じ案件を過去に保存していれば、画像とBGMの控えを引き継ぐ
+        const saved = await dbGet(state.id);
+        if(saved?.images?.length) state.images = toImages(saved.images);
+        if(saved?.bgmSnapshot) state.bgmSnapshot = saved.bgmSnapshot;
+      }else if(name.endsWith(".zip")){
+        const found = toImages(await readZip(await f.arrayBuffer()));
+        if(!found.length) throw new Error("ZIPに画像が入っていません");
+        imgs.push(...found);
+      }else if(ASSET_EXT.test(name)){
+        imgs.push(...toImages([{name:f.name, bytes:new Uint8Array(await f.arrayBuffer())}]));
+      }
+    }
+    if(imgs.length) state.images = imgs;
+    if(state.scenes.length){ render(); await save(); toast("読み込みました"); }
+  }catch(err){ fail(err); }
+}
+
+$("#f-json").addEventListener("change", e => acceptFiles([...e.target.files]));
+$("#f-zip").addEventListener("change", e => acceptFiles([...e.target.files]));
+
+// ドラッグ&ドロップ（画面のどこに落としてもよい）
+let dragDepth = 0;
+addEventListener("dragenter", e => {
+  e.preventDefault(); dragDepth++; $("#drop").classList.add("on");
+});
+addEventListener("dragover", e => e.preventDefault());
+addEventListener("dragleave", e => {
+  e.preventDefault(); if(--dragDepth <= 0){ dragDepth = 0; $("#drop").classList.remove("on"); }
+});
+addEventListener("drop", e => {
+  e.preventDefault(); dragDepth = 0; $("#drop").classList.remove("on");
+  const files = [...(e.dataTransfer?.files || [])];
+  if(files.length) acceptFiles(files);
+});
+
+$("#s-saved").addEventListener("change", e => { if(e.target.value) load(e.target.value); });
+$("#b-delete").addEventListener("click", async () => {
+  if(!state.id || !confirm("この案件を保存から削除します。よろしいですか？")) return;
+  await dbDel(state.id);
+  state.id = null;
+  await refreshSaved();
+  toast("削除しました");
+});
+$("#t-safe").addEventListener("change", () => {
+  document.querySelectorAll(".safe").forEach(n => n.classList.toggle("on", $("#t-safe").checked));
+});
+$("#b-gen-all").addEventListener("click", generateAllPhotos);
+$("#b-clip-all").addEventListener("click", selectAllClips);
+$("#genall-stop").addEventListener("click", e => {
+  genAllStop = true;
+  e.currentTarget.disabled = true;
+  e.currentTarget.textContent = "停止しています…";
+});
+$("#b-commit-all").addEventListener("click", commitAllPhotos);
+$("#b-commit-clips").addEventListener("click", commitAllClips);
+
+// ── プロンプトの全コピーと一括反映 ──────────────────────────────────
+// シーンIDを見出しにした素のテキストでやり取りする。
+// この形なら他のAIにそのまま貼って書き直させ、結果をそのまま戻せる
+const PROMPT_HEAD = /^===\s*(scene_\d+)\s*===$/;
+
+function promptsAsText(){
+  const lines = [
+    "# 画像生成プロンプト一覧",
+    `# ${state.script?.title || state.name}`,
+    `# 決まり: ${PROMPT_MIN_WORDS}〜${PROMPT_MAX_WORDS}語 ／ 画像に文字を入れない指示(no text)を必ず入れる`,
+    "# 「=== scene_XX ===」の行はそのまま残し、その下の英文だけ書き換えてください",
+    "",
+  ];
+  for(const s of state.scenes){
+    if(!canGenerate(s)) continue;
+    lines.push(`=== ${s.id} ===`, photoState(s).prompt.trim(), "");
+  }
+  return lines.join("\n");
+}
+
+function promptsFromText(text){
+  const found = {};
+  let cur = null, buf = [];
+  const flush = () => { if(cur && buf.join("\n").trim()) found[cur] = buf.join("\n").trim(); };
+  for(const raw of text.split(/\r?\n/)){
+    const m = raw.trim().match(PROMPT_HEAD);
+    if(m){ flush(); cur = m[1]; buf = []; continue; }
+    if(cur && !raw.startsWith("#")) buf.push(raw);
+  }
+  flush();
+  return found;
+}
+
+$("#b-prompt-copy").addEventListener("click", async () => {
+  const text = promptsAsText();
+  const n = (text.match(/^=== scene_/gm) || []).length;
+  try{
+    await navigator.clipboard.writeText(text);
+    toast(`${n}シーンぶんをコピーしました`);
+  }catch{
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], {type:"text/plain"}));
+    a.download = "prompts.txt"; a.click(); URL.revokeObjectURL(a.href);
+    toast(`クリップボードが使えないため${n}シーンぶんをファイルに保存しました`);
+  }
+});
+
+$("#b-prompt-paste").addEventListener("click", () => {
+  const text = prompt("書き換えたプロンプトを貼り付けてください（「=== scene_XX ===」の区切りごとに読み取ります）");
+  if(!text) return;
+  const found = promptsFromText(text);
+  const ids = Object.keys(found);
+  if(!ids.length){ toast("「=== scene_XX ===」の見出しが見つかりませんでした"); return; }
+
+  const byId = new Map(state.scenes.map(s => [s.id, s]));
+  const applied = [], unknown = [], warned = [];
+  for(const [id, p] of Object.entries(found)){
+    const s = byId.get(id);
+    if(!s){ unknown.push(id); continue; }
+    const c = promptCheck(p);
+    if(!c.ok) warned.push(`${id}(${c.words}語${c.noText ? "" : "・no textなし"})`);
+    photoState(s).prompt = p;
+    s.raw.visual = {...(s.raw.visual || {}), image_prompt_en: p};
+    applied.push(id);
+  }
+  const msg = [`${applied.length}シーンに反映しました`];
+  if(unknown.length) msg.push(`台本に無いID: ${unknown.join(", ")}`);
+  if(warned.length) msg.push(`規定を外れています: ${warned.join(", ")}`);
+  reflow();
+  alert(msg.join("\n"));
+});
+// 全シーンを生成画像に切り替える。段階表示とグラフはこの操作で失われるので、
+// 何が犠牲になるかを具体的な件数で示してから確認を取る
+$("#b-all-generated").addEventListener("click", () => {
+  if(!canReorder()){ toast("この形式の台本では種別を変えられません"); return; }
+  const staged = state.scenes.filter(s => Array.isArray(s.raw?.visual?.steps) && s.raw.visual.steps.length);
+  const data   = state.scenes.filter(s => s.kind === "data");
+  const already = state.scenes.filter(s => s.kind === "generated").length;
+  const lines = [
+    `${state.scenes.length}シーン全部の画の種類を「生成画像」に変えます。`,
+    already ? `（うち${already}件はすでに生成画像です）` : "",
+    "",
+  ];
+  if(staged.length) lines.push(
+    `⚠ 段階表示の${staged.length}シーンは、この操作で段階表示ではなくなります。`,
+    "  生成画像では構図を完全に一致させられないため、図が組み上がる演出は使えません。",
+  );
+  if(data.length) lines.push(
+    `⚠ グラフの${data.length}シーンは、数量を正確に描けなくなります。`,
+  );
+  if(staged.length || data.length) lines.push("");
+  lines.push("元に戻すには、各シーンの種別を選び直すか、保存せずに台本を読み込み直してください。",
+             "", "よろしいですか？");
+  if(!confirm(lines.filter(x => x !== undefined).join("\n"))) return;
+
+  for(const s of state.scenes){
+    s.raw.visual = {...(s.raw.visual || {}), kind:"generated"};
+    delete s.raw.visual.steps;
+    delete s.raw.visual.step_notes;
+  }
+  reflow();
+  toast(`${state.scenes.length}シーンを生成画像にしました。①保存 を押すまでリポジトリには反映されません`);
+});
+$("#b-design").addEventListener("click", async () => {
+  const text = designBrief();
+  try{ await navigator.clipboard.writeText(text); toast("コピーしました。Claude Design に貼ってください"); }
+  catch{ // クリップボードが使えない環境ではファイルとして落とす
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], {type:"text/plain"}));
+    a.download = "design_brief.txt"; a.click(); URL.revokeObjectURL(a.href);
+  }
+});
+// リポジトリのファイルと同じ体裁（インデント1）で書き出す。差分が読みやすくなる
+const scriptJson = () => JSON.stringify(state.script, null, 1) + "\n";
+
+$("#b-export").addEventListener("click", () => {
+  writeBack();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([scriptJson()], {type:"application/json"}));
+  a.download = state.name; a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// ── 接続設定 ─────────────────────────────────────────────────────
+function openSettings(){
+  $("#g-repo").value = `${gh.owner}/${gh.repo}`;
+  $("#g-branch").value = gh.branch;
+  $("#g-token").value = gh.token;
+  $("#g-result").innerHTML = "";
+  $("#c-base").value = cf.base;
+  $("#c-mode").value = cf.mode || "checkpoint";
+  $("#c-steps").value = cf.steps || CF_DEFAULT.steps;
+  // 一覧を取る前は、保存済みの値だけを選択肢として出しておく（取得を押すと本物に置き換わる）
+  const one = (sel, v, empty) => $(sel).innerHTML = v
+    ? `<option value="${esc(v)}">${esc(v)}</option>` : `<option value="">${esc(empty)}</option>`;
+  one("#c-ckpt",  cf.checkpoint, "「モデル一覧を取得」を押してください");
+  one("#c-unet",  cf.unet,  "「モデル一覧を取得」を押してください");
+  one("#c-clip1", cf.clip1, "「モデル一覧を取得」を押してください");
+  one("#c-clip2", cf.clip2, "「モデル一覧を取得」を押してください");
+  one("#c-vae",   cf.vae,   "「モデル一覧を取得」を押してください");
+  syncCfMode();
+  $("#c-result").innerHTML = "";
+  $("#px-key").value = px.apiKey;
+  $("#px-result").innerHTML = "";
+  $("#modal").classList.add("on");
+}
+$("#b-settings").addEventListener("click", openSettings);
+$("#g-close").addEventListener("click", () => $("#modal").classList.remove("on"));
+$("#modal").addEventListener("click", e => { if(e.target.id === "modal") $("#modal").classList.remove("on"); });
+$("#g-clear").addEventListener("click", () => {
+  gh.token = ""; ghStore(); $("#g-token").value = "";
+  $("#g-result").innerHTML = `<span style="color:var(--dim)">トークンを消しました</span>`;
+  syncPanels();
+});
+$("#g-test").addEventListener("click", async () => {
+  const out = $("#g-result");
+  const [owner, repo] = $("#g-repo").value.trim().split("/");
+  if(!owner || !repo){ out.innerHTML = `<span style="color:var(--bad)">リポジトリは オーナー名/リポジトリ名 の形で入れてください</span>`; return; }
+  Object.assign(gh, {owner, repo, branch: $("#g-branch").value.trim() || "main", token: $("#g-token").value.trim()});
+  out.textContent = "確認しています…";
+  try{
+    const me = await api("/user");
+    const r = await api(repoPath(""));
+    const wf = await api(repoPath(`/actions/workflows?per_page=100`));
+    const names = (wf.workflows || []).map(w => w.path.split("/").pop());
+    const missing = [WF_PRODUCE, WF_PUBLISH].filter(f => !names.includes(f));
+    ghStore();
+    out.innerHTML =
+      `<span style="color:var(--ok)">つながりました。${esc(me.login)} として ${esc(r.full_name)}（${esc(gh.branch)}）を操作します。</span>` +
+      (missing.length ? `<br><span style="color:var(--warn)">ただし ${esc(missing.join(", "))} が既定ブランチに見当たりません。
+        PRをマージすると使えるようになります。</span>` : "");
+    syncPanels();
+    bgmAssetsRefresh();
+  }catch(e){
+    // 401はトークンそのものが通っていない。貼り損ねか、消したトークンか、期限切れ。
+    // 中身は出さずに、長さと接頭辞だけ見せて切り分けられるようにする
+    const hint = /GitHub 401/.test(e.message)
+      ? `<br><span style="color:var(--dim)">貼られたトークンは <b>${gh.token.length}文字</b>、
+         先頭は <code>${esc(gh.token.slice(0, 11))}</code> です。<br>
+         通常は90文字以上で <code>github_pat_</code> から始まります。<br>
+         短い場合は貼り付けが途中で切れています。長さが合っているなら、
+         そのトークンは削除済みか期限切れです（作り直してください）。</span>`
+      : "";
+    out.innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>` + hint;
+  }
+});
+
+// ── ComfyUI設定 ──────────────────────────────────────────────────
+function fillSelect(sel, names, current, emptyLabel){
+  if(!names.length){
+    $(sel).innerHTML = `<option value="">${esc(emptyLabel)}</option>`;
+    return;
+  }
+  const has = names.includes(current);
+  $(sel).innerHTML = names.map(n =>
+    `<option value="${esc(n)}"${n === current ? " selected" : ""}>${esc(n)}</option>`).join("");
+  if(!has) $(sel).selectedIndex = 0;
+}
+
+function syncCfMode(){
+  const unet = $("#c-mode").value === "unet";
+  $("#c-fields-ckpt").style.display = unet ? "none" : "";
+  $("#c-fields-unet").style.display = unet ? "" : "none";
+}
+$("#c-mode").addEventListener("change", syncCfMode);
+
+$("#c-list").addEventListener("click", async () => {
+  const out = $("#c-result");
+  cf.base = $("#c-base").value.trim() || CF_DEFAULT.base;
+  out.textContent = "取得しています…";
+  try{
+    const m = await cfScanModels();
+    fillSelect("#c-ckpt",  m.ckpt, cf.checkpoint, "checkpoints フォルダは空です");
+    fillSelect("#c-unet",  m.unet, cf.unet,  "diffusion_models フォルダは空です");
+    fillSelect("#c-clip1", m.clip, cf.clip1, "clip フォルダは空です");
+    fillSelect("#c-clip2", m.clip, cf.clip2, "clip フォルダは空です");
+    fillSelect("#c-vae",   m.vae,  cf.vae,   "vae フォルダは空です");
+    const found = [];
+    if(m.ckpt.length) found.push(`全部入り ${m.ckpt.length}件`);
+    if(m.unet.length) found.push(`本体だけ ${m.unet.length}件`);
+    if(m.clip.length) found.push(`CLIP ${m.clip.length}件`);
+    if(m.vae.length)  found.push(`VAE ${m.vae.length}件`);
+    // どちらの形式が使えるかで、モードの初期選択を寄せる
+    if(!m.ckpt.length && m.unet.length){ $("#c-mode").value = "unet"; syncCfMode(); }
+    out.innerHTML = found.length
+      ? `<span style="color:var(--ok)">見つかりました: ${esc(found.join(" ／ "))}</span>`
+      : `<span style="color:var(--warn)">つながりましたが、モデルが1件も見つかりません。ComfyUIのモデルフォルダを確認してください</span>`;
+  }catch(e){
+    out.innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`;
+  }
+});
+$("#c-save").addEventListener("click", () => {
+  cf.base = $("#c-base").value.trim() || CF_DEFAULT.base;
+  cf.mode = $("#c-mode").value;
+  cf.checkpoint = $("#c-ckpt").value || cf.checkpoint;
+  cf.unet  = $("#c-unet").value;
+  cf.clip1 = $("#c-clip1").value;
+  cf.clip2 = $("#c-clip2").value;
+  cf.vae   = $("#c-vae").value;
+  const stepsVal = parseInt($("#c-steps").value, 10);
+  cf.steps = Number.isFinite(stepsVal) && stepsVal > 0 ? stepsVal : CF_DEFAULT.steps;
+  const out = $("#c-result");
+  if(cf.mode === "unet"){
+    const missing = [["本体", cf.unet], ["テキストエンコーダ1", cf.clip1],
+                     ["テキストエンコーダ2", cf.clip2], ["VAE", cf.vae]]
+      .filter(([, v]) => !v).map(([k]) => k);
+    if(missing.length){
+      out.innerHTML = `<span style="color:var(--bad)">${esc(missing.join("・"))} が選ばれていません。`
+        + `「モデル一覧を取得」を押してから選んでください</span>`;
+      return;
+    }
+  }else if(!cf.checkpoint){
+    out.innerHTML = `<span style="color:var(--bad)">チェックポイントが選ばれていません</span>`;
+    return;
+  }
+  cfStore();
+  const what = cf.mode === "unet" ? `${cf.unet} + ${cf.clip1} / ${cf.clip2} / ${cf.vae}` : cf.checkpoint;
+  out.innerHTML = `<span style="color:var(--ok)">保存しました（${esc(cf.base)} / ${esc(what)}）</span>`;
+});
+
+// ── Pixabay設定 ──────────────────────────────────────────────────
+$("#px-save").addEventListener("click", () => {
+  px.apiKey = $("#px-key").value.trim();
+  pxStore();
+  $("#px-result").innerHTML = px.apiKey
+    ? `<span style="color:var(--ok)">保存しました</span>`
+    : `<span style="color:var(--dim)">キーを消しました（検索は使えなくなります）</span>`;
+  render();   // 各シーンの検索欄の有効・無効を切り替える
+});
+
+// 保存先に「別の台本」が既に入っていないかを確かめる。#p-script は自由入力で、
+// 台本を切り替えても古いパスが残ることがあり（実際に一度、無関係の台本を上書きした）、
+// 気づかないまま保存すると保存先の台本が消える。書き込む直前に中身のtitleを突き合わせる
+async function checkSaveMismatch(scriptPath, title){
+  let cur;
+  try{
+    cur = await api(repoPath(`/contents/${GH_DIR}/${scriptPath}?ref=${encodeURIComponent(gh.branch)}`));
+  }catch(e){ if(/GitHub 404/.test(e.message)) return true; throw e; }   // 新規ファイルなら問題ない
+  if(!cur.content) return true;      // 中身が取れない（大きすぎる等）ときは判定できないので通す
+  let existing;
+  try{
+    // atob だけだとUTF-8の日本語タイトルが化けるので、バイト列に戻してから文字列化する
+    const bytes = Uint8Array.from(atob(cur.content.replace(/\n/g, "")), c => c.charCodeAt(0));
+    existing = JSON.parse(new TextDecoder("utf-8").decode(bytes));
+  }catch(e){ return true; }          // JSONとして読めなければ判定しない
+  if(!existing.title || existing.title === title) return true;
+  return confirm(
+    `保存先「${scriptPath}」には、別の台本が入っています。\n\n` +
+    `　保存先の中身　: 「${existing.title}」\n` +
+    `　今回保存する台本: 「${title}」\n\n` +
+    `このまま保存すると、保存先の台本が上書きされて失われます。よろしいですか？`
+  );
+}
+
+// ── ① リポジトリに保存 ────────────────────────────────────────────
+$("#b-save-repo").addEventListener("click", async () => {
+  const btn = $("#b-save-repo"), out = $("#save-result");
+  const scriptPath = $("#p-script").value.trim();
+  const zipPath = $("#p-zip").value.trim();
+  if(!scriptPath){ out.innerHTML = `<span style="color:var(--bad)">台本の保存先が空です</span>`; return; }
+  btn.disabled = true;
+  out.innerHTML = `<span style="color:var(--dim)">保存しています…</span>`;
+  try{
+    writeBack();
+    const title = state.script.title || state.name;
+    if(!(await checkSaveMismatch(scriptPath, title))){
+      out.innerHTML = `<span style="color:var(--dim)">保存を中止しました</span>`;
+      return;
+    }
+    await putFile(`${GH_DIR}/${scriptPath}`,
+      new TextEncoder().encode(scriptJson()),
+      `台本: ${title} をコンソールから更新`);
+    const done = [`台本 ${scriptPath}`];
+
+    if(state.images.length && zipPath){
+      // 動画クリップが入ると1個のZIPにまとめて保存するやり方はGitHubのAPI上限
+      // （実測で20MB台から失敗することがある）にすぐ触れるため、1ファイルずつ
+      // 個別にコミットする。フォルダはproduce_longform.py側が丸ごと読む
+      // （load_design_assets、ZIPと同じ規則でシーンIDと突き合わせる）
+      const dir = zipPath.replace(/\.zip$/i, "").replace(/\/?$/, "");
+      for(const [idx, img] of state.images.entries()){
+        if(img.bytes.length > 50 * 1024 * 1024)
+          throw new Error(`${img.name}が${(img.bytes.length/1048576).toFixed(0)}MBあります。`
+            + `1ファイル50MBを超えるものはGitHubに置けません。解像度を落としてください`);
+        out.innerHTML = `<span style="color:var(--dim)">素材を保存しています…`
+          + ` (${idx + 1}/${state.images.length}) ${esc(img.name)}</span>`;
+        await putFile(`${GH_DIR}/${dir}/${img.name}`, img.bytes,
+          `design: ${title} の画像をコンソールから更新`);
+      }
+      done.push(`素材フォルダ ${dir}/（${state.images.length}件・1ファイルずつコミット）`);
+    }
+    out.innerHTML = `<span style="color:var(--ok)">保存しました<br>${done.map(esc).join("<br>")}</span>`;
+    toast("リポジトリに保存しました");
+  }catch(e){
+    out.innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`;
+  }finally{ btn.disabled = false; }
+});
+
+// ── ② 動画を生成 ─────────────────────────────────────────────────
+const MODE_TEXT = {full:"動画を作り、完成したら限定公開でアップロードします",
+                   noupload:"動画を作りますが、アップロードはしません",
+                   slides:"画だけを作ります（音声・動画は作りません）"};
+$("#b-run").addEventListener("click", async () => {
+  const out = $("#run-status");
+  const scriptPath = $("#p-script").value.trim();
+  const mode = $("#p-mode").value;
+  if(!scriptPath){ out.innerHTML = `<div class="run failure"><span class="st">台本の保存先が空です</span></div>`; return; }
+  if(!confirm(`GitHub Actions で生成を開始します。\n\n台本: ${scriptPath}\n${MODE_TEXT[mode]}\n\n` +
+              `※ この台本は先に①で保存しておいてください。保存していない直しは反映されません。\n\nよろしいですか？`)) return;
+  try{
+    const since = Date.now();
+    await dispatch(WF_PRODUCE, {
+      script: scriptPath,
+      images: (state.images.length && $("#p-zip").value.trim()) ? $("#p-zip").value.trim() : "",
+      upload: String(mode === "full"),
+      slides_only: String(mode === "slides"),
+    });
+    toast("生成を開始しました");
+    watchRun("produce", WF_PRODUCE, since, out);
+  }catch(e){
+    out.innerHTML = `<div class="run failure"><span class="st">開始できませんでした</span><span>${esc(e.message)}</span></div>`;
+  }
+});
+
+// ── サムネイル ───────────────────────────────────────────────────
+// ブラウザ内で合成する。背景は「無地／生成した画像／スライド」から選べる。
+// 縮小表示でも読めるよう、文字は太く大きく、影を敷いて背景から浮かせる
+const TH_W = 1280, TH_H = 720;
+
+function thBackgrounds(){
+  const out = [{value:"plain", label:"無地（ブランド色のグラデーション）"}];
+  for(const s of state.scenes){
+    const g = photoGen[s.id];
+    if(g && g.url) out.push({value:`gen:${s.id}`, label:`生成画像 ${s.id}`});
+    else if(s.image && !s.image.video) out.push({value:`img:${s.id}`, label:`素材 ${s.id}`});
+    else out.push({value:`slide:${s.id}`, label:`スライド ${s.id}（${KIND_LABEL[s.kind] || s.kind}）`});
+  }
+  return out;
+}
+
+function thSyncBg(){
+  const sel = $("#th-bg"), keep = sel.value;
+  const opts = thBackgrounds();
+  sel.innerHTML = opts.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("");
+  if(opts.some(o => o.value === keep)) sel.value = keep;
+}
+
+// 背景1枚を用意する。スライドはiframeで描いたものを画像にできないので、
+// 同じ配色の下地に見出しだけを写して代わりにする
+function thLoadBackground(kind, id){
+  return new Promise(resolve => {
+    if(kind === "gen" || kind === "img"){
+      const g = photoGen[id];
+      const url = (g && g.url) || state.images.find(i => i.stem.toLowerCase() === id.toLowerCase())?.url;
+      if(!url) return resolve(null);
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => resolve(null);
+      im.src = url;
+      return;
+    }
+    resolve(null);
+  });
+}
+
+function thDrawText(ctx, main, sub, pos){
+  const pad = 72;
+  ctx.textAlign = pos === "left" ? "left" : "center";
+  const x = pos === "left" ? pad : TH_W / 2;
+  // 1行あたりの文字数から字の大きさを決める（詰め込みすぎを防ぐ）
+  const size = main.length <= 8 ? 132 : main.length <= 12 ? 104 : main.length <= 16 ? 84 : 68;
+  const baseY = pos === "bottom" ? TH_H - pad - (sub ? 96 : 32) : TH_H / 2 - (sub ? 28 : 0);
+
+  ctx.font = `900 ${size}px system-ui, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif`;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "rgba(0,0,0,.85)";
+  ctx.lineWidth = size * 0.18;          // 縁取りで背景から確実に浮かせる
+  ctx.strokeText(main, x, baseY);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(main, x, baseY);
+
+  if(sub){
+    const s2 = Math.round(size * 0.42);
+    ctx.font = `700 ${s2}px system-ui, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif`;
+    ctx.lineWidth = s2 * 0.18;
+    ctx.strokeText(sub, x, baseY + size * 0.82);
+    ctx.fillStyle = BRAND.accent;
+    ctx.fillText(sub, x, baseY + size * 0.82);
+  }
+}
+
+async function thRender(){
+  const c = $("#th-canvas"), ctx = c.getContext("2d");
+  const [kind, id] = ($("#th-bg").value || "plain").split(":");
+
+  const bg = await thLoadBackground(kind, id);
+  if(bg){
+    // 縦横比を保ったまま、はみ出すぶんを切って埋める
+    const r = Math.max(TH_W / bg.width, TH_H / bg.height);
+    const w = bg.width * r, h = bg.height * r;
+    ctx.drawImage(bg, (TH_W - w) / 2, (TH_H - h) / 2, w, h);
+    // 文字を読ませるため、全体をわずかに沈める
+    ctx.fillStyle = "rgba(0,0,0,.34)";
+    ctx.fillRect(0, 0, TH_W, TH_H);
+  }else{
+    const grad = ctx.createLinearGradient(0, 0, TH_W, TH_H);
+    grad.addColorStop(0, BRAND.bg_top);
+    grad.addColorStop(1, BRAND.bg_bottom);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, TH_W, TH_H);
+    // 中央にうっすらアクセント色の光を置いて、のっぺりさせない
+    const glow = ctx.createRadialGradient(TH_W/2, TH_H*0.36, 0, TH_W/2, TH_H*0.36, TH_W*0.6);
+    glow.addColorStop(0, BRAND.accent + "33");
+    glow.addColorStop(1, "transparent");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, TH_W, TH_H);
+  }
+  // ブランドの縦棒（本編のスライドと揃える）
+  ctx.fillStyle = BRAND.accent;
+  ctx.fillRect(64, 56, 8, 40);
+
+  thDrawText(ctx, $("#th-main").value.trim() || (state.script?.thumbnail_text || ""),
+             $("#th-sub").value.trim(), $("#th-pos").value);
+}
+
+const thCanvasBytes = () => new Promise(res =>
+  $("#th-canvas").toBlob(b => b.arrayBuffer().then(a => res(new Uint8Array(a))), "image/png"));
+
+for(const id of ["#th-bg", "#th-main", "#th-sub", "#th-pos"]){
+  $(id).addEventListener("input", thRender);
+  $(id).addEventListener("change", thRender);
+}
+
+$("#th-download").addEventListener("click", async () => {
+  const a = document.createElement("a");
+  a.href = $("#th-canvas").toDataURL("image/png");
+  a.download = `${(state.name || "thumbnail").replace(/\.json$/i, "")}_thumb.png`;
+  a.click();
+});
+
+$("#th-commit").addEventListener("click", async () => {
+  const out = $("#th-status");
+  if(!ghReady()){ out.innerHTML = `<span style="color:var(--bad)">先に「⚙ 接続設定」でGitHubにつないでください</span>`; return; }
+  const stem = (state.name || "thumbnail").replace(/\.json$/i, "");
+  const path = `${GH_DIR}/assets/images/thumbnails/${stem}.png`;
+  out.innerHTML = `<span style="color:var(--dim)">コミットしています…</span>`;
+  try{
+    await putFile(path, await thCanvasBytes(), `サムネイル: ${stem} をコンソールから更新`);
+    out.innerHTML = `<span style="color:var(--ok)">${esc(path.replace(GH_DIR + "/", ""))} にコミットしました</span>`;
+    toast("サムネイルをコミットしました");
+  }catch(e){
+    out.innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`;
+  }
+});
+
+// ── ③ 予約投稿 ───────────────────────────────────────────────────
+// 日時は手入力だと書式を間違えやすいので選択式にする。
+// この端末の時計を日本時間とみなす（運用は国内のみ）
+const PUBLISH_DAYS = 60;      // 何日先まで選べるようにするか
+const WDAY = ["日","月","火","水","木","金","土"];
+
+function fillPublishDate(){
+  const sel = $("#p-date");
+  const opts = [`<option value="">おまかせ（次に空いている19時）</option>`];
+  const now = new Date();
+  for(let i = 0; i <= PUBLISH_DAYS; i++){
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    const v = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const label = `${d.getMonth()+1}月${d.getDate()}日(${WDAY[d.getDay()]})`
+                + (i === 0 ? "　今日" : i === 1 ? "　明日" : "");
+    opts.push(`<option value="${v}">${label}</option>`);
+  }
+  sel.innerHTML = opts.join("");
+
+  // 時刻は30分刻み。既定はチャンネルの投稿枠に合わせて19:00
+  const t = [];
+  for(let h = 0; h < 24; h++) for(const m of ["00","30"]){
+    const v = `${String(h).padStart(2,"0")}:${m}`;
+    t.push(`<option value="${v}"${v === "19:00" ? " selected" : ""}>${v}</option>`);
+  }
+  $("#p-time").innerHTML = t.join("");
+}
+
+$("#b-publish").addEventListener("click", async () => {
+  const out = $("#pub-status");
+  const id = videoIdOf($("#p-video").value);
+  if(!id){ out.innerHTML = `<div class="run failure"><span class="st">動画のURLまたはIDを入れてください</span></div>`; return; }
+  const day = $("#p-date").value, time = $("#p-time").value || "19:00";
+  const when = day ? `${day}T${time}:00+09:00` : "";
+  if(!confirm(`予約公開を設定します。\n\n動画: ${id}\n公開日時: ${when || "次に空いている19時の枠"}\n\nよろしいですか？`)) return;
+  try{
+    const since = Date.now();
+    await dispatch(WF_PUBLISH, {video_id:id, publish_at:when, track:"long"});
+    toast("予約を実行しました");
+    watchRun("publish", WF_PUBLISH, since, out);
+  }catch(e){
+    out.innerHTML = `<div class="run failure"><span class="st">予約できませんでした</span><span>${esc(e.message)}</span></div>`;
+  }
+});
+
+ghLoad();
+cfLoad();
+pxLoad();
+fillPublishDate();
+refreshSaved();
+bgmAssetsRefresh();
+</script>
+</body>
+</html>
