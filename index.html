@@ -364,6 +364,7 @@ select{font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px
       <div class="colmain">
         <div class="scenes-toolbar" id="scenes-toolbar">
           <button class="primary" id="b-gen-all" title="写真・生成画像のシーンだけをまとめて生成します。図解・グラフ・文字スライドは対象外です">写真を一括生成（ComfyUI）</button>
+          <button class="primary" id="b-photo-px-all" title="写真・生成画像のシーンについて、prompt_enから作った検索語でPixabayを検索し、いちばん合いそうな写真を自動で仮選択します（同じ写真は複数シーンで使いません）">写真を一括選択（Pixabay）</button>
           <button class="primary" id="b-clip-all" title="動画クリップのシーン（clip_motion指定のものを除く）について、prompt_enから作った検索語でPixabayを検索し、いちばん合いそうな動画を自動で仮選択します">動画クリップを一括選択（Pixabay）</button>
           <button id="b-commit-all" title="ComfyUIで生成済みだが、まだリポジトリに反映していない写真をまとめてコミットします">写真を一括コミット</button>
           <button id="b-commit-clips" title="Pixabayで選択・手動アップロード済みだが、まだリポジトリに反映していない動画クリップをまとめてコミットします">動画クリップを一括コミット</button>
@@ -371,6 +372,7 @@ select{font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px
           <button id="b-prompt-copy" title="全シーンのプロンプトをまとめてコピーします">プロンプトを全コピー</button>
           <button id="b-prompt-paste" title="書き換えたプロンプトを貼り付けて一括で反映します">貼り付けて一括反映</button>
           <span id="gen-all-status" style="font-size:12px;color:var(--dim)"></span>
+          <span id="photo-px-all-status" style="font-size:12px;color:var(--dim)"></span>
           <span id="clip-all-status" style="font-size:12px;color:var(--dim)"></span>
           <span id="commit-all-status" style="font-size:12px;color:var(--dim)"></span>
           <span id="commit-clips-status" style="font-size:12px;color:var(--dim)"></span>
@@ -1568,6 +1570,9 @@ async function selectAllClips(){
   genAll = {ids: targets.map(s => s.id), ok:new Set(), fail:new Set(),
             cur:null, t0:Date.now(), times:[], done:false, stopped:false, verb:"検索"};
   const tick = setInterval(genAllRender, 1000);
+  // 同じ動画クリップが複数シーンに重ならないよう、既に使われている動画IDを覚えておく
+  // （このシーンだけでなく、既に別シーンで採用済み・コミット済みのぶんも含む）
+  const usedHitIds = new Set(state.scenes.map(s2 => photoState(s2).pxHitId).filter(Boolean));
   for(const s of targets){
     if(genAllStop){ genAll.stopped = true; break; }
     const g = photoState(s);
@@ -1586,12 +1591,19 @@ async function selectAllClips(){
       const hits = await pxSearchVideo(query);
       g.cvResults = hits;
       if(!hits.length) throw new Error(`「${query}」で見つかりませんでした`);
-      const hit = hits[0];   // Pixabayが返す並び（一致度・人気）の先頭をふさわしい候補とみなす
+      // Pixabayが返す並び（一致度・人気）の先頭から、まだ他のシーンで使っていない動画を選ぶ。
+      // 6件全部が使用済みだったときだけ、やむを得ず先頭（重複）を使う
+      let hit = hits.find(h => !usedHitIds.has(h.id));
+      const dup = !hit;
+      if(!hit) hit = hits[0];
+      usedHitIds.add(hit.id);
+      g.pxHitId = hit.id;
       const {bytes} = await pxFetchBestVideo(hit);
       if(g.url) URL.revokeObjectURL(g.url);
       g.bytes = bytes; g.url = URL.createObjectURL(new Blob([bytes], {type:"video/mp4"}));
       g.source = "pixabay-video"; g.isVideo = true;
-      g.msg = `Pixabayの動画を自動選択しました（${esc(hit.user)}／「${esc(query)}」で検索）`;
+      g.msg = `Pixabayの動画を自動選択しました（${esc(hit.user)}／「${esc(query)}」で検索）`
+        + (dup ? "※候補が他シーンと重複していたため、やむを得ず同じ動画になっています" : "");
       g.ok = true; g.cvOk = true; g.cvMsg = "";
       genAll.ok.add(s.id);
       genAll.times.push((Date.now() - started) / 1000);
@@ -1600,6 +1612,73 @@ async function selectAllClips(){
       genAll.fail.add(s.id);
     }
     finally{ g.cvBusy = false; }
+  }
+  clearInterval(tick);
+  genAllBusy = false; genAllStop = false;
+  genAll.cur = null; genAll.done = true;
+  render();
+  genAllRender();
+  toast(genAll.stopped
+    ? `一括検索を停止しました（${genAll.ok.size + genAll.fail.size}/${genAll.ids.length}件で中断）`
+    : genAll.fail.size
+      ? `一括検索が終わりました（失敗 ${genAll.fail.size}件）。失敗したシーンは個別に検索し直せます`
+      : "一括検索が終わりました。プレビューを確認して、良ければ個別に「採用してコミット」してください");
+}
+
+// 写真・生成画像のシーンについて、prompt_enから作った検索語でPixabayを順に検索し、
+// 最初に見つかった写真を仮選択する。考え方はselectAllClips（動画クリップ版）と同じ
+async function selectAllPhotos(){
+  const targets = state.scenes.filter(bulkTarget);
+  if(!targets.length) return;
+  if(!pxReady()){ toast("先に「⚙ 接続設定」でPixabayのAPIキーを入れてください"); return; }
+  const kinds = [...new Set(targets.map(s => KIND_LABEL[s.kind] || s.kind))].join("・");
+  if(!confirm(`${kinds}のシーン${targets.length}件について、Pixabayでいちばん合いそうな写真を`
+    + `自動検索して仮選択します（確定はしません）。\n\n検索語はprompt_enから自動で作ります。`
+    + `結果はあとで確認・差し替えできます。よろしいですか？`)) return;
+  genAllBusy = true; genAllStop = false;
+  genAll = {ids: targets.map(s => s.id), ok:new Set(), fail:new Set(),
+            cur:null, t0:Date.now(), times:[], done:false, stopped:false, verb:"検索"};
+  const tick = setInterval(genAllRender, 1000);
+  // 同じ写真が複数シーンに重ならないよう、既に使われている素材IDを覚えておく
+  // （動画クリップの一括選択で使ったIDとは別の名前空間だが、フィールドは共用で問題ない）
+  const usedHitIds = new Set(state.scenes.map(s2 => photoState(s2).pxHitId).filter(Boolean));
+  for(const s of targets){
+    if(genAllStop){ genAll.stopped = true; break; }
+    const g = photoState(s);
+    g.pxBusy = true; g.pxMsg = "";
+    genAll.cur = s.id;
+    render();
+    genAllRender();
+    const started = Date.now();
+    try{
+      const cand = bestCandidate(s);
+      const query = (cand ? cand.en : (g.pxQuery || pxDefaultQuery(s))).trim();
+      if(!query) throw new Error("ナレーションからも prompt_en からも検索語を作れませんでした");
+      g.pxQuery = query;
+      const hits = await pxSearch(query);
+      g.pxResults = hits;
+      if(!hits.length) throw new Error(`「${query}」で見つかりませんでした`);
+      // Pixabayが返す並び（一致度・人気）の先頭から、まだ他のシーンで使っていない写真を選ぶ。
+      // 候補全部が使用済みだったときだけ、やむを得ず先頭（重複）を使う
+      let hit = hits.find(h => !usedHitIds.has(h.id));
+      const dup = !hit;
+      if(!hit) hit = hits[0];
+      usedHitIds.add(hit.id);
+      g.pxHitId = hit.id;
+      const bytes = await pxFetchImage(hit.largeImageURL || hit.webformatURL);
+      if(g.url) URL.revokeObjectURL(g.url);
+      g.bytes = bytes; g.url = URL.createObjectURL(new Blob([bytes], {type:"image/jpeg"}));
+      g.source = "pixabay"; g.isVideo = false;
+      g.msg = `Pixabayの写真を自動選択しました（${esc(hit.user)}／「${esc(query)}」で検索）`
+        + (dup ? "※候補が他シーンと重複していたため、やむを得ず同じ写真になっています" : "");
+      g.ok = true; g.pxOk = true; g.pxMsg = "";
+      genAll.ok.add(s.id);
+      genAll.times.push((Date.now() - started) / 1000);
+    }catch(err){
+      g.msg = err.message; g.ok = false; g.pxMsg = err.message; g.pxOk = false;
+      genAll.fail.add(s.id);
+    }
+    finally{ g.pxBusy = false; }
   }
   clearInterval(tick);
   genAllBusy = false; genAllStop = false;
@@ -2249,6 +2328,7 @@ function render(){
   $("#scenes-toolbar").style.display = "flex";
   $("#b-gen-all").disabled = genAllBusy || !photoTargets.length;
   $("#b-gen-all").textContent = `写真を一括生成（${photoBackendLabel()}）`;
+  $("#b-photo-px-all").disabled = genAllBusy || !photoTargets.length || !pxReady();
   $("#b-clip-all").disabled = genAllBusy || !clipTargets.length;
   $("#b-commit-all").disabled = commitAllBusy || !commitTargets.length;
   $("#b-commit-clips").disabled = commitClipsBusy || !commitClipTargets.length;
@@ -2258,6 +2338,9 @@ function render(){
       ? `写真・生成画像のシーン 未生成 ${photoTargets.length}/${photoScenes.length}件`
       : (photoScenes.length ? `写真・生成画像のシーン ${photoScenes.length}件とも生成済み`
                             : "写真・生成画像のシーンはありません");
+    $("#photo-px-all-status").textContent = pxReady()
+      ? (photoTargets.length ? `Pixabayでの一括選択も同じ${photoTargets.length}件が対象です` : "")
+      : "Pixabayは「⚙ 接続設定」でAPIキーを入れると使えます";
     $("#clip-all-status").textContent = clipTargets.length
       ? `動画クリップのシーン 未選択 ${clipTargets.length}/${clipScenes.length}件`
       : (clipScenes.length ? `動画クリップのシーン ${clipScenes.length}件とも選択済み` : "");
@@ -2666,7 +2749,7 @@ function render(){
       const bytes = await pxFetchImage(hit.largeImageURL || hit.webformatURL);
       if(g.url) URL.revokeObjectURL(g.url);
       g.bytes = bytes; g.url = URL.createObjectURL(new Blob([bytes], {type:"image/jpeg"}));
-      g.source = "pixabay"; g.isVideo = false;
+      g.source = "pixabay"; g.isVideo = false; g.pxHitId = hit.id;
       g.msg = `Pixabayの写真を選びました（${esc(hit.user)} / pixabay.com、帰属表示なしで商用利用可）`;
       g.ok = true; g.pxMsg = ""; g.pxOk = true;
     }catch(err){ g.pxMsg = err.message; g.pxOk = false; }
@@ -2711,7 +2794,7 @@ function render(){
       const {bytes} = await pxFetchBestVideo(hit);
       if(g.url) URL.revokeObjectURL(g.url);
       g.bytes = bytes; g.url = URL.createObjectURL(new Blob([bytes], {type:"video/mp4"}));
-      g.source = "pixabay-video"; g.isVideo = true;
+      g.source = "pixabay-video"; g.isVideo = true; g.pxHitId = hit.id;
       g.msg = `Pixabayの動画を選びました（${esc(hit.user)} / pixabay.com、帰属表示なしで商用利用可）`;
       g.ok = true; g.cvMsg = ""; g.cvOk = true;
     }catch(err){ g.cvMsg = err.message; g.cvOk = false; }
@@ -3162,6 +3245,7 @@ $("#t-safe").addEventListener("change", () => {
   document.querySelectorAll(".safe").forEach(n => n.classList.toggle("on", $("#t-safe").checked));
 });
 $("#b-gen-all").addEventListener("click", generateAllPhotos);
+$("#b-photo-px-all").addEventListener("click", selectAllPhotos);
 $("#b-clip-all").addEventListener("click", selectAllClips);
 $("#genall-stop").addEventListener("click", e => {
   genAllStop = true;
