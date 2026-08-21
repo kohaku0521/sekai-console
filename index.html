@@ -993,14 +993,17 @@ const gm = {...GM_DEFAULT};
 function gmLoad(){ try{ Object.assign(gm, JSON.parse(localStorage.getItem("tas.gemini") || "{}")); }catch{} }
 function gmStore(){ localStorage.setItem("tas.gemini", JSON.stringify(gm)); }
 
+// Imagenの:predictエンドポイントはAPIキー認証のGemini Developer APIでは
+// 提供されておらず（Vertex AI側の話と混同しやすい）、404になる（実際に確認した）。
+// 画像生成は generateContent 経由の gemini-2.5-flash-image（通称 Nano Banana）を使う
 async function geminiGenerate(prompt, sceneId){
   if(!gm.apiKey) throw new Error("Gemini APIキーが未設定です。「⚙ 接続設定」で入力してください");
   cfSetProgress(sceneId, 20, "Geminiに送信しています…");
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict`
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent`
             + `?key=${encodeURIComponent(gm.apiKey)}`;
   const body = JSON.stringify({
-    instances: [{prompt}],
-    parameters: {sampleCount: 1, aspectRatio: "16:9"},
+    contents: [{parts: [{text: prompt}]}],
+    generationConfig: {responseModalities: ["IMAGE"], imageConfig: {aspectRatio: "16:9"}},
   });
   let r;
   try{
@@ -1015,10 +1018,17 @@ async function geminiGenerate(prompt, sceneId){
     throw new Error(`Gemini ${r.status}: ${detail.slice(0, 200) || r.statusText}`);
   }
   const j = await r.json();
-  const b64 = j.predictions?.[0]?.bytesBase64Encoded;
-  if(!b64) throw new Error("Geminiが画像を返しませんでした（安全フィルタで弾かれた可能性があります）");
+  const parts = j.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find(p => p.inlineData?.data);
+  if(!imgPart){
+    const blocked = j.promptFeedback?.blockReason;
+    const textPart = parts.find(p => p.text)?.text;
+    throw new Error(blocked
+      ? `Geminiが安全フィルタで生成を拒否しました（${blocked}）。主題の書き方を変えてください`
+      : `Geminiが画像を返しませんでした${textPart ? `：${textPart.slice(0, 150)}` : ""}`);
+  }
   cfSetProgress(sceneId, 100, "画像を受け取っています…");
-  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  return Uint8Array.from(atob(imgPart.inlineData.data), c => c.charCodeAt(0));
 }
 
 // ComfyUIとGeminiのどちらで写真を作るかを選ぶ。Geminiのキーが設定されていれば
