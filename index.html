@@ -1228,10 +1228,24 @@ async function pxSearch(query){
   return json.hits || [];
 }
 
-async function pxFetchImage(url){
-  const r = await fetch(url);
-  if(!r.ok) throw new Error(`画像の取得に失敗しました（${r.status}）`);
-  return new Uint8Array(await r.arrayBuffer());
+// スマホの回線は不安定なことがあり、検索(JSON取得)は成功しても
+// 実ファイル(特に数MB〜のクリップ動画)のダウンロード中に fetch 自体が
+// 例外を投げて失敗することがある（PCの有線・安定回線ではまず起きない）。
+// これを素の "Failed to fetch" のまま失敗扱いにせず、短い間隔で数回だけ再試行する
+async function pxFetchImage(url, retries = 2){
+  for(let attempt = 0; ; attempt++){
+    let r;
+    try{ r = await fetch(url); }
+    catch{
+      if(attempt < retries){ await new Promise(res => setTimeout(res, 900 * (attempt + 1))); continue; }
+      throw new Error("ファイルの取得に失敗しました（通信が不安定な可能性があります。電波の良い場所でもう一度お試しください）");
+    }
+    if(!r.ok){
+      if(attempt < retries){ await new Promise(res => setTimeout(res, 900 * (attempt + 1))); continue; }
+      throw new Error(`ファイルの取得に失敗しました（${r.status}）`);
+    }
+    return new Uint8Array(await r.arrayBuffer());
+  }
 }
 
 // Pixabayの動画検索（kind=clip用）。画像検索と同じAPIキー・エラー処理を使う
@@ -1253,11 +1267,19 @@ async function pxSearchVideo(query){
   return json.hits || [];
 }
 
-// large→medium→small→tinyの順で、そのクリップにある最良の画質を選ぶ
-// （動画は必ず1920x1080相当へスケールされるので、元が高解像度なほど綺麗に縮まる）
-function pxBestVideo(hit){
+// large→tinyの順で、ダウンロードできたファイルを採用する。
+// large(数MB〜)はスマホの弱い回線だと取得中に失敗しやすいので、
+// pxFetchImage自体のリトライも尽きたら、より軽いサイズへ自動で切り替える
+async function pxFetchBestVideo(hit){
   const v = hit.videos || {};
-  return v.large || v.medium || v.small || v.tiny || null;
+  const tiers = [v.large, v.medium, v.small, v.tiny].filter(Boolean);
+  if(!tiers.length) throw new Error("動画データを取得できませんでした");
+  let lastErr;
+  for(const tier of tiers){
+    try{ return {bytes: await pxFetchImage(tier.url), picked: tier}; }
+    catch(err){ lastErr = err; }
+  }
+  throw lastErr;
 }
 
 function cfWorkflow(prompt, negative, seed){
@@ -1565,9 +1587,7 @@ async function selectAllClips(){
       g.cvResults = hits;
       if(!hits.length) throw new Error(`「${query}」で見つかりませんでした`);
       const hit = hits[0];   // Pixabayが返す並び（一致度・人気）の先頭をふさわしい候補とみなす
-      const best = pxBestVideo(hit);
-      if(!best) throw new Error("動画データを取得できませんでした");
-      const bytes = await pxFetchImage(best.url);
+      const {bytes} = await pxFetchBestVideo(hit);
       if(g.url) URL.revokeObjectURL(g.url);
       g.bytes = bytes; g.url = URL.createObjectURL(new Blob([bytes], {type:"video/mp4"}));
       g.source = "pixabay-video"; g.isVideo = true;
@@ -2685,11 +2705,10 @@ function render(){
     if(!s) return;
     const g = photoState(s);
     const hit = (g.cvResults || []).find(h => String(h.id) === btn.dataset.hit);
-    const best = hit && pxBestVideo(hit);
-    if(!best) return;
+    if(!hit) return;
     g.cvBusy = true; g.cvMsg = "動画を取得しています…"; render();
     try{
-      const bytes = await pxFetchImage(best.url);   // 汎用のバイト取得。画像専用の名前だが動画でも使える
+      const {bytes} = await pxFetchBestVideo(hit);
       if(g.url) URL.revokeObjectURL(g.url);
       g.bytes = bytes; g.url = URL.createObjectURL(new Blob([bytes], {type:"video/mp4"}));
       g.source = "pixabay-video"; g.isVideo = true;
