@@ -290,13 +290,16 @@ select{font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px
     <div id="c-result" style="margin-top:8px;font-size:12px"></div>
 
     <div class="field" style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-      <label>Gemini（クラウドで写真生成）</label>
+      <label>Gemini（クラウドで写真生成・任意）</label>
     </div>
     <div class="note">
-      スマホなど、社長のPCのComfyUIに届かない環境向け。<b style="color:var(--text)">ここにキーを入れると、
-      写真の生成はComfyUIではなくこちらが使われるようになります</b>（キーが空ならComfyUIのまま）。
+      <b style="color:var(--text)">設定は必須ではありません。</b>
+      スマホなど社長のPCのComfyUIに届かない環境では、キーを入れなくても
+      自動で無料のPollinationsに切り替わって写真を作れます。
+      Geminiは、そちらより画質を安定させたい場合の有料の選択肢です
+      （キーを入れるとこちらが優先されます）。
       キーは <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>
-      で無料取得できます（生成量によっては従量課金）。
+      で取得できますが、無料枠だけではほぼ使えず、支払い情報の登録が必要です。
     </div>
     <div class="field">
       <label>Gemini APIキー</label>
@@ -1031,13 +1034,39 @@ async function geminiGenerate(prompt, sceneId){
   return Uint8Array.from(atob(imgPart.inlineData.data), c => c.charCodeAt(0));
 }
 
-// ComfyUIとGeminiのどちらで写真を作るかを選ぶ。Geminiのキーが設定されていれば
-// そちらを優先する（スマホからは社長のPCのComfyUIに届かないため）
+// Pollinations（登録・APIキー不要、完全無料の画像生成）。
+// Geminiが従量課金を伴う（無料枠だけだとほぼ使えない）ため、キー不要で
+// お金のかからないこちらを既定のクラウド代替にした
+async function pollinationsGenerate(prompt, sceneId){
+  cfSetProgress(sceneId, 20, "Pollinationsに送信しています…");
+  const seed = Math.floor(Math.random() * 2**31);
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}`
+            + `?width=1920&height=1080&model=flux&nologo=true&safe=true&seed=${seed}`;
+  let r;
+  try{
+    r = await fetch(url);
+  }catch(e){
+    throw new Error(`Pollinationsに接続できません（${e.message}）。回線を確認してください`);
+  }
+  if(!r.ok) throw new Error(`Pollinations ${r.status}: ${r.statusText}`);
+  cfSetProgress(sceneId, 100, "画像を受け取っています…");
+  return new Uint8Array(await r.arrayBuffer());
+}
+
+// 使うバックエンドを選ぶ。Geminiのキーが設定されていればそちらを優先し（有料だが
+// 画質が安定する）、無ければまずComfyUI（社長のPC）を試す。ComfyUIに接続できない
+// 場合（スマホなど）だけ、キー不要で無料のPollinationsに自動で切り替える。
+// ComfyUI側の設定ミス（モデル未選択など、接続はできている場合のエラー）はそのまま伝える
 async function photoGenerate(prompt, seed, sceneId){
   if(gm.apiKey) return {bytes: await geminiGenerate(prompt, sceneId), source: "gemini"};
-  return {bytes: await cfGenerate(prompt, seed, sceneId), source: "comfyui"};
+  try{
+    return {bytes: await cfGenerate(prompt, seed, sceneId), source: "comfyui"};
+  }catch(err){
+    if(!/ComfyUIに接続できません/.test(err.message)) throw err;
+    return {bytes: await pollinationsGenerate(prompt, sceneId), source: "pollinations"};
+  }
 }
-const photoBackendLabel = () => gm.apiKey ? "Gemini" : "ComfyUI";
+const photoBackendLabel = () => gm.apiKey ? "Gemini" : "ComfyUI（つながらなければPollinationsへ自動切替）";
 
 // ── Pixabay（実写素材の検索）──────────────────────────────────────
 const PX_DEFAULT = {apiKey:""};
@@ -1676,8 +1705,9 @@ function photoGenHtml(s, i){
   if(!c.ascii) miss.push("日本語が残っています。英語にしてください");
   const backend = photoBackendLabel();
   const backendNote = gm.apiKey
-    ? "Gemini（クラウド）に写真を作らせます。スマホからでも使えます"
-    : "この画面から直接、社長のPCのComfyUIに写真を作らせます";
+    ? "Gemini（クラウド・従量課金）に写真を作らせます。スマホからでも使えます"
+    : "社長のPCのComfyUIに頼みます。つながらない（スマホ等）ときは、"
+      + "登録不要で無料のPollinations（クラウド）に自動で切り替わります";
   return `<div class="photogen">
     <div class="row"><b>${esc(backend)}</b><span>${backendNote}</span></div>
     ${candidateHtml(s, "cand-photo")}
@@ -2520,6 +2550,7 @@ function render(){
                 : g.source === "pixabay-video" ? "Pixabayの動画から選ぶ"
                 : g.source === "upload" ? "手動アップロード"
                 : g.source === "gemini" ? "Geminiで生成する"
+                : g.source === "pollinations" ? "Pollinationsで生成する"
                 : "ComfyUIで生成する";
       await putFile(`${GH_DIR}/${dir}/${s.id}.${ext}`, g.bytes,
         `${s.id}の${g.isVideo ? "動画クリップ" : "写真"}を${via}（コンソールから）`);
