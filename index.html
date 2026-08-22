@@ -1727,11 +1727,19 @@ async function commitAllStaged(targets, statusElId, busySetter){
       state.images = state.images.filter(x => x.stem.toLowerCase() !== s.id.toLowerCase())
         .concat({name:`${s.id}.${ext}`, stem:s.id, bytes:g.bytes, video:!!g.isVideo, url:g.url});
       g.msg = `${dir}/${s.id}.${ext} にコミットしました`; g.ok = true;
+      // 1件ごとに保存する。動画クリップは1件が数MBあり、スマホのブラウザは
+      // このループの途中でメモリ不足によりタブごと落ちることがある。
+      // 最後にまとめて保存する実装だと、GitHubへは届いていてもこの端末側の記録が
+      // 残らず、次回また同じ内容を二重にコミットしてしまう。1件ごとに保存しておけば
+      // 途中で落ちても「ここまでは反映済み」と分かり、続きから再開できる
+      await save();
     }catch(err){ g.msg = err.message; g.ok = false; }
     finally{ g.busy = false; }
+    // 大きいファイルの base64 化・送信の直後はメモリ使用量が跳ね上がる。
+    // 一呼吸置いてブラウザのガベージコレクションに追いつく時間を与える
+    await new Promise(r => setTimeout(r, 300));
   }
   busySetter(false);
-  await save();
   render();
   toast("一括コミットが終わりました");
 }
