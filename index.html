@@ -2866,17 +2866,17 @@ function render(){
   $("#view").style.display = "";
   for(const id of ["#b-export", "#b-design", "#b-delete"]) $(id).disabled = false;
   syncPanels();
-  // 前回選んだ背景写真も、台本に書いてあれば復元する（無ければ「無地」のまま）。
+  // 台本を開いたら、その台本自身のサムネ設定（背景・赤字語句・サブ文字・バッジ）で必ず上書きする。
+  // 「空の時だけ埋める」にしていると、前に開いていた別の台本の内容が残ったまま
+  // 表示され続けるバグになるため、毎回台本の値（無ければ空）で揃える。
   // thSyncBgより先に入れておかないと、選択状態がタイルに反映されない
-  if($("#th-bg").value === "plain" && state.script?.thumbnail_bg) $("#th-bg").value = state.script.thumbnail_bg;
+  $("#th-bg").value = state.script?.thumbnail_bg || "plain";
   // サムネの背景候補は生成の進み具合で増えるので、描き直すたびに作り直す
   thSyncBg();
-  // 台本にサムネ用の赤字・サブ文字・バッジが書いてあれば、そのまま埋める
-  // （社長が毎回同じ内容を手で入力しなくて済むように。台本に無ければ空のまま＝任意）
-  if(!$("#th-main").value) $("#th-main").value = state.script?.thumbnail_text || "";
-  if(!$("#th-highlight").value) $("#th-highlight").value = state.script?.thumbnail_highlight || "";
-  if(!$("#th-sub").value) $("#th-sub").value = state.script?.thumbnail_sub || "";
-  if(!$("#th-badge").value) $("#th-badge").value = state.script?.thumbnail_badge || "";
+  $("#th-main").value = state.script?.thumbnail_text || "";
+  $("#th-highlight").value = state.script?.thumbnail_highlight || "";
+  $("#th-sub").value = state.script?.thumbnail_sub || "";
+  $("#th-badge").value = state.script?.thumbnail_badge || "";
   thRender();
 }
 
