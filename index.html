@@ -2866,6 +2866,9 @@ function render(){
   $("#view").style.display = "";
   for(const id of ["#b-export", "#b-design", "#b-delete"]) $(id).disabled = false;
   syncPanels();
+  // 前回選んだ背景写真も、台本に書いてあれば復元する（無ければ「無地」のまま）。
+  // thSyncBgより先に入れておかないと、選択状態がタイルに反映されない
+  if($("#th-bg").value === "plain" && state.script?.thumbnail_bg) $("#th-bg").value = state.script.thumbnail_bg;
   // サムネの背景候補は生成の進み具合で増えるので、描き直すたびに作り直す
   thSyncBg();
   // 台本にサムネ用の赤字・サブ文字・バッジが書いてあれば、そのまま埋める
@@ -3903,6 +3906,9 @@ $("#th-commit").addEventListener("click", async () => {
   out.innerHTML = `<span style="color:var(--dim)">コミットしています…</span>`;
   try{
     await putFile(path, await thCanvasBytes(), `サムネイル: ${stem} をコンソールから更新`);
+    // 選んだ背景写真を台本側にも覚えさせておく。次にこの台本を開いたときに
+    // 「無地」へ戻ってしまわないようにするため（赤字・サブ文字・バッジは既に台本側で持っている）
+    if(state.script){ state.script.thumbnail_bg = $("#th-bg").value; await save(); }
     out.innerHTML = `<span style="color:var(--ok)">${esc(path.replace(GH_DIR + "/", ""))} にコミットしました</span>`;
     toast("サムネイルをコミットしました");
   }catch(e){
