@@ -506,6 +506,7 @@ select{font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px
           <canvas id="th-canvas" width="1280" height="720"
                   style="width:100%;border-radius:6px;display:block;margin-top:10px"></canvas>
           <div class="btnrow">
+            <button id="th-regen">サムネイルを再生成</button>
             <button id="th-download">画像を保存</button>
             <button class="primary" id="th-commit">リポジトリにコミット</button>
           </div>
@@ -3837,6 +3838,9 @@ for(const id of ["#th-bg", "#th-main", "#th-highlight", "#th-sub", "#th-badge", 
   $(id).addEventListener("input", thRender);
   $(id).addEventListener("change", thRender);
 }
+// 入力のたびに自動で再描画されるが、背景画像の読み込みタイミングなどで
+// 反映されて見えないときのために、明示的に描き直せるボタンも用意しておく
+$("#th-regen").addEventListener("click", thRender);
 
 $("#th-download").addEventListener("click", async () => {
   const a = document.createElement("a");
