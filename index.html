@@ -170,6 +170,16 @@ select{font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px
 .px-thumb{padding:0;border:2px solid var(--line);border-radius:5px;overflow:hidden;width:84px;height:56px;flex:none;cursor:pointer}
 .px-thumb:hover{border-color:var(--accent)}
 .px-thumb img,.px-thumb video{width:100%;height:100%;object-fit:cover;display:block}
+/* サムネイルの背景選び（テキストのプルダウンだと選びにくいので写真で並べる） */
+.th-bg-grid{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;max-height:240px;overflow-y:auto;padding:2px}
+.th-bg-tile{padding:0;border:2px solid var(--line);border-radius:5px;overflow:hidden;
+  width:92px;height:52px;flex:none;cursor:pointer;background:var(--panel2);position:relative}
+.th-bg-tile:hover{border-color:var(--accent)}
+.th-bg-tile.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.th-bg-tile img{width:100%;height:100%;object-fit:cover;display:block}
+.th-bg-tile.plain{display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--dim);text-align:center}
+.th-bg-tile .lbl{position:absolute;left:0;right:0;bottom:0;font-size:9px;line-height:1.3;
+  padding:1px 3px;background:rgba(0,0,0,.65);color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* シーンの調整 */
 .ctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px}
 .ctl select,.ctl input{font:inherit;font-size:12px;padding:4px 7px;border-radius:4px;
@@ -472,10 +482,11 @@ select{font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px
         <div class="card"><h2>サムネイル</h2><div class="body">
           <div class="field">
             <label>背景</label>
-            <select id="th-bg">
+            <select id="th-bg" style="display:none">
               <option value="plain">無地（ブランド色のグラデーション）</option>
             </select>
-            <div class="hint">生成した画像やスライドがあれば、ここから選べます</div>
+            <div id="th-bg-grid" class="th-bg-grid"></div>
+            <div class="hint">写真をタップして選べます。用意した写真・生成画像がここに並びます</div>
           </div>
           <div class="field">
             <label>文字（1行目・大きく出ます）</label>
@@ -2857,7 +2868,12 @@ function render(){
   syncPanels();
   // サムネの背景候補は生成の進み具合で増えるので、描き直すたびに作り直す
   thSyncBg();
+  // 台本にサムネ用の赤字・サブ文字・バッジが書いてあれば、そのまま埋める
+  // （社長が毎回同じ内容を手で入力しなくて済むように。台本に無ければ空のまま＝任意）
   if(!$("#th-main").value) $("#th-main").value = state.script?.thumbnail_text || "";
+  if(!$("#th-highlight").value) $("#th-highlight").value = state.script?.thumbnail_highlight || "";
+  if(!$("#th-sub").value) $("#th-sub").value = state.script?.thumbnail_sub || "";
+  if(!$("#th-badge").value) $("#th-badge").value = state.script?.thumbnail_badge || "";
   thRender();
 }
 
@@ -3699,6 +3715,36 @@ function thSyncBg(){
   const opts = thBackgrounds();
   sel.innerHTML = opts.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("");
   if(opts.some(o => o.value === keep)) sel.value = keep;
+  thSyncBgGrid();
+}
+
+// テキストのプルダウンだけだと、写真のシーンが何十件もあるときにどれか分からず選びにくい。
+// 実際に用意されている写真・生成画像だけを、選べる小さな写真として並べる
+// （スライドは画像化できないので候補に出さない。無地は常に先頭に置く）
+function thBgUrl(value){
+  const [kind, id] = value.split(":");
+  if(kind === "gen") return photoGen[id]?.url || null;
+  if(kind === "img") return state.images.find(i => i.stem.toLowerCase() === id.toLowerCase())?.url || null;
+  return null;
+}
+
+function thSyncBgGrid(){
+  const grid = $("#th-bg-grid");
+  const current = $("#th-bg").value || "plain";
+  const opts = thBackgrounds().filter(o => o.value === "plain" || thBgUrl(o.value));
+  grid.innerHTML = opts.map(o => o.value === "plain"
+    ? `<button type="button" class="th-bg-tile plain${current === "plain" ? " sel" : ""}"
+         data-v="plain" title="${esc(o.label)}">無地</button>`
+    : `<button type="button" class="th-bg-tile${o.value === current ? " sel" : ""}"
+         data-v="${esc(o.value)}" title="${esc(o.label)}">
+         <img src="${esc(thBgUrl(o.value))}" loading="lazy" alt="">
+       </button>`
+  ).join("");
+  grid.querySelectorAll(".th-bg-tile").forEach(el => el.addEventListener("click", () => {
+    $("#th-bg").value = el.dataset.v;
+    grid.querySelectorAll(".th-bg-tile").forEach(t => t.classList.toggle("sel", t === el));
+    thRender();
+  }));
 }
 
 // 背景1枚を用意する。スライドはiframeで描いたものを画像にできないので、
