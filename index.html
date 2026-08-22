@@ -482,8 +482,18 @@ select{font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px
             <input id="th-main" placeholder="縄文文化が消えた日">
           </div>
           <div class="field">
+            <label>赤字にする語句（1行目の一部・任意）</label>
+            <input id="th-highlight" placeholder="消えた">
+            <div class="hint">1行目の文字にこの語句が含まれていれば、そこだけ赤で強調します</div>
+          </div>
+          <div class="field">
             <label>文字（2行目・小さく。空でも可）</label>
             <input id="th-sub" placeholder="7300年前・過去1万年で世界最大">
+          </div>
+          <div class="field">
+            <label>強調バッジ（右上・任意）</label>
+            <input id="th-badge" placeholder="衝撃">
+            <div class="hint">「衝撃」「速報」のような短い煽り文句を、赤いバッジで右上に出せます</div>
           </div>
           <div class="field">
             <label>文字の位置</label>
@@ -658,19 +668,19 @@ const KIND_SPEC = {
     what: "5秒前後の実写・生成の動く画",
     use: "冒頭・章の核心・中盤の離脱帯。静止画の連続に動きを差して目を戻す",
     who: "コンソール（Pixabay動画検索／手動アップロード）",
-    asset: "assets/video_clips/<シーンID>.mp4",
+    asset: "assets/video_clips/<台本名>/<シーンID>.mp4",
   },
   photo: {
     what: "実在する物・場所・機材が写った写真",
     use: "現物を見せたいとき。実在しないものには使わない",
     who: "コンソール（Pixabay写真検索／ComfyUI生成）",
-    asset: "assets/images/generated/<シーンID>.png",
+    asset: "assets/images/generated/<台本名>/<シーンID>.png",
   },
   generated: {
     what: "実写では撮れない情景・スケール感のイメージ画",
     use: "言葉だけでは像を結ばない情景。宇宙・地下・体内など",
     who: "コンソール（ComfyUI生成）",
-    asset: "assets/images/generated/<シーンID>.png",
+    asset: "assets/images/generated/<台本名>/<シーンID>.png",
   },
   diagram: {
     what: "構造・仕組み・時間の流れを線と図形で示した模式図",
@@ -1735,7 +1745,7 @@ async function commitAllStaged(targets, statusElId, busySetter){
     render();
     try{
       const ext = g.isVideo ? "mp4" : "png";
-      const dir = g.isVideo ? "assets/video_clips" : "assets/images/generated";
+      const dir = `${g.isVideo ? "assets/video_clips" : "assets/images/generated"}/${scriptStem()}`;
       const label = g.isVideo ? "動画クリップ" : "写真";
       await putFile(`${GH_DIR}/${dir}/${s.id}.${ext}`, g.bytes,
         `${s.id}の${label}を追加（コンソールから・一括コミット）`);
@@ -1771,7 +1781,7 @@ async function dropAsset(s){
   const img = s.image;
   if(ghReady()){
     const ext = img.video ? "mp4" : "png";
-    const dir = img.video ? "assets/video_clips" : "assets/images/generated";
+    const dir = `${img.video ? "assets/video_clips" : "assets/images/generated"}/${scriptStem()}`;
     const label = img.video ? "動画クリップ" : "画像";
     // ZIP経由で入った素材はこの命名規則に無いことがある。404は「元から無い」なので無視される
     await deleteFile(`${GH_DIR}/${dir}/${s.id}.${ext}`, `${s.id}の${label}を削除（コンソールから）`);
@@ -2671,7 +2681,7 @@ function render(){
     g.busy = true; g.msg = "コミットしています…"; render();
     try{
       const ext = g.isVideo ? "mp4" : "png";
-      const dir = g.isVideo ? "assets/video_clips" : "assets/images/generated";
+      const dir = `${g.isVideo ? "assets/video_clips" : "assets/images/generated"}/${scriptStem()}`;
       const via = g.source === "pixabay" ? "Pixabayの写真から選ぶ"
                 : g.source === "pixabay-video" ? "Pixabayの動画から選ぶ"
                 : g.source === "upload" ? "手動アップロード"
@@ -3002,6 +3012,14 @@ const gh = {owner:"kohaku0521", repo:"kaitai-check", branch:"main", token:""};
 function ghLoad(){ try{ Object.assign(gh, JSON.parse(localStorage.getItem("tas.gh") || "{}")); }catch{} }
 function ghStore(){ localStorage.setItem("tas.gh", JSON.stringify(gh)); }
 const ghReady = () => !!(gh.token && gh.owner && gh.repo && gh.branch);
+
+// assets/images/generated/・assets/video_clips/ はもともと全台本で共有されたフラットな
+// フォルダで、scene_01.png のようなファイル名だけで管理されていた。台本が変わっても
+// シーン番号は scene_01 から数え直すため、別の台本の素材が同じファイル名で残っていると、
+// そのまま誤って新しい台本にも「使える素材」として拾われてしまう事故が実際に起きた。
+// 台本名のサブフォルダに分けることでこれを防ぐ（produce_longform.py側もこのサブフォルダを
+// 優先して読む。無い場合だけ旧来のフラットな置き場にフォールバックする）
+const scriptStem = () => (state.name || "").replace(/\.json$/i, "");
 
 async function api(path, opt = {}){
   const r = await fetch("https://api.github.com" + path, {...opt, headers:{
@@ -3700,30 +3718,80 @@ function thLoadBackground(kind, id){
   });
 }
 
-function thDrawText(ctx, main, sub, pos){
+// 衆目引き重視のサムネ用の配色。ブランドの落ち着いた青とは別に固定で持つ
+// （本編スライドの配色は変えず、サムネだけ煽り系にするため）
+const TH_RED = "#ff2d2d";
+const TH_YELLOW = "#ffe14d";
+
+function thDrawText(ctx, main, sub, pos, highlight){
   const pad = 72;
-  ctx.textAlign = pos === "left" ? "left" : "center";
-  const x = pos === "left" ? pad : TH_W / 2;
   // 1行あたりの文字数から字の大きさを決める（詰め込みすぎを防ぐ）
   const size = main.length <= 8 ? 132 : main.length <= 12 ? 104 : main.length <= 16 ? 84 : 68;
   const baseY = pos === "bottom" ? TH_H - pad - (sub ? 96 : 32) : TH_H / 2 - (sub ? 28 : 0);
 
+  // 赤字にする語句が本文に含まれていれば、そこだけ色を変えて描く（最初の1箇所だけ）。
+  // canvasの文字揃えは1色ぶんしか効かないので、区間ごとに手で並べる
+  const hit = highlight && main.includes(highlight) ? main.indexOf(highlight) : -1;
+  const segs = hit < 0
+    ? [{t: main, c: "#ffffff"}]
+    : [
+        {t: main.slice(0, hit), c: "#ffffff"},
+        {t: main.slice(hit, hit + highlight.length), c: TH_RED},
+        {t: main.slice(hit + highlight.length), c: "#ffffff"},
+      ].filter(s => s.t);
+
   ctx.font = `900 ${size}px system-ui, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif`;
   ctx.lineJoin = "round";
   ctx.strokeStyle = "rgba(0,0,0,.85)";
-  ctx.lineWidth = size * 0.18;          // 縁取りで背景から確実に浮かせる
-  ctx.strokeText(main, x, baseY);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillText(main, x, baseY);
+  ctx.lineWidth = size * 0.2;          // 縁取りで背景から確実に浮かせる（従来より太め）
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+
+  const totalW = segs.reduce((w, s) => w + ctx.measureText(s.t).width, 0);
+  let x = pos === "left" ? pad : TH_W / 2 - totalW / 2;
+  for(const s of segs){
+    ctx.strokeText(s.t, x, baseY);
+    ctx.fillStyle = s.c;
+    ctx.fillText(s.t, x, baseY);
+    x += ctx.measureText(s.t).width;
+  }
 
   if(sub){
     const s2 = Math.round(size * 0.42);
     ctx.font = `700 ${s2}px system-ui, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif`;
-    ctx.lineWidth = s2 * 0.18;
-    ctx.strokeText(sub, x, baseY + size * 0.82);
-    ctx.fillStyle = BRAND.accent;
-    ctx.fillText(sub, x, baseY + size * 0.82);
+    ctx.lineWidth = s2 * 0.2;
+    ctx.textAlign = pos === "left" ? "left" : "center";
+    const sx = pos === "left" ? pad : TH_W / 2;
+    ctx.strokeText(sub, sx, baseY + size * 0.82);
+    ctx.fillStyle = TH_YELLOW;
+    ctx.fillText(sub, sx, baseY + size * 0.82);
   }
+}
+
+// 右上の「衝撃」「速報」のような煽りバッジ。赤い角丸の帯に白抜き太字
+function thDrawBadge(ctx, text){
+  if(!text) return;
+  const size = 52;
+  ctx.font = `900 ${size}px system-ui, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif`;
+  const padX = 28, padY = 16;
+  const w = ctx.measureText(text).width + padX * 2;
+  const h = size + padY * 2;
+  const x = TH_W - w - 40, y = 40;
+  const r = 10;
+  ctx.fillStyle = TH_RED;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(text, x + w / 2, y + h / 2 + 4);
+  ctx.textBaseline = "alphabetic";
 }
 
 async function thRender(){
@@ -3736,8 +3804,9 @@ async function thRender(){
     const r = Math.max(TH_W / bg.width, TH_H / bg.height);
     const w = bg.width * r, h = bg.height * r;
     ctx.drawImage(bg, (TH_W - w) / 2, (TH_H - h) / 2, w, h);
-    // 文字を読ませるため、全体をわずかに沈める
-    ctx.fillStyle = "rgba(0,0,0,.34)";
+    // 衆目引き重視のサムネは写真の迫力をそのまま見せたいので、沈めは最小限にする
+    // （文字側の縁取りを太くして可読性を確保する）
+    ctx.fillStyle = "rgba(0,0,0,.12)";
     ctx.fillRect(0, 0, TH_W, TH_H);
   }else{
     const grad = ctx.createLinearGradient(0, 0, TH_W, TH_H);
@@ -3757,13 +3826,14 @@ async function thRender(){
   ctx.fillRect(64, 56, 8, 40);
 
   thDrawText(ctx, $("#th-main").value.trim() || (state.script?.thumbnail_text || ""),
-             $("#th-sub").value.trim(), $("#th-pos").value);
+             $("#th-sub").value.trim(), $("#th-pos").value, $("#th-highlight").value.trim());
+  thDrawBadge(ctx, $("#th-badge").value.trim());
 }
 
 const thCanvasBytes = () => new Promise(res =>
   $("#th-canvas").toBlob(b => b.arrayBuffer().then(a => res(new Uint8Array(a))), "image/png"));
 
-for(const id of ["#th-bg", "#th-main", "#th-sub", "#th-pos"]){
+for(const id of ["#th-bg", "#th-main", "#th-highlight", "#th-sub", "#th-badge", "#th-pos"]){
   $(id).addEventListener("input", thRender);
   $(id).addEventListener("change", thRender);
 }
