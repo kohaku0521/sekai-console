@@ -824,6 +824,36 @@ async function load(id){
   $("#p-script").value = ""; $("#p-zip").value = "";
   render();
   toast("読み込みました");
+  // 「保存した案件」は昔ドロップしたときのファイル名（state.name）をそのまま持ち越すため、
+  // GitHub側でファイル名が整理された後に読み込むと、サムネや素材のコミット先が古い
+  // ファイル名のズレたパスになってしまう。つないでいれば実物と突き合わせて直しておく
+  const real = await ghResolveScriptName(state.script);
+  if(real && real !== state.name){
+    state.name = real;
+    await save();
+    render();
+  }
+}
+
+// GitHub上の data/scripts/ を、タイトルの一致で探して本当のファイル名を返す
+// （見つからない・未接続なら null のまま＝従来どおりstate.nameを使う）
+async function ghResolveScriptName(script){
+  if(!ghReady() || !script?.title) return null;
+  try{
+    const items = await api(repoPath(`/contents/${GH_DIR}/data/scripts?ref=${encodeURIComponent(gh.branch)}`));
+    const datePrefix = (script.date || "").slice(0, 10);
+    const candidates = (Array.isArray(items) ? items : [])
+      .filter(f => f.type === "file" && f.name.endsWith(".json") && (!datePrefix || f.name.startsWith(datePrefix)));
+    for(const f of candidates){
+      try{
+        const blob = await api(repoPath(`/git/blobs/${f.sha}`));
+        const bytes = Uint8Array.from(atob(blob.content.replace(/\n/g, "")), c => c.charCodeAt(0));
+        const parsed = JSON.parse(new TextDecoder().decode(bytes));
+        if(parsed.title === script.title) return f.name;
+      }catch{ /* 個別ファイルの取得・解析失敗は無視して次を試す */ }
+    }
+  }catch{ /* 未接続・一覧取得失敗ならあきらめる */ }
+  return null;
 }
 
 function toast(msg){
@@ -3731,40 +3761,79 @@ function thBgUrl(value){
   return null;
 }
 
-function thSyncBgGrid(){
+// 素材ZIPを付けず台本JSONだけ読み込んだときは、生成済み画像がブラウザ内に無いため
+// 背景プレビューの写真タイルが1枚も出せない。台本フォルダ（assets/images/generated/<台本名>/）
+// にはコミット済みのことが多いので、GitHubから直接取りにいって埋める
+// （繋いでいない・見つからない場合は従来どおり「無地」だけになる）
+let ghBgDir = {stem: null, files: {}};   // シーンid -> {name, sha}
+const ghBgUrlCache = {};                 // シーンid -> blob URL
+
+async function ghBgListLoad(stem){
+  if(!ghReady() || !stem || ghBgDir.stem === stem) return;
+  ghBgDir = {stem, files: {}};
+  try{
+    const items = await api(repoPath(`/contents/${GH_DIR}/assets/images/generated/${encodeURIComponent(stem)}?ref=${encodeURIComponent(gh.branch)}`));
+    for(const it of (Array.isArray(items) ? items : [])){
+      if(it.type === "file" && /\.(png|jpe?g|webp)$/i.test(it.name)) ghBgDir.files[it.name.replace(/\.[^.]+$/, "")] = it;
+    }
+  }catch{ /* フォルダが無い・未接続などはプレビュー無しのまま */ }
+}
+
+async function ghBgUrlFor(id){
+  if(ghBgUrlCache[id]) return ghBgUrlCache[id];
+  const item = ghBgDir.files[id];
+  if(!item) return null;
+  try{
+    const blob = await api(repoPath(`/git/blobs/${item.sha}`));
+    const bytes = Uint8Array.from(atob(blob.content.replace(/\n/g, "")), c => c.charCodeAt(0));
+    const ext = (item.name.match(/\.([^.]+)$/) || [, "png"])[1].toLowerCase();
+    const mime = {jpg:"image/jpeg", jpeg:"image/jpeg", webp:"image/webp"}[ext] || "image/png";
+    const url = URL.createObjectURL(new Blob([bytes], {type: mime}));
+    ghBgUrlCache[id] = url;
+    return url;
+  }catch{ return null; }
+}
+
+async function thSyncBgGrid(){
   const grid = $("#th-bg-grid");
   const current = $("#th-bg").value || "plain";
-  const opts = thBackgrounds().filter(o => o.value === "plain" || thBgUrl(o.value));
-  grid.innerHTML = opts.map(o => o.value === "plain"
-    ? `<button type="button" class="th-bg-tile plain${current === "plain" ? " sel" : ""}"
-         data-v="plain" title="${esc(o.label)}">無地</button>`
-    : `<button type="button" class="th-bg-tile${o.value === current ? " sel" : ""}"
+  await ghBgListLoad(scriptStem());
+  const opts = thBackgrounds().filter(o => o.value === "plain" || thBgUrl(o.value) || ghBgDir.files[o.value.split(":")[1]]);
+  grid.innerHTML = opts.map(o => {
+    if(o.value === "plain") return `<button type="button" class="th-bg-tile plain${current === "plain" ? " sel" : ""}"
+         data-v="plain" title="${esc(o.label)}">無地</button>`;
+    const id = o.value.split(":")[1];
+    const url = thBgUrl(o.value);
+    return `<button type="button" class="th-bg-tile${o.value === current ? " sel" : ""}"
          data-v="${esc(o.value)}" title="${esc(o.label)}">
-         <img src="${esc(thBgUrl(o.value))}" loading="lazy" alt="">
-       </button>`
-  ).join("");
+         <img data-scene-id="${esc(id)}"${url ? ` src="${esc(url)}"` : ""} loading="lazy" alt="">
+       </button>`;
+  }).join("");
   grid.querySelectorAll(".th-bg-tile").forEach(el => el.addEventListener("click", () => {
     $("#th-bg").value = el.dataset.v;
     grid.querySelectorAll(".th-bg-tile").forEach(t => t.classList.toggle("sel", t === el));
     thRender();
   }));
+  // ローカルに画像が無かったタイルは、GitHubから遅れて取ってきて差し込む
+  grid.querySelectorAll("img[data-scene-id]:not([src])").forEach(async img => {
+    const url = await ghBgUrlFor(img.dataset.sceneId);
+    if(url) img.src = url;
+  });
 }
 
 // 背景1枚を用意する。スライドはiframeで描いたものを画像にできないので、
 // 同じ配色の下地に見出しだけを写して代わりにする
-function thLoadBackground(kind, id){
+async function thLoadBackground(kind, id){
+  if(kind !== "gen" && kind !== "img") return null;
+  const g = photoGen[id];
+  let url = (g && g.url) || state.images.find(i => i.stem.toLowerCase() === id.toLowerCase())?.url;
+  if(!url){ await ghBgListLoad(scriptStem()); url = await ghBgUrlFor(id); }
+  if(!url) return null;
   return new Promise(resolve => {
-    if(kind === "gen" || kind === "img"){
-      const g = photoGen[id];
-      const url = (g && g.url) || state.images.find(i => i.stem.toLowerCase() === id.toLowerCase())?.url;
-      if(!url) return resolve(null);
-      const im = new Image();
-      im.onload = () => resolve(im);
-      im.onerror = () => resolve(null);
-      im.src = url;
-      return;
-    }
-    resolve(null);
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => resolve(null);
+    im.src = url;
   });
 }
 
