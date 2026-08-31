@@ -487,6 +487,13 @@ select{font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px
             </select>
             <div id="th-bg-grid" class="th-bg-grid"></div>
             <div class="hint">写真をタップして選べます。用意した写真・生成画像がここに並びます</div>
+            <div style="display:flex;gap:6px;margin-top:10px">
+              <input id="th-px-query" placeholder="Pixabayで検索（英語推奨・例: japanese yen coins）" style="flex:1">
+              <button id="th-px-search">検索</button>
+            </div>
+            <div id="th-px-status" style="font-size:12px;margin-top:4px;color:var(--dim)"></div>
+            <div id="th-px-grid" class="th-bg-grid" style="margin-top:6px"></div>
+            <div class="hint">1回の検索で最大12枚まとめて出ます。タップした写真がそのままサムネ背景になります</div>
           </div>
           <div class="field">
             <label>文字（1行目・大きく出ます）</label>
@@ -3281,6 +3288,7 @@ async function acceptFiles(files){
         if(Array.isArray(parsed)){ renderPlans(parsed); continue; }
         state.images.forEach(i => URL.revokeObjectURL(i.url));
         photoResetAll();      // 別の台本を開くので、前の台本のプロンプトを持ち越さない
+        thPxReset();           // サムネ背景用に検索・選択した写真も持ち越さない
         state.script = parsed; state.name = f.name; state.images = [];
         state.bgmSnapshot = null;   // 別の台本のBGM控えを持ち越さない
         state.id = projectId(parsed, f.name);
@@ -3710,6 +3718,19 @@ $("#b-run").addEventListener("click", async () => {
   const scriptPath = $("#p-script").value.trim();
   const mode = $("#p-mode").value;
   if(!scriptPath){ out.innerHTML = `<div class="run failure"><span class="st">台本の保存先が空です</span></div>`; return; }
+  // このワークフローが使うYouTube認証情報はセカイ秒読み専用（GitHub Secretsが
+  // チャンネルごとに別）。design_brief.channelが別のチャンネル名を名乗っている台本を
+  // ここから生成すると、中身は別チャンネル向けなのにセカイ秒読みへ誤って公開されてしまう。
+  // エラーも警告も出ずに起きる事故のため、ここで機械的に止める
+  const scriptChannel = state.script?.design_brief?.channel;
+  if(scriptChannel && scriptChannel !== CHANNEL_NAME){
+    out.innerHTML = `<div class="run failure"><span class="st">この台本からは生成できません</span>`
+      + `<span>台本のチャンネルが「${esc(scriptChannel)}」になっています。`
+      + `このコンソールの動画生成はセカイ秒読み専用（YouTubeの認証情報がチャンネルごとに別のため）で、`
+      + `他チャンネル向けの台本をここから生成すると誤ってセカイ秒読みのチャンネルへ公開されます。`
+      + `台本・サムネ・BGMの編集はこのまま行えます。</span></div>`;
+    return;
+  }
   if(!confirm(`GitHub Actions で生成を開始します。\n\n台本: ${scriptPath}\n${MODE_TEXT[mode]}\n\n` +
               `※ この台本は先に①で保存しておいてください。保存していない直しは反映されません。\n\nよろしいですか？`)) return;
   try{
@@ -3812,6 +3833,7 @@ async function thSyncBgGrid(){
   grid.querySelectorAll(".th-bg-tile").forEach(el => el.addEventListener("click", () => {
     $("#th-bg").value = el.dataset.v;
     grid.querySelectorAll(".th-bg-tile").forEach(t => t.classList.toggle("sel", t === el));
+    thPxRenderResults();   // 選択中の印をPixabay検索側のグリッドにも反映する
     thRender();
   }));
   // ローカルに画像が無かったタイルは、GitHubから遅れて取ってきて差し込む
@@ -3824,10 +3846,14 @@ async function thSyncBgGrid(){
 // 背景1枚を用意する。スライドはiframeで描いたものを画像にできないので、
 // 同じ配色の下地に見出しだけを写して代わりにする
 async function thLoadBackground(kind, id){
-  if(kind !== "gen" && kind !== "img") return null;
-  const g = photoGen[id];
-  let url = (g && g.url) || state.images.find(i => i.stem.toLowerCase() === id.toLowerCase())?.url;
-  if(!url){ await ghBgListLoad(scriptStem()); url = await ghBgUrlFor(id); }
+  let url;
+  if(kind === "custom"){
+    url = thPx.customs[id]?.url;
+  }else if(kind === "gen" || kind === "img"){
+    const g = photoGen[id];
+    url = (g && g.url) || state.images.find(i => i.stem.toLowerCase() === id.toLowerCase())?.url;
+    if(!url){ await ghBgListLoad(scriptStem()); url = await ghBgUrlFor(id); }
+  }
   if(!url) return null;
   return new Promise(resolve => {
     const im = new Image();
@@ -3836,6 +3862,76 @@ async function thLoadBackground(kind, id){
     im.src = url;
   });
 }
+
+// サムネ背景専用のPixabay検索。どのシーンにも属さない、サムネのためだけの写真を
+// まとめて（1回の検索で最大12枚）探して選べるようにする。台本のシーンに写真が
+// 何も割り当たっていない台本（例: まだ動画生成前の台本）でも背景を選べるようにするため
+let thPx = {results: [], busy: false, msg: "", customs: {}};   // customs: "customN" -> {url, credit}
+let thCustomSeq = 0;
+
+function thPxReset(){
+  Object.values(thPx.customs).forEach(c => { if(c.url) URL.revokeObjectURL(c.url); });
+  thPx = {results: [], busy: false, msg: "", customs: {}};
+  thCustomSeq = 0;
+  const grid = $("#th-px-grid"), status = $("#th-px-status"), q = $("#th-px-query");
+  if(grid) grid.innerHTML = "";
+  if(status) status.textContent = "";
+  if(q) q.value = "";
+}
+
+function thPxRenderResults(){
+  const status = $("#th-px-status");
+  if(status) status.textContent = thPx.msg;
+  const grid = $("#th-px-grid");
+  if(!grid) return;
+  const current = $("#th-bg").value || "";
+  grid.innerHTML = (thPx.results || []).map(h =>
+    `<button type="button" class="th-bg-tile" data-hit="${h.id}" title="${esc(h.user)} / pixabay.com">
+       <img src="${esc(h.webformatURL)}" loading="lazy" alt="">
+     </button>`
+  ).join("") + Object.entries(thPx.customs).map(([id, c]) =>
+    `<button type="button" class="th-bg-tile${current === `custom:${id}` ? " sel" : ""}"
+         data-custom="${esc(id)}" title="${esc(c.credit)} / pixabay.com（選択中）">
+       <img src="${esc(c.url)}" alt="">
+     </button>`
+  ).join("");
+  grid.querySelectorAll(".th-bg-tile[data-hit]").forEach(el => el.addEventListener("click", async () => {
+    const hit = thPx.results.find(h => String(h.id) === el.dataset.hit);
+    if(!hit) return;
+    thPx.msg = "画像を取得しています…"; thPxRenderResults();
+    try{
+      const bytes = await pxFetchImage(hit.largeImageURL || hit.webformatURL);
+      const id = `custom${++thCustomSeq}`;
+      thPx.customs[id] = {url: URL.createObjectURL(new Blob([bytes], {type:"image/jpeg"})), credit: hit.user};
+      thPx.results = [];   // 選んだら検索結果は畳み、選んだ1枚だけ残す（同じ轍を踏まないよう毎回検索し直す運用）
+      $("#th-bg").value = `custom:${id}`;
+      thPx.msg = `Pixabayの写真を背景に設定しました（${hit.user} / pixabay.com、帰属表示なしで商用利用可）`;
+      thSyncBgGrid();   // 元の背景グリッド側の選択中の印を外す
+      thRender();
+    }catch(err){ thPx.msg = err.message; }
+    finally{ thPxRenderResults(); }
+  }));
+  grid.querySelectorAll(".th-bg-tile[data-custom]").forEach(el => el.addEventListener("click", () => {
+    $("#th-bg").value = `custom:${el.dataset.custom}`;
+    thPxRenderResults();
+    thSyncBgGrid();
+    thRender();
+  }));
+}
+
+$("#th-px-search").addEventListener("click", async () => {
+  const q = $("#th-px-query").value.trim();
+  if(!q){ thPx.msg = "検索語を入れてください"; thPxRenderResults(); return; }
+  thPx.busy = true; thPx.msg = "検索しています…"; thPxRenderResults();
+  try{
+    thPx.results = await pxSearch(q);
+    thPx.msg = thPx.results.length ? "" : "見つかりませんでした。検索語を変えてみてください";
+  }catch(err){ thPx.msg = err.message; thPx.results = []; }
+  finally{ thPx.busy = false; thPxRenderResults(); }
+});
+$("#th-px-query").addEventListener("keydown", e => {
+  if(e.key === "Enter"){ e.preventDefault(); $("#th-px-search").click(); }
+});
 
 // 衆目引き重視のサムネ用の配色。ブランドの落ち着いた青とは別に固定で持つ
 // （本編スライドの配色は変えず、サムネだけ煽り系にするため）
