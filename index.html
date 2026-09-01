@@ -3925,6 +3925,20 @@ function thPxReset(){
   if(q) q.value = "";
 }
 
+// #th-bg は非表示のselectで内部状態を持たせているため、"custom:customN"のように
+// thBackgrounds()が作らない値をそのまま.valueへ代入しても、対応する<option>が無いと
+// ブラウザに無視されて反映されない（Pixabayで選んだ画像が背景に反映されないバグの原因）。
+// 無ければ<option>を足してから値をセットする
+function thSetBg(value){
+  const sel = $("#th-bg");
+  if(!Array.from(sel.options).some(o => o.value === value)){
+    const opt = document.createElement("option");
+    opt.value = value;
+    sel.appendChild(opt);
+  }
+  sel.value = value;
+}
+
 function thPxRenderResults(){
   const status = $("#th-px-status");
   if(status) status.textContent = thPx.msg;
@@ -3950,7 +3964,7 @@ function thPxRenderResults(){
       const id = `custom${++thCustomSeq}`;
       thPx.customs[id] = {url: URL.createObjectURL(new Blob([bytes], {type:"image/jpeg"})), credit: hit.user};
       thPx.results = [];   // 選んだら検索結果は畳み、選んだ1枚だけ残す（同じ轍を踏まないよう毎回検索し直す運用）
-      $("#th-bg").value = `custom:${id}`;
+      thSetBg(`custom:${id}`);
       thPx.msg = `Pixabayの写真を背景に設定しました（${hit.user} / pixabay.com、帰属表示なしで商用利用可）`;
       thSyncBgGrid();   // 元の背景グリッド側の選択中の印を外す
       thRender();
@@ -3958,7 +3972,7 @@ function thPxRenderResults(){
     finally{ thPxRenderResults(); }
   }));
   grid.querySelectorAll(".th-bg-tile[data-custom]").forEach(el => el.addEventListener("click", () => {
-    $("#th-bg").value = `custom:${el.dataset.custom}`;
+    thSetBg(`custom:${el.dataset.custom}`);
     thPxRenderResults();
     thSyncBgGrid();
     thRender();
