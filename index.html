@@ -16,6 +16,10 @@ header{position:sticky;top:0;z-index:10;background:rgba(11,13,16,.94);backdrop-f
 .bar{max-width:1240px;margin:0 auto;padding:14px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.04em}
 .brand i{width:4px;height:20px;background:var(--accent);display:block}
+.chtabs{display:flex;gap:2px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:2px}
+.chtab{font:inherit;font-size:12px;padding:6px 12px;border-radius:4px;border:none;background:transparent;color:var(--dim);cursor:pointer}
+.chtab:hover{color:var(--text)}
+.chtab.active{background:var(--accent);color:#fff}
 .spacer{flex:1}
 label.file{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid var(--line);border-radius:6px;background:var(--panel);cursor:pointer;font-size:13px;white-space:nowrap}
 label.file:hover{border-color:var(--accent)}
@@ -199,7 +203,11 @@ select{font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px
 
 <header>
   <div class="bar">
-    <div class="brand"><i></i>セカイ秒読み 統合コンソール</div>
+    <div class="brand"><i></i><span id="ch-brand">セカイ秒読み</span> 統合コンソール</div>
+    <div class="chtabs" id="ch-tabs" title="①保存・②動画を生成の保存先・実行ワークフローを切り替えます（③予約投稿は対象外）">
+      <button class="chtab" data-ch="sekai" type="button">セカイ秒読み</button>
+      <button class="chtab" data-ch="money" type="button">マネー秒読み</button>
+    </div>
     <div class="spacer"></div>
     <select id="s-saved" title="保存した案件"><option value="">保存した案件…</option></select>
     <label class="file">台本JSON<input type="file" id="f-json" accept=".json"></label>
@@ -416,6 +424,10 @@ select{font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px
             先に「⚙ 接続設定」でGitHubにつないでください。
           </div>
           <div id="panel-save" style="display:none">
+            <div class="hint" style="font-size:11px;margin-bottom:10px">
+              保存先チャンネル: <b id="ch-label-save" style="color:var(--text)"></b>
+              （上のタブで切り替えられます）
+            </div>
             <div class="field">
               <label>台本の保存先</label>
               <input id="p-script" placeholder="data/scripts/2026-08-09-long.json">
@@ -439,6 +451,10 @@ select{font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px
             先に「⚙ 接続設定」でGitHubにつないでください。
           </div>
           <div id="panel-run" style="display:none">
+            <div class="hint" style="font-size:11px;margin-bottom:10px">
+              実行先チャンネル: <b id="ch-label-run" style="color:var(--text)"></b>
+              （上のタブで切り替えられます）
+            </div>
             <div class="field">
               <label>やること</label>
               <select id="p-mode">
@@ -2207,7 +2223,7 @@ $("#bgm-add").addEventListener("click", async () => {
 // px指定だった箇所は 1vw に置き換えることで、iframeの実際の表示サイズに追従させている
 // （Python版は1回限りのスクリーンショットなので固定pxで足りるが、ここは画面幅が変わる）。
 const BRAND = {accent:"#3d79d5", bg_top:"#000000", bg_bottom:"#1a1a1a", text:"#ffffff", text_dim:"#9aa3b2"};
-const CHANNEL_NAME = "セカイ秒読み";     // config.yaml の channel.name
+let CHANNEL_NAME = "セカイ秒読み";       // config.yaml の channel.name（チャンネルタブで切り替わる）
 const SUBTITLES_FULL = true;             // config.yaml の longform.subtitles === "full"
 
 function slideFor(s){
@@ -2452,10 +2468,9 @@ function render(){
   const defaultBgm = state.script?.audio_design?.bgm || "";
   $("#default-bgm").innerHTML =
     `<option value=""${!defaultBgm?" selected":""}>（指定なし）</option>` +
-    `<optgroup label="自作アンビエント">` +
-    BGM_BEDS.map(b =>
-      `<option value="${b.name}"${defaultBgm===b.name?" selected":""}>${esc(b.label)}</option>`).join("") +
-    `</optgroup>` +
+    // 2026-08-31: 自作アンビエント（bed_1〜6）は選択肢から外した。
+    // 実在の楽曲があれば src/audio_mix.py が常にそちらを優先するため選んでも無意味なうえ、
+    // 社長からも「自前生成のBGMは使わない」と明示された
     (customBgm.length ? `<optgroup label="追加した素材">` +
       customBgm.map(c =>
         `<option value="${esc(c.name)}"${defaultBgm===c.name?" selected":""}>${esc(c.name)}</option>`).join("") +
@@ -2601,8 +2616,6 @@ function render(){
             <select class="c-bgm" data-i="${i}"
                     title="このシーンからBGMを変えます。指定しなければ前のシーンのまま流れ続けます">
               <option value=""${!s.raw?.bgm?" selected":""}>BGM:前のまま</option>
-              ${BGM_BEDS.map(b =>
-                `<option value="${b.name}"${(s.raw?.bgm||"")===b.name?" selected":""}>BGM:${esc(b.label)}</option>`).join("")}
               ${customBgm.map(c =>
                 `<option value="${esc(c.name)}"${(s.raw?.bgm||"")===c.name?" selected":""}>BGM:${esc(c.name)}</option>`).join("")}
             </select>
@@ -3061,9 +3074,38 @@ function designBrief(){
 // ── GitHub連携 ────────────────────────────────────────────────────
 // 動画の書き出しには ffmpeg・VOICEVOX・Chromium が要る。ブラウザでは動かせないので、
 // 実処理は GitHub Actions に投げ、この画面は「保存 → 実行 → 予約」を操作する管理卓に徹する。
-const GH_DIR = "CMO/YouTube/trend-auto-studio";
-const WF_PRODUCE = "trend-auto-studio-produce-long.yml";
+//
+// チャンネル切り替え（2026-08-31追加）。①保存・②動画を生成 が対象。
+// ③予約投稿はマネー秒読みでは使わない運用（Discordの「公開OK」→poll.ymlの自動検知で
+// 公開されるため）なので、WF_PUBLISHは今のところセカイ秒読み専用のまま固定にしてある。
+const CHANNELS = {
+  sekai: {label:"セカイ秒読み", dir:"CMO/YouTube/trend-auto-studio", wfProduce:"trend-auto-studio-produce-long.yml"},
+  money: {label:"マネー秒読み", dir:"CMO/YouTube/money-longform", wfProduce:"trend-auto-studio-produce-long-money.yml"},
+};
+let channel = localStorage.getItem("tas.channel") || "sekai";
+if(!CHANNELS[channel]) channel = "sekai";
+let GH_DIR = CHANNELS[channel].dir;
+let WF_PRODUCE = CHANNELS[channel].wfProduce;
 const WF_PUBLISH = "trend-auto-studio-publish.yml";
+
+function setChannel(ch){
+  if(!CHANNELS[ch]) return;
+  channel = ch;
+  localStorage.setItem("tas.channel", ch);
+  GH_DIR = CHANNELS[ch].dir;
+  WF_PRODUCE = CHANNELS[ch].wfProduce;
+  CHANNEL_NAME = CHANNELS[ch].label;
+  document.querySelectorAll(".chtab").forEach(b => b.classList.toggle("active", b.dataset.ch === ch));
+  $("#ch-brand").textContent = CHANNELS[ch].label;
+  if($("#ch-label-save")) $("#ch-label-save").textContent = CHANNELS[ch].label;
+  if($("#ch-label-run")) $("#ch-label-run").textContent = CHANNELS[ch].label;
+  // 台本を読み込み済みのときだけ再描画する（プレビュー上のチャンネル名表示を更新するため）。
+  // 何も読み込んでいない初期状態でrender()を呼ぶと、本来まだ隠れているはずの
+  // シーン一覧ツールバー等が出てしまう
+  if(state.script) render();
+}
+document.querySelectorAll(".chtab").forEach(b => b.addEventListener("click", () => setChannel(b.dataset.ch)));
+
 const gh = {owner:"kohaku0521", repo:"kaitai-check", branch:"main", token:""};
 
 function ghLoad(){ try{ Object.assign(gh, JSON.parse(localStorage.getItem("tas.gh") || "{}")); }catch{} }
@@ -3849,7 +3891,11 @@ async function thLoadBackground(kind, id){
   let url;
   if(kind === "custom"){
     url = thPx.customs[id]?.url;
-  }else if(kind === "gen" || kind === "img"){
+  }else if(kind === "gen" || kind === "img" || kind === "slide"){
+    // "slide" は thBackgrounds() が photoGen・state.images のどちらにも無いシーンに
+    // 便宜的に付けるラベルで、実際は「素材ZIPをブラウザで開いていないだけで、
+    // GitHub上には画像がある」ケースがほとんど（Routineがサーバー側だけで
+    // 生成した台本など）。gen/imgと同じくGitHubへのフォールバックを試す
     const g = photoGen[id];
     url = (g && g.url) || state.images.find(i => i.stem.toLowerCase() === id.toLowerCase())?.url;
     if(!url){ await ghBgListLoad(scriptStem()); url = await ghBgUrlFor(id); }
@@ -4126,6 +4172,7 @@ $("#b-publish").addEventListener("click", async () => {
   }
 });
 
+setChannel(channel);
 ghLoad();
 cfLoad();
 gmLoad();
