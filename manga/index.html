@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>マネー秒読み長尺 漫画トラック 操作卓</title>
+<style>
+:root{--accent:#d84315;--bg:#0b0d10;--panel:#14171c;--panel2:#1a1e24;--text:#e9edf3;--dim:#8b95a5;--line:#242a33;--warn:#e0a33a;--bad:#e0574a;--ok:#4aa96c;--paper:#f6f3ec}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;line-height:1.6;font-size:14px}
+header{position:sticky;top:0;z-index:10;background:rgba(11,13,16,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.bar{max-width:1200px;margin:0 auto;padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.04em}
+.brand i{width:4px;height:20px;background:var(--accent);display:block}
+.tabs{display:flex;gap:2px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:2px;flex-wrap:wrap}
+.tab{font:inherit;font-size:12px;padding:6px 12px;border-radius:4px;border:none;background:transparent;color:var(--dim);cursor:pointer}
+.tab.active{background:var(--accent);color:#fff}
+.spacer{flex:1}
+#conn{font-size:12px;color:var(--dim)}
+#conn.ok{color:var(--ok)} #conn.bad{color:var(--bad)}
+main{max-width:1200px;margin:0 auto;padding:20px 16px 90px}
+section{display:none} section.active{display:block}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px} @media(max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:16px}
+.card h2{font-size:12px;letter-spacing:.1em;color:var(--dim);padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600;display:flex;gap:8px;align-items:center}
+.card h2 .spacer{flex:1}
+.body{padding:12px 14px}
+button{font:inherit;font-size:13px;padding:8px 14px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer}
+button:hover{border-color:var(--accent)} button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.sm{font-size:12px;padding:4px 10px} button:disabled{opacity:.4;cursor:not-allowed}
+input,select,textarea{font:inherit;font-size:13px;width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+textarea{min-height:60px;resize:vertical}
+.field{margin-bottom:10px} .field label{display:block;font-size:11px;color:var(--dim);letter-spacing:.06em;margin-bottom:4px}
+.hint{font-size:11px;color:var(--dim);margin-top:4px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.list{list-style:none} .list li{padding:8px 0;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap} .list li:last-child{border:0}
+.tag{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+.tag.slot{border-color:var(--accent);color:var(--accent)} .tag.ok{border-color:var(--ok);color:var(--ok)} .tag.bad{border-color:var(--bad);color:var(--bad)} .tag.warn{border-color:var(--warn);color:var(--warn)}
+.stat{display:inline-block;min-width:120px;background:var(--panel2);border-top:3px solid var(--accent);padding:8px 12px;border-radius:6px;margin:0 8px 8px 0}
+.stat .k{font-size:11px;color:var(--dim)} .stat .v{font-size:20px;font-weight:800}
+.panel{border:1px solid var(--line);border-radius:6px;margin-bottom:10px;background:var(--panel2)}
+.panel .ph{display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer}
+.panel .pb{padding:10px;display:none} .panel.open .pb{display:block}
+.lines .ln{display:grid;grid-template-columns:90px 1fr 32px;gap:6px;margin-bottom:6px}
+.msg{font-size:12px;margin-top:8px;white-space:pre-wrap}
+.msg.bad{color:var(--bad)} .msg.ok{color:var(--ok)} .msg.warn{color:var(--warn)}
+.problems{list-style:none;font-size:12px} .problems li{padding:3px 0}
+.problems .e::before{content:"ERROR ";color:var(--bad);font-weight:700} .problems .w::before{content:"WARN ";color:var(--warn);font-weight:700}
+.run{font-size:12px;padding:6px 0;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap} .run:last-child{border:0}
+.dot{width:8px;height:8px;border-radius:99px;background:var(--dim);display:inline-block} .dot.success{background:var(--ok)} .dot.failure{background:var(--bad)} .dot.in_progress,.dot.queued{background:var(--warn)}
+img.sheet{max-width:100%;border-radius:6px;background:var(--paper)}
+.sheets{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+code{font-size:12px;background:var(--bg);padding:1px 5px;border-radius:4px}
+a{color:#7fb1ff}
+.check{display:flex;gap:10px;align-items:flex-start;padding:6px 0} .check input{width:auto;margin-top:4px}
+.fxchips{display:flex;gap:6px;flex-wrap:wrap} .chip{font-size:12px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);background:var(--bg);color:var(--dim);cursor:pointer;user-select:none}
+.chip.on{border-color:var(--accent);color:var(--text);background:#2a1a14}
+.ln2{display:grid;grid-template-columns:90px 1fr 32px;gap:6px;margin-bottom:4px}
+.lnopt{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:0 0 10px 96px} .lnopt select,.lnopt input{font-size:12px;padding:5px 8px}
+canvas.prev{width:100%;max-width:640px;background:#000;border:1px solid var(--line);border-radius:6px;display:block;margin-top:8px}
+.subgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px} .subgrid label{font-size:11px;color:var(--dim)}
+@media(max-width:600px){.lnopt{grid-template-columns:1fr 1fr;margin-left:0}
+  /* スマホ（GitHub Pages 経由で外出先から触る用）。話者名の列を詰め、3列のセレクトは2列に折る */
+  .lines .ln,.ln2{grid-template-columns:64px 1fr 28px}
+  .subgrid{grid-template-columns:1fr 1fr}
+  .tab{padding:6px 9px}
+  main{padding:14px 10px 90px}
+  .stat{min-width:96px}}
+.empty{color:var(--dim);font-size:13px;padding:8px 0}
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <div class="brand"><i></i>マネー秒読み長尺 <span style="color:var(--dim);font-weight:400">漫画トラック</span></div>
+  <div class="tabs">
+    <button class="tab active" data-tab="today">今日</button>
+    <button class="tab" data-tab="sources">ネタ</button>
+    <button class="tab" data-tab="script">台本</button>
+    <button class="tab" data-tab="assets">キャラ・素材</button>
+    <button class="tab" data-tab="review">抜き取り検査</button>
+    <button class="tab" data-tab="settings">設定</button>
+  </div>
+  <div class="spacer"></div>
+  <div id="conn">未接続</div>
+</div></header>
+<main>
+
+<!-- ========== 今日 ========== -->
+<section id="today" class="active">
+  <div class="card"><h2>今日の枠</h2><div class="body">
+    <div id="today-slot"></div>
+    <div class="hint">月・土 制度・年金（seido） ／ 火 家計・物価（kakei） ／ 水 相続・実家じまい（sozoku） ／ 木 仕事・給与（kyuyo） ／ 金 特殊詐欺・悪質商法（sagi） ／ 日 総集編（matome）。完全創作。実在の事件は再現せず、相場もの（為替・株式・暗号資産）は扱わない（CLAUDE.md §1・§4）。</div>
+  </div></div>
+  <div class="grid">
+    <div class="card"><h2>台本 <span class="spacer"></span><button class="sm" id="scripts-refresh">更新</button></h2><div class="body">
+      <ul class="list" id="scripts-list"><li class="empty">接続すると一覧が出ます</li></ul>
+    </div></div>
+    <div class="card"><h2>生成の実行状況 <span class="spacer"></span><button class="sm" id="runs-refresh">更新</button></h2><div class="body">
+      <div id="runs"></div>
+      <div class="hint">生成物（動画・サムネ・コマ画像）は各実行の「Artifacts」から7日間ダウンロードできます。Discordにも通知が届きます。</div>
+    </div></div>
+  </div>
+  <div class="card"><h2>予約枠（data/schedule.json）</h2><div class="body"><div id="schedule" class="empty">—</div></div></div>
+</section>
+
+<!-- ========== ネタ ========== -->
+<section id="sources">
+  <div class="card"><h2>ネタ候補（data/sources） <span class="spacer"></span>
+    <select id="src-date" style="width:auto"></select>
+    <select id="src-slot" style="width:auto"><option value="">全枠</option><option value="seido">制度・年金</option><option value="kakei">家計・物価</option><option value="sozoku">相続・実家じまい</option><option value="kyuyo">仕事・給与</option><option value="sagi">特殊詐欺・悪質商法</option></select>
+    <button class="sm" id="src-refresh">更新</button></h2>
+    <div class="body">
+      <ul class="list" id="src-list"><li class="empty">接続すると一覧が出ます。無ければ「手入力」で1件書けます</li></ul>
+    </div></div>
+  <div class="card"><h2>手入力（自分で見つけた統計・制度ニュース）</h2><div class="body">
+    <div class="hint" style="margin-bottom:8px">着想にするのは統計・制度までで、具体的な1件の事例（誰が・どこで・何が起きたか）は書かない（CLAUDE.md §1-1・§2）。人物・出来事はここから先を台本側で完全に創作する。</div>
+    <div class="field"><label>出典URL（政府・公的機関のページ）</label><input id="man-url" placeholder="https://www.mlit.go.jp/..."></div>
+    <div class="field"><label>統計・制度の一言メモ</label><input id="man-memo" placeholder="例: 全国の空き家は900万戸を超える（国交省 住宅・土地統計調査）"></div>
+    <div class="row"><button class="primary" id="man-copy">この統計で台本の依頼文をコピー</button></div>
+    <div id="man-msg" class="msg"></div>
+  </div></div>
+  <div class="card"><h2>依頼文とは</h2><div class="body hint">
+    コピーした文をそのまま Claude Code のチャットに貼ると、<code>prompts/scriptwriting.md</code> の型で完全創作の台本JSONを書き、<code>validate_script.py</code> を通してこの枝にコミットします。
+    毎日12:00のRoutineは同じことを自動でやります（着想は当日の data/sources から選ぶ）。
+  </div></div>
+</section>
+
+<!-- ========== 台本 ========== -->
+<section id="script">
+  <div class="card"><h2>台本を開く <span class="spacer"></span><select id="sc-select" style="width:auto"></select><button class="sm" id="sc-open">開く</button></h2>
+    <div class="body" id="sc-none"><div class="empty">台本を選んでください</div></div>
+  </div>
+  <div id="sc-editor" style="display:none">
+    <div class="grid">
+      <div>
+        <div class="card"><h2>見出し</h2><div class="body">
+          <div class="field"><label>タイトル（状況と感情で引く。煽り語不可、45字まで）</label><input id="f-title"></div>
+          <div class="field"><label>枠</label><select id="f-slot"><option value="seido">seido 制度・年金</option><option value="kakei">kakei 家計・物価</option><option value="sozoku">sozoku 相続・実家じまい</option><option value="kyuyo">kyuyo 仕事・給与</option><option value="sagi">sagi 特殊詐欺・悪質商法</option><option value="matome">matome 総集編</option></select></div>
+          <div class="row">
+            <div class="field" style="flex:1"><label>サムネ 見出し</label><input id="f-th-main"></div>
+            <div class="field" style="flex:2"><label>サムネ 引用</label><input id="f-th-sub"></div>
+          </div>
+          <div class="field"><label>着想の統計（background_stat.text。具体的な1件の事例は書かない）</label><input id="f-bg-text"></div>
+          <div class="field"><label>統計の出典機関</label><input id="f-bg-org"></div>
+          <div class="field"><label>統計の公表年</label><input id="f-bg-pub" placeholder="2024"></div>
+          <div class="field"><label>最後の質問</label><input id="f-question"></div>
+          <div class="field"><label>創作である旨の注記（outro.disclaimer_text。「フィクション」「実在の人物・団体・事件とは一切関係ありません」を含める）</label><textarea id="f-disclaimer"></textarea></div>
+        </div></div>
+        <div class="card"><h2>検査（保存前に必ず）</h2><div class="body">
+          <ul class="problems" id="problems"><li class="empty">「検査」を押してください</li></ul>
+          <div class="row" style="margin-top:8px"><button id="sc-check">検査</button><button class="primary" id="sc-save">保存（コミット）</button></div>
+          <div id="sc-msg" class="msg"></div>
+          <div class="hint">ここでの検査は主要な線だけ。生成ワークフローの側でも <code>validate_script.py</code> が全項目を見て、ERRORがあれば止まります。</div>
+        </div></div>
+        <div class="card"><h2>生成を起動</h2><div class="body">
+          <label class="check"><input type="checkbox" id="g-upload"> YouTubeにアップロードする（非公開）</label>
+          <label class="check"><input type="checkbox" id="g-schedule"> 19:00 JST の次の空き枠に予約公開する（上も要チェック）</label>
+          <label class="check"><input type="checkbox" id="g-shorts" checked> 縦型の切り抜きショートも作る（アップロード時は20時枠）</label>
+          <label class="check"><input type="checkbox" id="g-mock"> 音声なしで組み立てだけ確かめる（mock_tts）</label>
+          <div class="row" style="margin-top:8px"><button class="primary" id="g-run">この台本で生成</button></div>
+          <div id="g-msg" class="msg"></div>
+          <div id="g-watch"></div>
+        </div></div>
+      </div>
+      <div>
+        <div class="card"><h2>コマ <span class="spacer"></span><span class="tag" id="sc-stats"></span></h2><div class="body" id="panels"></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== キャラ・素材 ========== -->
+<section id="assets">
+  <div class="card"><h2>キャラシート（assets/characters） <span class="spacer"></span><button class="sm" id="as-refresh">更新</button></h2><div class="body">
+    <div class="sheets" id="sheets"><div class="empty">—</div></div>
+    <div class="hint">初回の生成ワークフローが自動で作ってコミットします。同じ人物に見えなければ、作画方式を変えるまで開設しません（PIPELINE.md 2）。</div>
+  </div></div>
+  <div class="grid">
+    <div class="card"><h2>声（config.yaml tts.speakers）</h2><div class="body" id="voices"><div class="empty">—</div></div></div>
+    <div class="card"><h2>音の素材（assets/audio）</h2><div class="body" id="audio"><div class="empty">—</div></div></div>
+  </div>
+</section>
+
+<!-- ========== 抜き取り検査 ========== -->
+<section id="review">
+  <div class="card"><h2>週1回の抜き取り検査（3本）</h2><div class="body">
+    <div class="hint" style="margin-bottom:8px">見るのは2点だけ。「同じ構図・同じ締めが続いていないか」「CLAUDE.md §1 の線を踏んでいないか」。YouTube Studio の収益化タブに黄色が3本続いたら、その枠を止める。</div>
+    <div class="field"><label>見た動画（台本id を3つ、改行区切り）</label><textarea id="rv-ids"></textarea></div>
+    <label class="check"><input type="checkbox" id="rv-c1"> 同じ構図・同じ締めが続いていない</label>
+    <label class="check"><input type="checkbox" id="rv-c2"> 実話化・恋愛/復讐主目的・断定助言・煽りの線を踏んでおらず、創作である旨の注記が入っている</label>
+    <label class="check"><input type="checkbox" id="rv-c3"> 収益化タブに黄色（制限付き）が出ていない</label>
+    <div class="field"><label>気づいたこと</label><textarea id="rv-note"></textarea></div>
+    <div class="row"><button class="primary" id="rv-save">記録する（data/reviews.json）</button></div>
+    <div id="rv-msg" class="msg"></div>
+  </div></div>
+  <div class="card"><h2>これまでの記録</h2><div class="body"><ul class="list" id="rv-list"><li class="empty">—</li></ul></div></div>
+</section>
+
+<!-- ========== 設定 ========== -->
+<section id="settings">
+  <div class="card"><h2>GitHub</h2><div class="body">
+    <div class="field"><label>リポジトリ</label><input id="s-repo" placeholder="kohaku0521/kaitai-check"></div>
+    <div class="field"><label>ブランチ</label><input id="s-branch" placeholder="main"><div class="hint">台本の保存・生成の起動はこのブランチに対して行われます。開発中は <code>claude/manga-youtube-channel-3dvm09</code>、マージ後は <code>main</code>。</div></div>
+    <div class="field"><label>アクセストークン</label><input id="s-token" type="password" placeholder="github_pat_…">
+      <div class="hint">GitHub → Settings → Developer settings → Fine-grained tokens。対象を <code>kaitai-check</code> だけに絞り、権限は <b>Contents: Read and write</b> と <b>Actions: Read and write</b>。セカイ秒読みの操作卓と同じトークンで構いません（このブラウザにだけ保存され、どこにも送りません）。</div></div>
+    <div class="row"><button class="primary" id="s-test">接続を確認して保存</button><button id="s-clear">トークンを消す</button></div>
+    <div id="s-msg" class="msg"></div>
+  </div></div>
+  <div class="card"><h2>この画面について</h2><div class="body hint">
+    サーバーは無く、ブラウザから GitHub の API を直接呼びます。ファイルを開くだけで使えます（スマホなら GitHub Pages に置いたURLを開く）。
+    台本を直す→保存→生成、ネタから依頼文をコピー、キャラと声の準備状況、週1の検査の記録、ができます。動画の生成そのものは GitHub Actions で走ります。
+  </div></div>
+</section>
+</main>
+
+<script>
+// ---------- 設定・GitHub ----------
+const DIR = "CMO/YouTube/money-longform";
+const WF = "manga-produce-money.yml";
+const gh = {owner:"kohaku0521", repo:"kaitai-check", branch:"main", token:""};
+function ghLoad(){ try{ Object.assign(gh, JSON.parse(localStorage.getItem("manga.gh")||"{}")); }catch{} }
+function ghStore(){ localStorage.setItem("manga.gh", JSON.stringify(gh)); }
+const ready = () => !!(gh.token && gh.owner && gh.repo && gh.branch);
+async function api(path, opt={}){
+  const r = await fetch("https://api.github.com"+path, {...opt, headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+gh.token, ...(opt.headers||{})}});
+  if(r.status===204) return null;
+  const j = await r.json().catch(()=>null);
+  if(!r.ok) throw new Error(`GitHub ${r.status}: ${(j&&j.message)||r.statusText}`);
+  return j;
+}
+const rp = p => `/repos/${gh.owner}/${gh.repo}${p}`;
+const enc = new TextEncoder(), dec = new TextDecoder();
+function b64(bytes){ let s=""; for(let i=0;i<bytes.length;i+=0x8000) s+=String.fromCharCode.apply(null, bytes.subarray(i,i+0x8000)); return btoa(s); }
+function unb64(s){ const b=atob(s.replace(/\n/g,"")); const a=new Uint8Array(b.length); for(let i=0;i<b.length;i++) a[i]=b.charCodeAt(i); return a; }
+async function readText(path){ const j = await api(rp(`/contents/${path}?ref=${encodeURIComponent(gh.branch)}`)); return {text: dec.decode(unb64(j.content)), sha: j.sha}; }
+async function listDir(path){ try{ return await api(rp(`/contents/${path}?ref=${encodeURIComponent(gh.branch)}`)); }catch(e){ if(/404/.test(e.message)) return []; throw e; } }
+async function putText(path, text, message){
+  let sha=null; try{ const cur=await api(rp(`/contents/${path}?ref=${encodeURIComponent(gh.branch)}`)); sha=cur.sha; }catch(e){ if(!/404/.test(e.message)) throw e; }
+  return api(rp(`/contents/${path}`), {method:"PUT", body: JSON.stringify({message, content:b64(enc.encode(text)), branch:gh.branch, ...(sha?{sha}:{})})});
+}
+async function readImage(path){
+  const r = await fetch(`https://api.github.com${rp(`/contents/${path}?ref=${encodeURIComponent(gh.branch)}`)}`, {headers:{"Accept":"application/vnd.github.raw+json","Authorization":"Bearer "+gh.token,"X-GitHub-Api-Version":"2022-11-28"}});
+  if(!r.ok) throw new Error("GitHub "+r.status);
+  return URL.createObjectURL(await r.blob());
+}
+const $ = id => document.getElementById(id);
+const esc = s => String(s??"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function setConn(ok, text){ const c=$("conn"); c.className = ok===null?"":(ok?"ok":"bad"); c.textContent=text; }
+
+// ---------- タブ ----------
+document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active", x===b));
+  document.querySelectorAll("main section").forEach(s=>s.classList.toggle("active", s.id===b.dataset.tab));
+  if(b.dataset.tab==="sources") loadSources();
+  if(b.dataset.tab==="assets") loadAssets();
+  if(b.dataset.tab==="review") loadReviews();
+}));
+
+// ---------- 今日 ----------
+const SLOT_BY_DOW = {1:"seido",6:"seido",2:"kakei",3:"sozoku",4:"kyuyo",5:"sagi",0:"matome"};
+const SLOT_JA = {seido:"制度・年金", kakei:"家計・物価", sozoku:"相続・実家じまい", kyuyo:"仕事・給与", sagi:"特殊詐欺・悪質商法", matome:"総集編"};
+function jstNow(){ return new Date(Date.now() + (9*60 + new Date().getTimezoneOffset())*60000); }
+function jstDate(d){ return d.toISOString().slice(0,10); }
+function renderToday(){
+  const d = jstNow(); const slot = SLOT_BY_DOW[d.getDay()];
+  $("today-slot").innerHTML = `<span class="stat"><div class="k">JST</div><div class="v">${jstDate(d)}</div></span><span class="stat"><div class="k">今日の枠</div><div class="v">${SLOT_JA[slot]} <span class="tag slot">${slot}</span></div></span>`;
+}
+let scripts = [];
+async function loadScripts(){
+  if(!ready()) return;
+  const items = await listDir(`${DIR}/data/manga`);
+  scripts = items.filter(i => i.name.endsWith(".json")).sort((a,b)=>b.name.localeCompare(a.name));
+  const ul = $("scripts-list"); ul.innerHTML = "";
+  const sel = $("sc-select"); sel.innerHTML = "";
+  for(const s of scripts){
+    const id = s.name.replace(/\.json$/,""); const slot = (id.match(/_(seido|kakei|sozoku|kyuyo|sagi|matome)/)||[])[1] || "";
+    ul.insertAdjacentHTML("beforeend", `<li><b>${esc(id)}</b> ${slot?`<span class="tag slot">${slot}</span>`:""} ${id.startsWith("SAMPLE")?'<span class="tag">見本</span>':""}<span class="spacer"></span><button class="sm" data-open="${esc(s.name)}">開く</button></li>`);
+    sel.insertAdjacentHTML("beforeend", `<option value="${esc(s.name)}">${esc(id)}</option>`);
+  }
+  if(!scripts.length) ul.innerHTML = '<li class="empty">台本がまだありません（ネタタブから依頼文をコピー → Claude Code に貼る）</li>';
+  ul.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => { sel.value=b.dataset.open; openScript(b.dataset.open); document.querySelector('[data-tab="script"]').click(); }));
+}
+async function loadRuns(){
+  if(!ready()) return;
+  const el = $("runs"); el.innerHTML = '<div class="empty">読み込み中…</div>';
+  try{
+    const j = await api(rp(`/actions/workflows/${WF}/runs?per_page=6`));
+    const runs = j.workflow_runs||[];
+    el.innerHTML = runs.length ? runs.map(r => `<div class="run"><span class="dot ${r.conclusion||r.status}"></span><span>${new Date(r.created_at).toLocaleString("ja-JP")}</span><span>${r.conclusion||r.status}</span><a href="${r.html_url}" target="_blank">ログ・Artifacts</a></div>`).join("") : '<div class="empty">まだ実行がありません</div>';
+  }catch(e){ el.innerHTML = `<div class="msg bad">${esc(e.message)}（ワークフローがこのブランチに無いか、Actions権限が無い）</div>`; }
+}
+async function loadSchedule(){
+  if(!ready()) return;
+  try{ const {text} = await readText(`${DIR}/data/schedule.json`); const j = JSON.parse(text); $("schedule").innerHTML = `<pre style="font-size:12px;white-space:pre-wrap">${esc(JSON.stringify(j, null, 1).slice(0,1500))}</pre>`; }
+  catch{ $("schedule").innerHTML = '<div class="empty">まだ予約はありません（初回の予約投稿で作られます）</div>'; }
+}
+$("scripts-refresh").addEventListener("click", loadScripts);
+$("runs-refresh").addEventListener("click", loadRuns);
+
+// ---------- ネタ ----------
+let sourceFiles = [], sourceItems = [];
+async function loadSources(){
+  if(!ready()) return;
+  const files = (await listDir(`${DIR}/data/sources`)).filter(f=>f.name.endsWith(".json")).sort((a,b)=>b.name.localeCompare(a.name));
+  sourceFiles = files;
+  const sel = $("src-date"); const cur = sel.value; sel.innerHTML = files.map(f=>`<option value="${esc(f.name)}">${esc(f.name.replace(".json",""))}</option>`).join("") || '<option value="">（無し）</option>';
+  if(cur && files.some(f=>f.name===cur)) sel.value = cur;
+  await renderSources();
+}
+async function renderSources(){
+  const ul = $("src-list"); const name = $("src-date").value;
+  if(!name){ ul.innerHTML = '<li class="empty">ネタ候補のファイルがまだありません。<code>manga-sources-money.yml</code> を手動起動するか、下の手入力を使ってください</li>'; return; }
+  const {text} = await readText(`${DIR}/data/sources/${name}`); sourceItems = (JSON.parse(text).items||[]);
+  const slot = $("src-slot").value;
+  const items = sourceItems.filter(i => !slot || i.slot===slot);
+  ul.innerHTML = items.length ? items.map((it,i)=>`<li><span class="tag slot">${esc(SLOT_JA[it.slot]||it.slot)}</span><div style="flex:1;min-width:200px"><div>${esc(it.title)}</div><div class="hint">${esc(it.org||"")} <a href="${esc(it.url)}" target="_blank">出典</a></div></div><button class="sm" data-i="${i}">依頼文をコピー</button></li>`).join("") : '<li class="empty">この枠の候補はありません</li>';
+  ul.querySelectorAll("[data-i]").forEach(b => b.addEventListener("click", () => { const it = items[+b.dataset.i]; copyHandoff(it.slot, it.url, it.title, it.org||""); }));
+}
+function handoffText(slot, url, memo, org){
+  const d = jstDate(jstNow());
+  return `マネー秒読み長尺の「漫画トラック」の台本を1本書いてください（完全創作）。
+- 枠: ${slot}（${SLOT_JA[slot]||slot}）
+- 着想の統計・制度ニュース: ${memo}
+- 出典: ${url}${org?`（${org}）`:""}
+- 出力: CMO/YouTube/money-longform/data/manga/${d}_${slot}.json
+- 手順: CMO/YouTube/money-longform/prompts/scriptwriting.md に従う。この統計はあくまで背景として引用し（時点を必ず明記）、人物・出来事（誰が・どこで・何が起きたか）は完全に創作する。実在の事件・裁判・報道された具体的なケースをなぞらない。書いたら python scripts/validate_script.py で ERROR 0 にしてからコミット・プッシュする。
+- 守ること: CMO/YouTube/money-longform/CLAUDE.md
+  §1 金融のガードレール（投資助言をしない。断定・扇動表現を使わない。個別銘柄・暗号資産の売買推奨をしない。動く数字は時点を明記。アウトロと概要欄に「投資助言ではありません」を固定で入れる）
+  §2 完全創作（実話再現・特定につながる固有名詞・恋愛/復讐主目的をしない。末尾に創作である旨の固定文）
+  §3 ビフォーアフターの落差は「制度・手続き・行動」に置く。「儲かった/損した」など相場・利回りの結果に置かない
+  §5 タイトルは【対象者】＋変化＋期日の型（EXP-0005 評価中につき外さない）`;
+}
+async function copyHandoff(slot, url, memo, org, msgEl){
+  const t = handoffText(slot, url, memo, org);
+  try{ await navigator.clipboard.writeText(t); (msgEl||$("man-msg")).textContent = "コピーしました。Claude Code のチャットに貼ってください"; (msgEl||$("man-msg")).className="msg ok"; }
+  catch{ prompt("コピーできなかったので手で選択してください", t); }
+}
+$("src-refresh").addEventListener("click", loadSources);
+$("src-date").addEventListener("change", renderSources);
+$("src-slot").addEventListener("change", renderSources);
+$("man-copy").addEventListener("click", () => {
+  const url=$("man-url").value.trim(), memo=$("man-memo").value.trim();
+  if(!url||!memo){ $("man-msg").textContent="URLとメモを入れてください"; $("man-msg").className="msg bad"; return; }
+  const dow = SLOT_BY_DOW[jstNow().getDay()];
+  copyHandoff(dow==="matome"?"seido":dow, url, memo, "");
+});
+
+// ---------- 台本 ----------
+let ep = null, epName = "", epSha = null;
+const CHAPTERS = ["状況提示","展開","転機","気づき・対策","問いかけ"];
+const WHO = ["miyata","kanae","ryo"];
+const WHO_JA = {miyata:"宮田（固定）", kanae:"かなえ（毎話別役）", ryo:"涼（毎話別役）"};
+const FORBIDDEN = ["衝撃","実話","実際にあった","閲覧注意","本当にあった","血","遺体","死体","惨劇","惨状","グロ","断末魔"];
+const ROMANCE_HINTS = ["不倫","浮気","略奪愛","復讐","愛人"];
+// 断定的な投資助言（CLAUDE.md §1-1）。scripts/validate_script.py の ADVICE_ABSOLUTES と同じ
+const ADVICE_ABSOLUTES = ["今が買い時","今すぐ買え","今すぐ売れ","買うべき","売るべき","必ず儲かる","絶対に儲かる","確実に儲かる","元本保証","損はしない","おすすめの銘柄","推奨銘柄","買いのタイミング","売りのタイミング","一攫千金","絶対に上がる","絶対に下がる","必ず得","絶対に得","確実に増える","誰でも儲かる","損しない方法","100%","やらなきゃ損","やらないと損","絶対にやるべき"];
+// ビフォーアフターをお金の結果に置いていないか（CLAUDE.md §3）。落差は制度・手続き・行動に置く
+const OUTCOME_HINTS = ["儲かった","儲けた","値上がり","値下がり","利回り","含み益","含み損","株価が","暴落","高騰"];
+const TICKER_HINTS = ["ビットコイン","イーサリアム","暗号資産","仮想通貨","個別株","銘柄"];
+const FX = [["shock","衝撃（集中線）"],["surprise","驚き"],["sad","悲しみ"],["happy","嬉しい"],["flash","閃光"],["speed","流線"],["dark","暗い"],["sweat","汗"]];
+const SHAPES = [["round","普通"],["jagged","叫び"],["think","心の声"],["rect","四角"],["none","無し"]];
+const POS = [["auto","自動"],["tl","左上"],["tr","右上"],["bl","左下"],["br","右下"]];
+const FRAMES = [["","既定"],["thin","細"],["thick","太"],["double","二重"],["rough","手描き"],["none","無し"]];
+const SE_BUILTIN = ["accent","question","surprise","sad","happy","whoosh"];
+const MOTIONS = [["","自動"],["zoom_in","寄る"],["zoom_out","引く"],["pan_left","左へ"],["pan_right","右へ"],["none","動かさない"]];
+const EMOTIONS = [["","（普通）"],["shocked","驚き"],["worried","不安"],["sad","悲しい"],["happy","嬉しい"],["angry","怒り"],["calm","落ち着き"]];
+let seLibrary = [...SE_BUILTIN];
+async function loadSeLibrary(){ try{ const files=(await listDir(`${DIR}/assets/audio/se`)).map(f=>f.name.replace(/\.[^.]+$/,"")); seLibrary=[...new Set([...files, ...SE_BUILTIN])]; }catch{} }
+async function openScript(name){
+  const {text, sha} = await readText(`${DIR}/data/manga/${name}`);
+  ep = JSON.parse(text); epName = name; epSha = sha;
+  $("sc-none").style.display="none"; $("sc-editor").style.display="block";
+  $("f-title").value = ep.title||""; $("f-slot").value = ep.slot||"seido";
+  $("f-th-main").value = (ep.thumbnail||{}).main_text||""; $("f-th-sub").value = (ep.thumbnail||{}).sub_text||"";
+  $("f-bg-text").value = (ep.background_stat||{}).text||""; $("f-bg-org").value = (ep.background_stat||{}).org||""; $("f-bg-pub").value = (ep.background_stat||{}).published||"";
+  $("f-question").value = (ep.outro||{}).question||""; $("f-disclaimer").value = (ep.outro||{}).disclaimer_text||"";
+  renderPanels(); $("problems").innerHTML='<li class="empty">「検査」を押してください</li>'; $("sc-msg").textContent="";
+}
+function renderPanels(){
+  const host = $("panels"); host.innerHTML = "";
+  let n=0, chars=0;
+  for(const ch of ep.chapters||[]){
+    host.insertAdjacentHTML("beforeend", `<div class="hint" style="margin:6px 0"><b style="color:var(--text)">${esc(ch.no)}. ${esc(ch.name)}</b></div>`);
+    for(const p of ch.panels||[]){
+      n++;
+      const lines = (p.lines||[]).map(l=>l.text||"").join("") + (p.narration||""); chars += lines.length;
+      const head = p.diagram ? "図解: "+(typeof p.diagram==="string"?p.diagram:(p.diagram.title||"")) : (p.scene||"");
+      const roles = Object.entries(p.role_label||{}).map(([c,r])=>`<span class="tag">${esc(c)}=${esc(r)}</span>`).join("");
+      host.insertAdjacentHTML("beforeend", `<div class="panel" data-p="${p.panel}"><div class="ph"><b>p${String(p.panel).padStart(2,"0")}</b><span style="flex:1;color:var(--dim)">${esc(head).slice(0,60)}</span>${(p.chars||[]).map(c=>`<span class="tag">${esc(c)}</span>`).join("")}${roles}${p.se?`<span class="tag warn">${esc(p.se)}</span>`:""}</div><div class="pb"></div></div>`);
+    }
+  }
+  $("sc-stats").textContent = `${n}コマ / 約${chars}字 / 約${(chars/290).toFixed(1)}分`;
+  host.querySelectorAll(".panel .ph").forEach(h => h.addEventListener("click", () => { const el=h.parentElement; el.classList.toggle("open"); if(el.classList.contains("open")) fillPanel(el); }));
+}
+function findPanel(no){ for(const ch of ep.chapters) for(const p of ch.panels) if(+p.panel===+no) return p; return null; }
+function fillPanel(el){
+  const p = findPanel(el.dataset.p); const b = el.querySelector(".pb");
+  b.innerHTML = `<div class="field"><label>場面（日本語）</label><input data-k="scene" value="${esc(p.scene||"")}"></div>
+      <div class="field"><label>今回の役（役の演じ分け。例: kanae:長女・美咲, ryo:長男・拓也）</label><input data-k="role_label_json" value="${esc(p.role_label?Object.entries(p.role_label).map(([a,b])=>a+":"+b).join(", "):"")}" placeholder="kanae:長女・美咲, ryo:長男・拓也"></div>
+      ${p.diagram!==undefined && p.diagram!==null ? `<div class="field"><label>図解（何を見せる図か。統計・制度の説明はここに集約）</label><textarea data-k="diagram">${esc(typeof p.diagram==="string"?p.diagram:JSON.stringify(p.diagram))}</textarea></div>` : `<div class="field"><label>作画の指示（英語。キャラの見た目は書かない）</label><textarea data-k="visual">${esc(p.visual||"")}</textarea></div>`}
+      <div class="field"><label>台詞（1コマ3行まで。宮田42字・かなえ/涼30字まで）。各行の下は吹き出しの形・位置・縦横</label><div class="lines">${(p.lines||[]).map((l,i)=>lineRow(l,i)).join("")}</div><button class="sm" data-addline>＋台詞</button></div>
+      <div class="field"><label>ナレーション</label><textarea data-k="narration">${esc(p.narration||"")}</textarea></div>
+      ${fxBlock(p)}`;
+  b.querySelectorAll("[data-k]").forEach(inp => inp.addEventListener(inp.tagName==="SELECT"?"change":"input", () => {
+    const k = inp.dataset.k; let v = inp.value;
+    if(k==="diagram"){ try{ v = JSON.parse(v); }catch{} p[k]=v; return; }
+    if(k==="role_label_json"){ const o={}; v.split(",").map(x=>x.trim()).filter(Boolean).forEach(pair=>{ const [a,b]=pair.split(":").map(x=>x.trim()); if(a&&b) o[a]=b; }); if(Object.keys(o).length) p.role_label=o; else delete p.role_label; return; }
+    if(k==="se"){ if(v==="__custom"){ v = prompt("効果音の名前（assets/audio/se/<名前>.wav）") || ""; } p.se = v || null; return; }
+    if(k==="se_gain_db"||k==="se_at_line"||k==="punch_at_line"){ if(v==="") delete p[k]; else p[k] = Number(v); return; }
+    if(k==="motion"){ if(!v) delete p.motion; else p.motion = v; return; }
+    if(k==="emotion_json"){ const o={}; v.split(",").map(x=>x.trim()).filter(Boolean).forEach(pair=>{ const [a,b]=pair.split(":").map(x=>x.trim()); if(a&&b) o[a]=b; }); if(Object.keys(o).length) p.emotion=o; else delete p.emotion; return; }
+    if(k==="frame_style"){ if(!v) delete p.frame; else p.frame = {...(p.frame||{}), style:v}; preview(el); return; }
+    if(k.startsWith("fx_text_")){ const kk = k.slice(8); p.fx_text = p.fx_text||{}; if(kk==="size"||kk==="angle") p.fx_text[kk]=Number(v); else p.fx_text[kk]=v; if(!p.fx_text.text) delete p.fx_text; preview(el); return; }
+    p[k] = v;
+  }));
+  b.querySelectorAll("[data-fx]").forEach(ch => ch.addEventListener("click", () => {
+    const v = ch.dataset.fx; p.fx = p.fx||[]; const i = p.fx.indexOf(v);
+    if(i>=0) p.fx.splice(i,1); else p.fx.push(v);
+    if(!p.fx.length) delete p.fx;
+    ch.classList.toggle("on", i<0); preview(el);
+  }));
+  const pv = b.querySelector("[data-prev]"); if(pv) pv.addEventListener("click", () => preview(el, true));
+  b.querySelectorAll(".ln").forEach(row => bindLine(row, p));
+  const add = b.querySelector("[data-addline]"); if(add) add.addEventListener("click", () => { p.lines = p.lines||[]; p.lines.push({who:"miyata", text:""}); fillPanel(el); });
+}
+function lineRow(l,i){
+  const b = l.bubble||{};
+  return `<div class="ln" data-i="${i}"><select>${WHO.map(w=>`<option ${l.who===w?"selected":""}>${w}</option>`).join("")}</select><input value="${esc(l.text||"")}"><button class="sm" title="削除">×</button></div>
+  <div class="lnopt" data-i="${i}">
+    <select data-b="emotion">${EMOTIONS.map(([v,t])=>`<option value="${v}" ${(l.emotion||"")===v?"selected":""}>表情: ${t}</option>`).join("")}</select>
+    <select data-b="shape">${SHAPES.map(([v,t])=>`<option value="${v}" ${(b.shape||"round")===v?"selected":""}>吹き出し: ${t}</option>`).join("")}</select>
+    <select data-b="pos">${POS.map(([v,t])=>`<option value="${v}" ${(b.pos||"auto")===v?"selected":""}>位置: ${t}</option>`).join("")}</select>
+    <select data-b="vertical"><option value="1" ${b.vertical!==false?"selected":""}>縦書き</option><option value="0" ${b.vertical===false?"selected":""}>横書き</option></select>
+    <select data-b="tail"><option value="auto" ${(b.tail||"auto")==="auto"?"selected":""}>しっぽ: 自動</option><option value="left" ${b.tail==="left"?"selected":""}>左へ</option><option value="right" ${b.tail==="right"?"selected":""}>右へ</option><option value="none" ${b.tail==="none"?"selected":""}>無し</option></select>
+  </div>`;
+}
+function bindLine(row, p){
+  const i = +row.dataset.i; const sel=row.querySelector("select"), inp=row.querySelector("input"), del=row.querySelector("button");
+  sel.addEventListener("change", ()=>{ p.lines[i].who = sel.value; });
+  inp.addEventListener("input", ()=>{ p.lines[i].text = inp.value; preview(row.closest(".panel")); });
+  del.addEventListener("click", ()=>{ p.lines.splice(i,1); fillPanel(row.closest(".panel")); });
+  const opt = row.parentElement.querySelector(`.lnopt[data-i="${i}"]`);
+  if(opt) opt.querySelectorAll("[data-b]").forEach(el => el.addEventListener("change", () => {
+    const k = el.dataset.b;
+    if(k==="emotion"){ if(el.value) p.lines[i].emotion = el.value; else delete p.lines[i].emotion; return; }
+    const b = p.lines[i].bubble = p.lines[i].bubble || {};
+    b[k] = k==="vertical" ? el.value==="1" : el.value;
+    preview(row.closest(".panel"));
+  }));
+}
+function fxBlock(p){
+  const fx = p.fx||[]; const ft = p.fx_text||{}; const fr = p.frame||{};
+  return `<div class="field"><label>特殊効果（複数可）</label><div class="fxchips">${FX.map(([v,t])=>`<span class="chip ${fx.includes(v)?"on":""}" data-fx="${v}">${t}</span>`).join("")}</div></div>
+  <div class="subgrid">
+    <div><label>枠</label><select data-k="frame_style">${FRAMES.map(([v,t])=>`<option value="${v}" ${(fr.style||"")===v?"selected":""}>${t}</option>`).join("")}</select></div>
+    <div><label>効果音の文字</label><input data-k="fx_text_text" value="${esc(ft.text||"")}" placeholder="ドン / ガシャン"></div>
+    <div><label>文字の位置</label><select data-k="fx_text_pos">${[["tr","右上"],["tl","左上"],["br","右下"],["bl","左下"],["c","中央"]].map(([v,t])=>`<option value="${v}" ${(ft.pos||"tr")===v?"selected":""}>${t}</option>`).join("")}</select></div>
+    <div><label>文字の大きさ</label><input data-k="fx_text_size" type="number" value="${ft.size||150}" min="60" max="400"></div>
+    <div><label>文字の色</label><input data-k="fx_text_color" value="${esc(ft.color||"#1b1b1b")}"></div>
+    <div><label>文字の傾き</label><input data-k="fx_text_angle" type="number" value="${ft.angle??-8}" min="-45" max="45"></div>
+  </div>
+  <div class="subgrid" style="margin-top:8px">
+    <div><label>カメラ</label><select data-k="motion">${MOTIONS.map(([v,t])=>`<option value="${v}" ${(p.motion||"")===v?"selected":""}>${t}</option>`).join("")}</select></div>
+    <div><label>寄りに切り替える台詞の行（空=無し）</label><input data-k="punch_at_line" type="number" value="${p.punch_at_line??""}" min="0"></div>
+    <div><label>コマ全体の表情（人物ごと）</label><input data-k="emotion_json" value="${esc(p.emotion?Object.entries(p.emotion).map(([a,b])=>a+":"+b).join(", "):"")}" placeholder="kanae:shocked, ryo:worried"></div>
+  </div>
+  <div class="subgrid" style="margin-top:8px">
+    <div><label>効果音</label><select data-k="se"><option value="">なし</option>${seLibrary.map(n=>`<option value="${n}" ${p.se===n?"selected":""}>${n}</option>`).join("")}<option value="__custom">（名前を入力）</option></select></div>
+    <div><label>音量 dB（空=既定）</label><input data-k="se_gain_db" type="number" value="${p.se_gain_db??""}" min="-30" max="6"></div>
+    <div><label>鳴らす位置（台詞の行番号。空=コマの頭）</label><input data-k="se_at_line" type="number" value="${p.se_at_line??""}" min="0"></div>
+  </div>
+  <div class="row" style="margin-top:8px"><button class="sm" data-prev>プレビュー</button><span class="hint">絵は仮（本番は作画に差し替わる）。枠・効果・文字・吹き出しの位置関係を確かめる用</span></div>
+  <canvas class="prev" width="960" height="540" hidden></canvas>`;
+}
+function collectHead(){
+  ep.title=$("f-title").value.trim(); ep.slot=$("f-slot").value;
+  ep.thumbnail = {...(ep.thumbnail||{}), main_text:$("f-th-main").value.trim(), sub_text:$("f-th-sub").value.trim()};
+  ep.background_stat = {...(ep.background_stat||{}), text:$("f-bg-text").value.trim(), org:$("f-bg-org").value.trim(), published:$("f-bg-pub").value.trim()};
+  ep.outro = {...(ep.outro||{}), question:$("f-question").value.trim(), disclaimer_text:$("f-disclaimer").value.trim()};
+  ep.is_fiction = true;
+  ep.disclosure_ai = true;
+}
+const SLOTS = ["seido","kakei","sozoku","kyuyo","sagi","matome"];
+const IDENTIFYING = [/株式会社|有限会社|合同会社|（株）|\(株\)/, /[0-9０-９]{2,4}[-－][0-9０-９]{2,4}[-－][0-9０-９]{3,4}/, /[ぁ-んァ-ン一-龥]{1,3}[市区町村][ぁ-んァ-ン一-龥]{1,6}[0-9０-９]/];
+function check(){
+  collectHead(); const E=[], W=[];
+  const is_sample = epName.startsWith("SAMPLE");
+  const bs = ep.background_stat||{}, outro = ep.outro||{};
+  const texts = [["title",ep.title||""], ["thumb",(ep.thumbnail.main_text||"")+" "+(ep.thumbnail.sub_text||"")+" "+(ep.thumbnail.visual||"")],
+    ["outro.question", outro.question||""], ["outro.disclaimer_text", outro.disclaimer_text||""], ["background_stat.text", bs.text||""]];
+  if(!SLOTS.includes(ep.slot)) E.push(`slot が不正: ${ep.slot}（${SLOTS.join("/")}）`);
+  if(!bs.text) E.push("background_stat.text が空");
+  if(!bs.org) E.push("background_stat.org が空");
+  if(/[0-9０-９]{1,2}月[0-9０-９]{1,2}日|さん[はがのを]|被害者|加害者/.test(bs.text||"")) W.push(`background_stat が具体的な1件の事例に見える（統計・制度までに留める）: ${(bs.text||"").slice(0,40)}`);
+  if(!(outro.disclaimer_text||"").includes("フィクション")) E.push("outro.disclaimer_text に『フィクション』が無い");
+  if(!(outro.disclaimer_text||"").includes("実在の人物") || !(outro.disclaimer_text||"").includes("関係ありません")) E.push("outro.disclaimer_text に『実在の人物・団体・事件とは一切関係ありません』相当の文言が無い");
+  if(!(outro.disclaimer_text||"").includes("投資助言")) E.push("outro.disclaimer_text に『投資助言ではありません』が無い（§1-4）");
+  if(!bs.published) E.push("background_stat.published が空（数字の時点を必ず明記する。§1-3）");
+  const chapters = ep.chapters||[]; const names = chapters.map(c=>c.name);
+  if(JSON.stringify(names)!==JSON.stringify(CHAPTERS)) E.push(`章の並びが型と違う: ${names.join("/")}（正: ${CHAPTERS.join("/")}）`);
+  let n=0, chars=0, se=Math.max(chapters.length-1,0), diagrams=0, hasBlackout=false, panelNums=[];
+  for(const ch of chapters) for(const p of ch.panels||[]){
+    n++; panelNums.push(+p.panel); if(p.diagram) diagrams++; if(p.blackout) hasBlackout=true;
+    texts.push([`p${p.panel}`, [p.scene,p.visual,p.narration,typeof p.diagram==="string"?p.diagram:JSON.stringify(p.diagram||""), ...(p.lines||[]).map(l=>l.text), ...Object.values(p.role_label||{})].join(" ")]);
+    for(const c of p.chars||[]) if(!WHO.includes(c)) E.push(`p${p.panel}: 未知のキャラ '${c}'（${WHO.join("/")}）`);
+    for(const l of p.lines||[]){
+      if(!WHO.includes(l.who)) E.push(`p${p.panel}: 話者 '${l.who}' は固定キャラ（${WHO.join("/")}）にない`);
+      const [warnAt, errAt] = l.who==="miyata" ? [54,57] : [30,45];
+      if((l.text||"").length>errAt) E.push(`p${p.panel}: 台詞が長すぎる（${l.text.length}字 > ${errAt}）`);
+      else if((l.text||"").length>warnAt) W.push(`p${p.panel}: 台詞が長い（${l.text.length}字）`);
+      chars += (l.text||"").length;
+    }
+    if((p.lines||[]).length>3) W.push(`p${p.panel}: 台詞が${(p.lines||[]).length}行（1コマ3行まで）`);
+    chars += (p.narration||"").length;
+    if(!(p.lines||[]).length && !p.narration) E.push(`p${p.panel}: 台詞もナレーションも無い`);
+    const seN = p.se; if(seN!=null){ if(!SE_BUILTIN.concat("chapter").includes(seN)) W.push(`p${p.panel}: se '${seN}' は既知の名前でない`); if(seN==="chapter") W.push(`p${p.panel}: 章頭の chapter は自動で付くので書かない`); se++; }
+    if(p.se_gain_db!=null && !(p.se_gain_db>=-30 && p.se_gain_db<=6)) W.push(`p${p.panel}: se_gain_db ${p.se_gain_db} は -30〜6 の範囲に`);
+    if((p.fx_text||{}).text && p.fx_text.text.length>6) W.push(`p${p.panel}: fx_text が長い（効果音の文字は2〜4字）`);
+    if(p.punch_at_line!=null && (p.lines||[]).some(l=>((l.bubble||{}).shape)!=="none")) W.push(`p${p.panel}: punch_at_line は吹き出し（段階表示）と併用できない`);
+  }
+  if(hasBlackout) W.push("blackout（暗転）はこのジャンルでは使わない設計");
+  if(panelNums.join(",")!==panelNums.map((_,i)=>i+1).join(",")) E.push(`panel 番号が 1..N の連番でない: ${panelNums.slice(0,10).join(",")}…`);
+  if(!is_sample && !(n>=30 && n<=45)) E.push(`コマ数 ${n} が範囲外（30〜45）`);
+  if(!is_sample && !(diagrams>=4 && diagrams<=8)) W.push(`図解コマ ${diagrams}（目安 4〜8）`);
+  for(const [where,t] of texts){
+    for(const w of FORBIDDEN) if((t||"").includes(w)) E.push(`禁止語『${w}』（実話を思わせる／煽り）: ${where}`);
+    for(const w of ROMANCE_HINTS) if((t||"").includes(w)) W.push(`恋愛・復讐の語『${w}』が入っている: ${where}`);
+    for(const w of ADVICE_ABSOLUTES) if((t||"").includes(w)) E.push(`断定的な投資助言表現『${w}』（§1-1）: ${where}`);
+    for(const w of OUTCOME_HINTS) if((t||"").includes(w)) W.push(`お金の結果で落差を作っていないか『${w}』（§3: 落差は制度・手続き・行動に置く）: ${where}`);
+    for(const w of TICKER_HINTS) if((t||"").includes(w)) W.push(`個別銘柄・暗号資産への言及『${w}』（§1-2）: ${where}`);
+    for(const pat of IDENTIFYING) if(pat.test(t||"")) E.push(`特定につながる表現: ${where}: ${(t||"").slice(0,40)}`);
+  }
+  if((ep.title||"").length>45) W.push(`タイトルが長い（${ep.title.length}字 > 45）`);
+  const min = chars/290;
+  if(!is_sample){ if(min<10) W.push(`文字数から見た尺が短い: 約${min.toFixed(1)}分（${chars}字）`); if(min>14) W.push(`文字数から見た尺が長い: 約${min.toFixed(1)}分`); }
+  const limit = 8*Math.max(min,1)/10; if(se > limit+0.5) W.push(`効果音が多い: ${se}回（目安 ${limit.toFixed(0)}回）`);
+  const adviceCh = chapters.find(c=>c.name==="気づき・対策");
+  if(adviceCh){ const t = (adviceCh.panels||[]).flatMap(p=>(p.lines||[]).map(l=>l.text||"")).join(" ");
+    if(!/専門家|司法書士|税理士|弁護士|ファイナンシャルプランナー|相談を/.test(t)) W.push("『気づき・対策』章に専門家への相談を促す一文が無い"); }
+  const q = outro.question||""; if(!/(か|？|\?)$/.test(q)) W.push("outro.question が問いかけの形になっていない");
+  const lastCh = chapters[chapters.length-1]; const lastPanels = (lastCh||{}).panels||[]; const last = lastPanels[lastPanels.length-1];
+  if(last && !(last.lines||[]).some(l=>(l.text||"").includes("コメント"))) W.push("最後のコマの台詞に『コメントで教えてください』が無い");
+  const ul=$("problems"); ul.innerHTML = [...E.map(e=>`<li class="e">${esc(e)}</li>`), ...W.map(w=>`<li class="w">${esc(w)}</li>`)].join("") || '<li style="color:var(--ok)">問題なし（ERROR 0 / WARN 0）</li>';
+  return E.length===0;
+}
+$("sc-check").addEventListener("click", check);
+$("sc-open").addEventListener("click", () => { if($("sc-select").value) openScript($("sc-select").value).catch(e=>alert(e.message)); });
+$("sc-save").addEventListener("click", async () => {
+  if(!check()){ $("sc-msg").textContent="ERROR があるので保存しません"; $("sc-msg").className="msg bad"; return; }
+  $("sc-msg").textContent="保存中…"; $("sc-msg").className="msg";
+  try{ await putText(`${DIR}/data/manga/${epName}`, JSON.stringify(ep, null, 2)+"\n", `manga-money: 台本を操作卓で修正 ${epName} [skip ci] [skip vercel]`); $("sc-msg").textContent="保存しました（コミット済み）"; $("sc-msg").className="msg ok"; }
+  catch(e){ $("sc-msg").textContent=e.message; $("sc-msg").className="msg bad"; }
+});
+$("g-run").addEventListener("click", async () => {
+  if(!ep) return; const m=$("g-msg");
+  const inputs = {script:`data/manga/${epName}`, upload: $("g-upload").checked, schedule: $("g-schedule").checked, mock_tts: $("g-mock").checked, shorts: $("g-shorts").checked};
+  if(inputs.schedule && !inputs.upload){ m.textContent="予約公開にはアップロードのチェックも必要です"; m.className="msg bad"; return; }
+  if(!confirm(`生成を起動します。\n台本: ${epName}\nアップロード: ${inputs.upload?"する":"しない"} / 予約公開: ${inputs.schedule?"する":"しない"} / 音声: ${inputs.mock_tts?"無音（確認用）":"あり"}`)) return;
+  m.textContent="起動中…"; m.className="msg";
+  try{
+    const since = Date.now();
+    await api(rp(`/actions/workflows/${WF}/dispatches`), {method:"POST", body: JSON.stringify({ref: gh.branch, inputs})});
+    m.textContent="起動しました。下に進捗が出ます（数十秒かかります）"; m.className="msg ok";
+    watchRun(since, $("g-watch"));
+  }catch(e){ m.textContent=e.message; m.className="msg bad"; }
+});
+let watcher=null;
+function watchRun(since, el){
+  clearInterval(watcher);
+  const tick = async () => {
+    try{
+      const j = await api(rp(`/actions/workflows/${WF}/runs?per_page=5&event=workflow_dispatch`));
+      const r = (j.workflow_runs||[]).find(x => new Date(x.created_at).getTime() >= since-60000);
+      if(!r){ el.innerHTML='<div class="run"><span class="dot queued"></span>開始を待っています…</div>'; return; }
+      el.innerHTML = `<div class="run"><span class="dot ${r.conclusion||r.status}"></span>${r.status} ${r.conclusion||""} <a href="${r.html_url}" target="_blank">ログ・Artifacts</a></div>`;
+      if(r.status==="completed"){ clearInterval(watcher); loadRuns(); }
+    }catch(e){ el.innerHTML=`<div class="msg bad">${esc(e.message)}</div>`; }
+  };
+  tick(); watcher = setInterval(tick, 20000);
+}
+
+// ---------- 仕上げのプレビュー（panel_fx.py の簡易版） ----------
+function preview(el, show){
+  const cv = el.querySelector("canvas.prev"); if(!cv) return;
+  if(show) cv.hidden = false; if(cv.hidden) return;
+  const p = findPanel(el.dataset.p); const c = cv.getContext("2d"); const W=960, H=540, k=0.5;
+  c.fillStyle="#f6f3ec"; c.fillRect(0,0,W,H);
+  // 仮の絵: 場面の文字と人影
+  c.fillStyle="#9a9a9a"; c.font="20px sans-serif"; c.textAlign="center"; c.fillText(p.scene||"", W/2, 60);
+  c.strokeStyle="#1b1b1b"; c.lineWidth=3; c.beginPath(); c.arc(W/2, 230, 30, 0, Math.PI*2); c.stroke(); c.beginPath(); c.moveTo(W/2,260); c.lineTo(W/2,360); c.stroke();
+  const fx = p.fx||[]; const cx=W/2, cy=H*0.42;
+  const rad=(n, inner, col, wid)=>{ c.strokeStyle=col; c.lineWidth=wid; for(let i=0;i<n;i++){ const a=2*Math.PI*i/n+(Math.sin(i*7)*0.02); c.beginPath(); c.moveTo(cx+Math.cos(a)*inner, cy+Math.sin(a)*inner); c.lineTo(cx+Math.cos(a)*1200, cy+Math.sin(a)*1200); c.stroke(); } };
+  if(fx.includes("dark")){ const g=c.createRadialGradient(cx,cy,120,cx,cy,620); g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,"rgba(0,0,0,0.6)"); c.fillStyle=g; c.fillRect(0,0,W,H); }
+  if(fx.includes("sad")){ c.fillStyle="rgba(70,80,120,0.2)"; c.fillRect(0,0,W,H); c.strokeStyle="rgba(60,70,110,0.5)"; c.lineWidth=1; for(let x=0;x<W;x+=5){ c.beginPath(); c.moveTo(x,0); c.lineTo(x, H*(0.28+0.12*((x/5)%3))); c.stroke(); } }
+  if(fx.includes("shock")){ rad(90, 215, "rgba(27,27,27,0.8)", 1.2); c.strokeStyle="rgba(27,27,27,0.35)"; for(let x=0;x<W;x+=9){ c.beginPath(); c.moveTo(x,0); c.lineTo(x+2,H*0.16); c.stroke(); } }
+  if(fx.includes("surprise")) rad(60, 260, "rgba(27,27,27,0.65)", 1);
+  if(fx.includes("flash")){ rad(120, 40, "rgba(255,255,255,0.9)", 1.5); const g=c.createRadialGradient(cx,cy,0,cx,cy,200); g.addColorStop(0,"rgba(255,255,255,0.7)"); g.addColorStop(1,"rgba(255,255,255,0)"); c.fillStyle=g; c.fillRect(0,0,W,H); }
+  if(fx.includes("speed")){ c.strokeStyle="rgba(27,27,27,0.5)"; c.lineWidth=1.2; for(let i=0;i<140;i++){ const y=(i*97)%Math.floor(H*0.8), x0=(i*331)%W; c.beginPath(); c.moveTo(x0,y); c.lineTo(x0+60+(i*53)%200,y); c.stroke(); } }
+  if(fx.includes("happy")){ c.fillStyle="rgba(255,235,120,0.9)"; c.strokeStyle="#1b1b1b"; c.lineWidth=1; for(let i=0;i<26;i++){ const x=30+(i*211)%(W-60), y=30+(i*157)%(H*0.78), r=7+(i*13)%13; c.beginPath(); c.moveTo(x,y-r); c.lineTo(x+r*.25,y-r*.25); c.lineTo(x+r,y); c.lineTo(x+r*.25,y+r*.25); c.lineTo(x,y+r); c.lineTo(x-r*.25,y+r*.25); c.lineTo(x-r,y); c.lineTo(x-r*.25,y-r*.25); c.closePath(); c.fill(); c.stroke(); } }
+  if(fx.includes("sweat")){ c.fillStyle="rgba(150,200,255,0.9)"; c.strokeStyle="#1b1b1b"; for(let i=0;i<3;i++){ const x=W*0.68+i*35, y=H*0.16+i*15; c.beginPath(); c.moveTo(x,y); c.lineTo(x+11,y+25); c.lineTo(x,y+34); c.lineTo(x-11,y+25); c.closePath(); c.fill(); c.stroke(); } }
+  // 枠
+  const fs = (p.frame||{}).style || "thin";
+  if(fs!=="none"){ c.strokeStyle=(p.frame||{}).color||"#1b1b1b"; c.lineWidth={thin:4,thick:11,double:4,rough:7}[fs]||4; c.strokeRect(c.lineWidth/2,c.lineWidth/2,W-c.lineWidth,H-c.lineWidth); if(fs==="double"){ c.lineWidth=2; c.strokeRect(9,9,W-18,H-18); } }
+  // 効果音の文字
+  const ft = p.fx_text||{}; if(ft.text){ const size=(ft.size||150)*k; c.save(); c.font=`bold ${size}px sans-serif`; c.textAlign="left"; const tw=c.measureText(ft.text).width; const m=20, yb=H*(1-0.18)-size-m;
+    const x={tl:m,tr:W-tw-m,bl:m,br:W-tw-m,c:(W-tw)/2}[ft.pos||"tr"], y={tl:m+size,tr:m+size,bl:yb+size,br:yb+size,c:(H*(1-0.18))/2+size/2}[ft.pos||"tr"];
+    c.translate(x+tw/2,y-size/2); c.rotate((ft.angle??-8)*Math.PI/180); c.lineWidth=size/12; c.strokeStyle=ft.outline||"#fff"; c.strokeText(ft.text,-tw/2,size/2); c.fillStyle=ft.color||"#1b1b1b"; c.fillText(ft.text,-tw/2,size/2); c.restore(); }
+  // 吹き出し（全行）
+  (p.lines||[]).forEach((l,i)=>{ const b=l.bubble||{}; if(b.shape==="none"||!l.text) return; const vertical=b.vertical!==false; const size=44*k;
+    const cols = vertical ? Math.ceil(l.text.length/9) : 1; const rows = vertical ? Math.min(9,l.text.length) : Math.ceil(l.text.length/14);
+    const tw = vertical ? size*1.25*cols : Math.min(14,l.text.length)*size; const th = vertical ? size*1.08*rows : size*1.25*rows; const pad=17, bw=tw+pad*2, bh=th+pad*2;
+    let pos=b.pos||"auto"; if(pos==="auto") pos=["tl","tr","bl","br"][i%4]; const m=30, yb=H*(1-0.18)-bh-m; const x={tl:m,tr:W-bw-m,bl:m,br:W-bw-m}[pos], y={tl:65,tr:m,bl:yb,br:yb}[pos];
+    c.fillStyle="#fff"; c.strokeStyle="#1b1b1b"; c.lineWidth=2.5;
+    if(b.shape==="rect"){ c.fillRect(x,y,bw,bh); c.strokeRect(x,y,bw,bh); }
+    else if(b.shape==="jagged"){ c.beginPath(); for(let j=0;j<28;j++){ const a=2*Math.PI*j/28, r=j%2?0.78:1; c.lineTo(x+bw/2+Math.cos(a)*(bw/2+13)*r, y+bh/2+Math.sin(a)*(bh/2+13)*r); } c.closePath(); c.fill(); c.stroke(); }
+    else if(b.shape==="think"||b.shape==="cloud"){ for(let j=0;j<14;j++){ const a=2*Math.PI*j/14; const r=Math.max(bw,bh)/2*0.28; c.beginPath(); c.arc(x+bw/2+Math.cos(a)*bw/2, y+bh/2+Math.sin(a)*bh/2, r, 0, Math.PI*2); c.fill(); c.stroke(); } c.beginPath(); c.ellipse(x+bw/2,y+bh/2,bw/2-3,bh/2-3,0,0,Math.PI*2); c.fill(); }
+    else { c.beginPath(); c.ellipse(x+bw/2,y+bh/2,bw/2+9,bh/2+9,0,0,Math.PI*2); c.fill(); c.stroke(); }
+    if(b.tail!=="none" && b.shape!=="think" && b.shape!=="cloud"){ const tx=x+bw/2, up=y<H/2; const ty=up?y+bh:y, dy=up?35:-35; const right = b.tail==="auto"||!b.tail ? (x+bw/2)<W/2 : b.tail==="right"; const dx=right?45:-45; c.beginPath(); c.moveTo(tx-11,ty); c.lineTo(tx+11,ty); c.lineTo(tx+dx,ty+dy); c.closePath(); c.fill(); c.stroke(); }
+    c.fillStyle="#1b1b1b"; c.font=`${size}px sans-serif`; c.textAlign="left";
+    if(vertical){ for(let ci=0;ci<cols;ci++){ const col=l.text.slice(ci*9,ci*9+9); const xx=x+bw-pad-size*1.25*(ci+1)+size*0.1; for(let r=0;r<col.length;r++){ c.fillText(col[r], xx, y+pad+size*(r+0.9)); } } }
+    else { for(let r=0;r<rows;r++) c.fillText(l.text.slice(r*14,r*14+14), x+pad, y+pad+size*(r+0.9)); }
+  });
+  // 字幕帯の目安
+  c.fillStyle="rgba(0,0,0,0.08)"; c.fillRect(0,H*(1-0.18),W,H*0.18); c.fillStyle="#666"; c.font="12px sans-serif"; c.textAlign="left"; c.fillText("字幕帯（ここには置かれない）", 8, H-8);
+}
+
+// ---------- キャラ・素材 ----------
+async function loadAssets(){
+  if(!ready()) return;
+  const sh = $("sheets"); sh.innerHTML='<div class="empty">読み込み中…</div>';
+  const chars = ["miyata","kanae","ryo"], ja = {miyata:"宮田（狂言回し・固定）", kanae:"かなえ（汎用・毎話別役）", ryo:"涼（汎用・毎話別役）"};
+  const cells = [];
+  for(const c of chars){
+    try{ const url = await readImage(`${DIR}/assets/characters/${c}_sheet.png`); cells.push(`<div><div class="hint">${ja[c]}</div><img class="sheet" src="${url}"></div>`); }
+    catch{ cells.push(`<div><div class="hint">${ja[c]}</div><div class="empty">未生成（初回の生成ワークフローが作ります。要 GEMINI_API_KEY）</div></div>`); }
+  }
+  sh.innerHTML = cells.join("");
+  try{
+    const {text} = await readText(`${DIR}/config.yaml`);
+    const rows = chars.map(c => {
+      const m = text.match(new RegExp(`\\n\\s{4}${c}:\\n([\\s\\S]*?)(?=\\n\\s{4}\\w+:|\\n\\S)`));
+      const block = m ? m[1] : "";
+      const sp = (block.match(/speaker:\s*([^\s#]+)/)||[])[1];
+      const ok = sp && sp!=="null"; const inherit = !block.includes("speaker:");
+      return `<li>${ja[c]} <span class="spacer"></span>${inherit?'<span class="tag ok">既定の声（宮田と同じ）</span>':(ok?`<span class="tag ok">話者ID ${esc(sp)}</span>`:'<span class="tag bad">未設定（要決定）</span>')}</li>`;
+    });
+    $("voices").innerHTML = `<ul class="list">${rows.join("")}</ul><div class="hint">未設定の人物は既定の声で読まれます。AivisHub で聴き比べて <code>config.yaml</code> の <code>tts.speakers</code> に speaker と aivm_model_uuid を書いてください（かなえ・涼が要決定）。</div>`;
+  }catch(e){ $("voices").innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+  const se = (await listDir(`${DIR}/assets/audio/se`)).map(f=>f.name), bgm = (await listDir(`${DIR}/assets/audio/bgm`)).map(f=>f.name);
+  const need = {se:["chapter","accent","question"], bgm:[]};   // BGMはセカイ秒読み長尺のライブラリを共有（用意不要）
+  const has = (list, base) => list.some(n => n.replace(/\.[^.]+$/,"")===base);
+  $("audio").innerHTML = `<div class="hint">効果音</div><ul class="list">${need.se.map(n=>`<li>${n} <span class="spacer"></span>${has(se,n)?'<span class="tag ok">あり</span>':'<span class="tag warn">無し（合成音で代用）</span>'}</li>`).join("")}</ul><div class="hint" style="margin-top:8px">BGM</div><div class="hint">セカイ秒読み長尺のライブラリを共有しているので用意は不要（台本日付でローテーション選曲）。</div>`;
+}
+$("as-refresh").addEventListener("click", loadAssets);
+
+// ---------- 抜き取り検査 ----------
+async function loadReviews(){
+  if(!ready()) return;
+  try{ const {text} = await readText(`${DIR}/data/reviews.json`); const j = JSON.parse(text);
+    $("rv-list").innerHTML = (j.reviews||[]).slice().reverse().map(r=>`<li><b>${esc(r.date)}</b><span>${(r.ids||[]).map(esc).join(", ")}</span><span class="tag ${r.checks.every(Boolean)?"ok":"warn"}">${r.checks.filter(Boolean).length}/3</span><span class="hint">${esc(r.note||"")}</span></li>`).join("") || '<li class="empty">記録なし</li>';
+  }catch{ $("rv-list").innerHTML='<li class="empty">記録なし</li>'; }
+}
+$("rv-save").addEventListener("click", async () => {
+  const m=$("rv-msg"); const ids=$("rv-ids").value.split("\n").map(s=>s.trim()).filter(Boolean);
+  if(ids.length<1){ m.textContent="見た動画の台本idを入れてください"; m.className="msg bad"; return; }
+  const rec = {date: jstDate(jstNow()), ids, checks:[$("rv-c1").checked,$("rv-c2").checked,$("rv-c3").checked], note:$("rv-note").value.trim()};
+  m.textContent="保存中…"; m.className="msg";
+  try{
+    let j={reviews:[]}; try{ const {text}=await readText(`${DIR}/data/reviews.json`); j=JSON.parse(text); }catch{}
+    j.reviews.push(rec);
+    await putText(`${DIR}/data/reviews.json`, JSON.stringify(j,null,2)+"\n", `manga-money: 抜き取り検査 ${rec.date} [skip ci] [skip vercel]`);
+    m.textContent="記録しました"; m.className="msg ok"; loadReviews();
+  }catch(e){ m.textContent=e.message; m.className="msg bad"; }
+});
+
+// ---------- 設定 ----------
+async function connect(silent){
+  if(!ready()){ setConn(false, "未接続（設定でトークンを入れる）"); return false; }
+  try{ const r = await api(rp("")); setConn(true, `${r.full_name} @ ${gh.branch}`); if(!silent){ $("s-msg").textContent="接続できました"; $("s-msg").className="msg ok"; } return true; }
+  catch(e){ setConn(false, "接続失敗"); if(!silent){ $("s-msg").textContent=e.message; $("s-msg").className="msg bad"; } return false; }
+}
+$("s-test").addEventListener("click", async () => {
+  const repo=$("s-repo").value.trim(); if(repo.includes("/")){ [gh.owner, gh.repo]=repo.split("/"); }
+  gh.branch=$("s-branch").value.trim()||"main"; gh.token=$("s-token").value.trim();
+  if(await connect(false)){ ghStore(); await boot(); }
+});
+$("s-clear").addEventListener("click", () => { gh.token=""; ghStore(); $("s-token").value=""; setConn(false,"未接続"); });
+
+async function boot(){
+  renderToday();
+  if(!ready()) return;
+  await loadSeLibrary();
+  await loadScripts(); await loadRuns(); await loadSchedule();
+}
+ghLoad(); $("s-repo").value=`${gh.owner}/${gh.repo}`; $("s-branch").value=gh.branch; $("s-token").value=gh.token;
+renderToday(); connect(true).then(ok => { if(ok) boot(); else document.querySelector('[data-tab="settings"]').click(); });
+</script>
+</body>
+</html>
