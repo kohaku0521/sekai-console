@@ -26,7 +26,7 @@ button.bad{background:var(--bad);border-color:var(--bad);color:#fff}
 button:disabled{opacity:.4;cursor:not-allowed}
 select,input[type=text],input[type=password],textarea{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px 10px;width:100%}
 textarea{resize:vertical;min-height:64px}
-main{max-width:1280px;margin:0 auto;padding:16px 16px 120px}
+main{max-width:1280px;margin:0 auto;padding:16px 16px 280px}   /* 下の固定の操作欄（スマホでは2段）に最後の場面が隠れないよう、広く空ける */
 a{color:#7fb0ff}
 .stats{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 14px}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px;min-width:110px}
@@ -100,6 +100,7 @@ a{color:#7fb0ff}
   <div id="msg" class="msg"></div>
   <div id="empty" class="empty">台本を選んで「読み込み」を押してください。最初に「⚙ 接続設定」でGitHubにつなぎます。</div>
   <div id="grid" class="grid"></div>
+  <div id="pages2" class="filters pages" style="margin-top:14px"></div>
 </main>
 
 <div class="dock"><div class="in">
@@ -471,6 +472,11 @@ function render(){
     return `<button data-p="${i}" class="${i === S.page ? "on" : ""}${mark ? " has" : ""}">${a}〜${b}${mark}</button>`;
   }).join("");
   pg.querySelectorAll("button").forEach(b => b.onclick = () => { S.page = +b.dataset.p; S.open = null; render(); window.scrollTo({top: 0}); });
+  // 一覧の下にも同じタブと「次へ」を出す（下までスクロールしたあと、上に戻らなくても次の場面に進める）
+  const pg2 = $("#pages2");
+  pg2.innerHTML = pageCount <= 1 ? "" : pg.innerHTML + (S.page < pageCount - 1 ? `<button data-next="1" class="primary">次へ ▶</button>` : "");
+  pg2.querySelectorAll("button[data-p]").forEach(b => b.onclick = () => { S.page = +b.dataset.p; S.open = null; render(); window.scrollTo({top: 0}); });
+  const nx = pg2.querySelector("[data-next]"); if(nx) nx.onclick = () => { S.page += 1; S.open = null; render(); window.scrollTo({top: 0}); };
   const grid = $("#grid");
   for(const s of list.slice(S.page * PER, (S.page + 1) * PER)){
     const cur = currentOf(s);
