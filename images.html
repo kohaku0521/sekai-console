@@ -139,7 +139,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const CHANNELS = {
   sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml"},
   // 絶滅した生物たち（2026-10-28）。生成のワークフローは作成後に wf を差し替える。画像は公開画像（Commons）から選ぶのが既定
-  virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", defaultTab: "commons", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
+  virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", defaultTab: "pixabay", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
   zetsumetsu: {dir: "CMO/YouTube/zetsumetsu", wf: "zetsumetsu-produce.yml", defaultTab: "commons", label: "絶滅した生物たち", scriptRel: "../zetsumetsu/data/scripts/"},
 };
 // チャンネルは ?ch= で指定（無ければ、前回選んだもの。それも無ければセカイ秒読み）。ヘッダーの選択でも切り替えられる
