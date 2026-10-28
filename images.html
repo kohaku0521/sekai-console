@@ -82,6 +82,7 @@ a{color:#7fb0ff}
   <select id="chsel" style="width:auto" title="チャンネル（台本の置き場）を切り替える"></select>
   <select id="script" style="max-width:360px"></select>
   <button id="b-reload">読み込み</button>
+  <button id="b-prev" style="display:none" title="文字・図解・グラフになる場面が、動画でどう見えるかの確認画像を作ります（音声・動画・課金は使いません。約3分）">図・文字の表示を作る</button>
   <span class="spacer"></span>
   <a href="index.html" style="font-size:12px">統合コンソール</a>
   <button id="b-settings">⚙ 接続設定</button>
@@ -139,7 +140,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const CHANNELS = {
   sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml"},
   // 絶滅した生物たち（2026-10-28）。生成のワークフローは作成後に wf を差し替える。画像は公開画像（Commons）から選ぶのが既定
-  virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", defaultTab: "pixabay", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
+  virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", previewWf: "virus-preview.yml", defaultTab: "commons", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
   zetsumetsu: {dir: "CMO/YouTube/zetsumetsu", wf: "zetsumetsu-produce.yml", defaultTab: "commons", label: "絶滅した生物たち", scriptRel: "../zetsumetsu/data/scripts/"},
 };
 // チャンネルは ?ch= で指定（無ければ、前回選んだもの。それも無ければセカイ秒読み）。ヘッダーの選択でも切り替えられる
@@ -255,7 +256,9 @@ async function loadAssets(){
     listDir(`${GH_DIR}/assets/images/generated/${S.stem}`),
     listDir(`${GH_DIR}/assets/video_clips/${S.stem}`),
   ]);
-  S.assets = {}; S.clips = {};
+  S.assets = {}; S.clips = {}; S.prev = {};
+  // 文字・図解・グラフになる場面の、動画での表示の確認画像（render_slide_previews.py）。無いチャンネル・台本は空のまま
+  for(const i of await listDir(`${GH_DIR}/assets/slide_previews/${S.stem}`)) if(/^scene_\d+\.jpg$/.test(i.name)) S.prev[i.name.replace(/\.jpg$/, "")] = {size: i.size, name: i.name, path: i.path || `${GH_DIR}/assets/slide_previews/${S.stem}/${i.name}`};
   for(const i of imgs) if(/\.(png|jpe?g|webp)$/i.test(i.name)) S.assets[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, name: i.name, path: i.path || `${GH_DIR}/assets/images/generated/${S.stem}/${i.name}`};
   for(const i of clips) if(/\.mp4$/i.test(i.name)) S.clips[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, name: i.name};
 }
@@ -395,7 +398,7 @@ async function loadThumb(path, size){
       if(!r.ok) throw new Error(`GitHub ${r.status}`);
       const blob = await r.blob();
       const bmp = await createImageBitmap(blob);
-      const w = Math.min(640, bmp.width), h = Math.round(bmp.height * w / bmp.width);
+      const w = Math.min(path.includes("slide_previews") ? 960 : 640, bmp.width), h = Math.round(bmp.height * w / bmp.width);
       const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
       cv.getContext("2d").drawImage(bmp, 0, 0, w, h);
       const out = await new Promise(res => cv.toBlob(res, "image/jpeg", 0.82));
@@ -430,10 +433,12 @@ function observeImages(){
 function needsReview(s){ return PHOTO_KINDS.has(kindOf(s)); }
 function currentOf(s){
   if(s.staged) return {url: s.staged.url, label: "変更あり"};
-  if(s.action === "text") return {url: null, label: "文字・図にする"};
+  const pv = S.prev && S.prev[s.id];
+  if(s.action === "text") return pv ? {url: null, asset: pv, label: "文字・図にする（この表示）"} : {url: null, label: "文字・図にする"};
   const a = S.assets[s.id];
   if(a) return {url: null, asset: a, label: ""};
   if(S.clips[s.id]) return {url: null, label: "動画クリップ"};
+  if(pv) return {url: null, asset: pv, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし → この文字で表示" : "この図・文字で表示"};
   return {url: null, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし（文字で表示）" : "文字・図で表示"};
 }
 const changedScenes = () => S.scenes.filter(s => s.staged || s.action);
@@ -449,10 +454,10 @@ function render(){
     ["場面", S.scenes.length, ""], ["画像を使う場面", need.length, ""],
     ["画像が無い（文字で表示）", noImg.length, noImg.length ? "warn" : "ok"], ["変更あり", ch.length, ch.length ? "warn" : ""],
   ].map(([k, v, c]) => `<div class="stat ${c}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
-  const F = [["review", "画像を使う場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["all", "すべて"]];
+  const F = [["review", "画像を使う場面"], ["slides", "図・文字の場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["all", "すべて"]];
   $("#filters").innerHTML = F.map(([k, l]) => `<button data-f="${k}" class="${S.filter === k ? "on" : ""}">${l}</button>`).join("");
   $("#filters").querySelectorAll("button").forEach(b => b.onclick = () => { S.filter = b.dataset.f; S.page = 0; S.open = null; render(); });
-  const list = S.scenes.filter(s => S.filter === "all" ? true : S.filter === "changed" ? (s.staged || s.action)
+  const list = S.scenes.filter(s => S.filter === "all" ? true : S.filter === "slides" ? !needsReview(s) : S.filter === "changed" ? (s.staged || s.action)
     : S.filter === "noimg" ? (needsReview(s) && !S.assets[s.id] && !S.clips[s.id] && !s.staged) : needsReview(s));
   // 一度にたくさんの画像を読み込むと重いので、15場面ごとのタブに分けて、いまのタブの分だけ表示する
   const PER = 15;
@@ -571,6 +576,8 @@ function buildPanel(s){
   }else{
     body.innerHTML = `
       <div class="msg">この場面は、画像を使わず、文字・図で表示します（今ある画像は、保存のときに外れます）。</div>
+      ${S.prev && S.prev[s.id] ? `<div class="hint" style="margin:6px 0">動画では、次のように表示されます（確認画像）。</div><div class="thumb" style="max-width:560px"><img data-asset="${esc(S.prev[s.id].path)}" data-size="${S.prev[s.id].size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span></div>`
+        : `<div class="hint" style="margin:6px 0">表示の確認画像がまだありません。${CH.previewWf ? "ヘッダーの「図・文字の表示を作る」を押すと作れます。" : ""}</div>`}
       <div class="row"><button id="mk" class="primary">文字・図にする</button></div>`;
     body.querySelector("#mk").onclick = () => { if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = "text"; render(); };
   }
@@ -664,6 +671,18 @@ $("#b-reload").onclick = async () => {
 };
 $("#b-save").onclick = saveAll;
 $("#b-assets").onclick = runAssets;
+// 図・文字の表示の確認画像を作る（previewWf があるチャンネルだけ）。音声・動画・課金は使わない
+if(CH.previewWf) $("#b-prev").style.display = "";
+$("#b-prev").onclick = async () => {
+  if(!S.json) return;
+  if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  if(!confirm("文字・図解・グラフになる場面の、動画での表示を、確認画像にして作ります（音声・動画・課金は使いません。約3分）。\n終わったら「読み込み」を押してください。よろしいですか？")) return;
+  try{
+    await api(repoPath(`/actions/workflows/${CH.previewWf}/dispatches`), {method: "POST", body: JSON.stringify({ref: gh.branch, inputs: {script: `${CH.scriptRel || "data/scripts/"}${S.name}`}})});
+    dockMsg("表示の確認画像を作り始めました（約3分）。終わったら「読み込み」を押してください", "ok");
+    const a = $("#run-link"); a.href = `https://github.com/${gh.owner}/${gh.repo}/actions/workflows/${CH.previewWf}`; a.style.display = "";
+  }catch(e){ dockMsg(e.message, "err"); }
+};
 $("#b-run").onclick = runProduce;
 window.addEventListener("beforeunload", e => { if(changedScenes().length){ e.preventDefault(); e.returnValue = ""; } });
 
