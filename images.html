@@ -103,6 +103,7 @@ a{color:#7fb0ff}
 <div class="dock"><div class="in">
   <button id="b-assets" title="本物の素材（NASA）と、Pixabayの写真を、台本の検索語で一通り取ります。絵の生成・音声・動画の書き出しはしません（無料）">① 素材を自動取得（無料）</button>
   <button id="b-save" class="primary" disabled>③ 保存（0件の変更）</button>
+  <label class="hint" style="display:flex;align-items:center;gap:6px;cursor:pointer" title="外すと、切り抜きショート（長尺の宣伝用の2本）は作らず、予約もしません"><input type="checkbox" id="c-shorts" checked> 切り抜きショートも作る</label>
   <button id="b-run" class="warn" title="保存したあと、動画を作ってアップロードし、台本の日付の20時に予約公開します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
@@ -587,8 +588,9 @@ async function runProduce(){
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
   if(changedScenes().length){ dockMsg("未保存の変更があります。先に「③ 保存」を押してください", "err"); return; }
   const date = (S.json.date || "").slice(0, 10);
-  if(!confirm(`動画を作ってアップロードします（約40分）。\n台本の日付 ${date} の20時に、予約公開されます。\n\n・画像は、いまリポジトリにあるものを使います（取り直しません）\n・サムネの絵（OpenAI）と、切り抜きショートも作られます\n\nよろしいですか？`)) return;
-  try{ await dispatch({fetch_pixabay: "false", assets_only: "false", upload: "true", slides_only: "false", shorts: "true"}, "動画の生成を始めました（約40分）。結果はDiscordとチャットに届きます"); }
+  const shorts = $("#c-shorts").checked;
+  if(!confirm(`動画を作ってアップロードします（約40分）。\n台本の日付 ${date} の20時に、予約公開されます。\n\n・画像は、いまリポジトリにあるものを使います（取り直しません）\n・サムネの絵（OpenAI）は、描いてあれば描き直しません\n・切り抜きショート: ${shorts ? "作って予約します（冒頭のフック動画が課金されます）" : "作りません"}\n\n※同じ台本の動画が、すでにアップロード・予約されている場合は、二重になります。先に古い動画を削除してください。\n\nよろしいですか？`)) return;
+  try{ await dispatch({fetch_pixabay: "false", assets_only: "false", upload: "true", slides_only: "false", shorts: shorts ? "true" : "false"}, "動画の生成を始めました（約40分）。結果はDiscordとチャットに届きます"); }
   catch(e){ dockMsg(e.message, "err"); }
 }
 
