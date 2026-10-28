@@ -138,7 +138,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const CHANNELS = {
   sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml"},
   // 絶滅した生物たち（2026-10-28）。生成のワークフローは作成後に wf を差し替える。画像は公開画像（Commons）から選ぶのが既定
-  zetsumetsu: {dir: "CMO/YouTube/zetsumetsu", wf: "zetsumetsu-produce.yml", defaultTab: "commons", label: "絶滅した生物たち"},
+  zetsumetsu: {dir: "CMO/YouTube/zetsumetsu", wf: "zetsumetsu-produce.yml", defaultTab: "commons", label: "絶滅した生物たち", scriptRel: "../zetsumetsu/data/scripts/"},
 };
 const CH_KEY = (new URLSearchParams(location.search).get("ch") || "sekai");
 const CH = CHANNELS[CH_KEY] || CHANNELS.sekai;
@@ -613,7 +613,7 @@ async function saveAll(){
 
 // ── ワークフローの起動 ────────────────────────────────────────────────────
 async function dispatch(inputs, doneMsg){
-  const script = `data/scripts/${S.name}`;
+  const script = `${CH.scriptRel || "data/scripts/"}${S.name}`;
   await api(repoPath(`/actions/workflows/${WF}/dispatches`), {method: "POST", body: JSON.stringify({ref: gh.branch, inputs: {script, ...inputs}})});
   dockMsg(doneMsg, "ok");
   const a = $("#run-link"); a.href = `https://github.com/${gh.owner}/${gh.repo}/actions/workflows/${WF}`; a.style.display = "";
