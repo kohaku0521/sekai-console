@@ -107,6 +107,7 @@ a{color:#7fb0ff}
   <button id="b-assets" title="本物の素材（NASA）と、Pixabayの写真を、台本の検索語で一通り取ります。絵の生成・音声・動画の書き出しはしません（無料）">① 素材を自動取得（無料）</button>
   <button id="b-save" class="primary" disabled>③ 保存（0件の変更）</button>
   <label class="hint" style="display:flex;align-items:center;gap:6px;cursor:pointer" title="外すと、切り抜きショート（長尺の宣伝用の2本）は作らず、予約もしません"><input type="checkbox" id="c-shorts" checked> 切り抜きショートも作る</label>
+  <label id="l-art" class="hint" style="display:none;align-items:center;gap:6px" title="サムネの背景の絵（OpenAI）の画質。low は安く、medium は細部がきれいです。描いてある絵は描き直しません"><span>サムネの絵</span><select id="s-art" style="width:auto"><option value="low">low（安い）</option><option value="medium">medium</option></select></label>
   <button id="b-run" class="warn" title="保存したあと、動画を作ってアップロードし、台本の日付の20時に予約公開します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
@@ -141,7 +142,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const CHANNELS = {
   sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml"},
   // 絶滅した生物たち（2026-10-28）。生成のワークフローは作成後に wf を差し替える。画像は公開画像（Commons）から選ぶのが既定
-  virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", previewWf: "virus-preview.yml", defaultTab: "commons", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
+  virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", previewWf: "virus-preview.yml", artQuality: true, defaultTab: "commons", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
   zetsumetsu: {dir: "CMO/YouTube/zetsumetsu", wf: "zetsumetsu-produce.yml", defaultTab: "commons", label: "絶滅した生物たち", scriptRel: "../zetsumetsu/data/scripts/"},
 };
 // チャンネルは ?ch= で指定（無ければ、前回選んだもの。それも無ければセカイ秒読み）。ヘッダーの選択でも切り替えられる
@@ -362,12 +363,12 @@ const STYLES = {
   science: "A realistic science-documentary visual (telescope-image look or museum-quality reconstruction), 16:9 composition, no text, no logos, no watermarks, no recognizable faces. Subject: ",
   raw: "",
 };
-async function openaiGenerate(prompt){
+async function openaiGenerate(prompt, quality){
   if(!oa.apiKey) throw new Error("OpenAI のAPIキーが未設定です（⚙ 接続設定）");
   const call = async model => {
     const r = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST", headers: {"Content-Type": "application/json", "Authorization": "Bearer " + oa.apiKey},
-      body: JSON.stringify({model, prompt, size: "1536x1024", quality: oa.quality || "medium", n: 1}),
+      body: JSON.stringify({model, prompt, size: "1536x1024", quality: quality || oa.quality || "medium", n: 1}),
     });
     const j = await r.json().catch(() => null);
     if(!r.ok) throw new Error(`OpenAI ${r.status}: ${(j && j.error && j.error.message || r.statusText).slice(0, 200)}`);
@@ -551,16 +552,20 @@ function buildPanel(s){
     body.querySelector("#go").onclick = go;
     body.querySelector("#q").onkeydown = e => { if(e.key === "Enter") go(); };
   }else if(tab === "openai"){
-    const g = S.gens[s.id] || (S.gens[s.id] = {cands: [], busy: false, err: "", style: "photo", prompt: ""});
+    const g = S.gens[s.id] || (S.gens[s.id] = {cands: [], busy: false, err: "", style: "photo", prompt: "", quality: ["low", "medium"].includes(oa.quality) ? oa.quality : "medium"});
+    if(!g.quality) g.quality = "medium";
     if(!g.prompt) g.prompt = sceneQuery(s) || "";
     body.innerHTML = `
       <div class="field"><label>描かせる内容（英語で、実在の物・場所を具体的に）</label><textarea id="gp">${esc(g.prompt)}</textarea></div>
       <div class="row"><select id="gs" style="width:auto"><option value="photo">実写風</option><option value="science">科学ビジュアル風（望遠鏡画像・復元）</option><option value="raw">そのまま（上の文だけ）</option></select>
         <button class="primary" id="gen" ${g.busy ? "disabled" : ""}>${g.busy ? "描いています…" : "OpenAIで描く（1枚ごとに課金）"}</button>
-        <span class="hint">モデル ${esc(oa.model)} ／ 品質 ${esc(oa.quality)}</span></div>
+        <select id="gq" style="width:auto" title="画質。low は安く、medium は細部がきれいです（1枚ごとの目安: low 約0.016ドル、medium 約0.06ドル。円で約2〜10円）"><option value="low">low（安い・約2円）</option><option value="medium">medium（標準・約10円）</option></select>
+        <span class="hint">モデル ${esc(oa.model)}</span></div>
       <div class="msg ${g.err ? "err" : ""}">${esc(g.err)}</div>
       <div class="results" id="cs"></div>`;
     body.querySelector("#gs").value = g.style;
+    body.querySelector("#gq").value = g.quality;
+    body.querySelector("#gq").onchange = e => g.quality = e.target.value;
     body.querySelector("#gp").oninput = e => g.prompt = e.target.value;
     body.querySelector("#gs").onchange = e => g.style = e.target.value;
     const cs = body.querySelector("#cs");
@@ -571,11 +576,11 @@ function buildPanel(s){
     });
     body.querySelector("#gen").onclick = async () => {
       if(!g.prompt.trim()) return;
-      if(!confirm("OpenAIで画像を1枚描きます（課金されます）。よろしいですか？")) return;
+      if(!confirm(`OpenAIで画像を1枚描きます（画質 ${g.quality}。課金されます）。よろしいですか？`)) return;
       g.busy = true; g.err = ""; render();
       try{
-        const blob = await openaiGenerate(STYLES[g.style] + g.prompt.trim());
-        g.cands.unshift({blob, url: URL.createObjectURL(blob), note: `${g.style} ${new Date().toLocaleTimeString("ja-JP")}`});
+        const blob = await openaiGenerate(STYLES[g.style] + g.prompt.trim(), g.quality);
+        g.cands.unshift({blob, url: URL.createObjectURL(blob), note: `${g.style}/${g.quality} ${new Date().toLocaleTimeString("ja-JP")}`});
       }catch(e){ g.err = e.message; }
       g.busy = false; render();
     };
@@ -652,7 +657,8 @@ async function runProduce(){
   const date = (S.json.date || "").slice(0, 10);
   const shorts = $("#c-shorts").checked;
   if(!confirm(`動画を作ってアップロードします（約40分）。\n台本の日付 ${date} の20時に、予約公開されます。\n\n・画像は、いまリポジトリにあるものを使います（取り直しません）\n・サムネの絵（OpenAI）は、描いてあれば描き直しません\n・切り抜きショート: ${shorts ? "作って予約します（冒頭のフック動画が課金されます）" : "作りません"}\n\n※同じ台本の動画が、すでにアップロード・予約されている場合は、二重になります。先に古い動画を削除してください。\n\nよろしいですか？`)) return;
-  try{ await dispatch({fetch_pixabay: "false", assets_only: "false", upload: "true", slides_only: "false", shorts: shorts ? "true" : "false"}, "動画の生成を始めました（約40分）。結果はDiscordとチャットに届きます"); }
+  const extra = CH.artQuality ? {art_quality: $("#s-art").value} : {};
+  try{ await dispatch({fetch_pixabay: "false", assets_only: "false", upload: "true", slides_only: "false", shorts: shorts ? "true" : "false", ...extra}, "動画の生成を始めました（約40分）。結果はDiscordとチャットに届きます"); }
   catch(e){ dockMsg(e.message, "err"); }
 }
 
@@ -679,6 +685,11 @@ $("#b-save").onclick = saveAll;
 $("#b-assets").onclick = runAssets;
 // 図・文字の表示の確認画像を作る（previewWf があるチャンネルだけ）。音声・動画・課金は使わない
 if(CH.previewWf) $("#b-prev").style.display = "";
+if(CH.artQuality){
+  $("#l-art").style.display = "flex";
+  try{ $("#s-art").value = localStorage.getItem("tas.img.artq") || "medium"; }catch{ $("#s-art").value = "medium"; }
+  $("#s-art").onchange = () => { try{ localStorage.setItem("tas.img.artq", $("#s-art").value); }catch{} };
+}
 $("#b-prev").onclick = async () => {
   if(!S.json) return;
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
