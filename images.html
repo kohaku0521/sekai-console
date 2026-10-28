@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>セカイ秒読み 画像入れ替えコンソール</title>
+<style>
+:root{
+  --accent:#3d79d5; --bg:#0b0d10; --panel:#14171c; --panel2:#1a1e24;
+  --text:#e9edf3; --dim:#8b95a5; --line:#242a33;
+  --warn:#e0a33a; --bad:#e0574a; --ok:#4aa96c;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;line-height:1.6;font-size:14px}
+header{position:sticky;top:0;z-index:20;background:rgba(11,13,16,.95);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.bar{max-width:1280px;margin:0 auto;padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.04em}
+.brand i{width:4px;height:20px;background:var(--accent);display:block}
+.spacer{flex:1}
+button,select,input,textarea{font:inherit;font-size:13px}
+button{padding:8px 14px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.warn{background:var(--warn);border-color:var(--warn);color:#111}
+button.bad{background:var(--bad);border-color:var(--bad);color:#fff}
+button:disabled{opacity:.4;cursor:not-allowed}
+select,input[type=text],input[type=password],textarea{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px 10px;width:100%}
+textarea{resize:vertical;min-height:64px}
+main{max-width:1280px;margin:0 auto;padding:16px 16px 120px}
+a{color:#7fb0ff}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 14px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px;min-width:110px}
+.stat .k{font-size:11px;color:var(--dim)} .stat .v{font-size:20px;font-weight:800}
+.stat.warn .v{color:var(--warn)} .stat.ok .v{color:var(--ok)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.filters button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
+.card.changed{border-color:var(--warn)}
+.card.open{grid-column:1/-1;border-color:var(--accent);display:grid;grid-template-columns:minmax(260px,420px) 1fr;align-items:start}
+.card.open .panel{grid-column:1/-1}
+@media(max-width:700px){.card.open{grid-template-columns:1fr}}
+.thumb{position:relative;aspect-ratio:16/9;background:#1d2128;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:12px}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.badge{position:absolute;left:6px;top:6px;background:rgba(0,0,0,.7);border:1px solid var(--line);border-radius:4px;padding:1px 7px;font-size:11px}
+.badge.ch{background:var(--warn);color:#111;border-color:var(--warn)}
+.badge.tx{background:#555;color:#fff}
+.meta{padding:8px 10px 10px;display:flex;flex-direction:column;gap:6px;flex:1}
+.meta .no{font-size:11px;color:var(--dim)}
+.meta .nar{font-size:13px}
+.meta .q{font-size:11px;color:#79b8ff;word-break:break-all}
+.panel{border-top:1px solid var(--line);padding:12px;background:var(--panel2)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.row > input[type=text]{flex:1;min-width:180px}
+.results{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+.res{background:var(--panel);border:2px solid transparent;border-radius:6px;overflow:hidden;cursor:pointer;position:relative}
+.res:hover{border-color:var(--accent)} .res.sel{border-color:var(--ok)}
+.res img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#222}
+.res .t{font-size:11px;color:var(--dim);padding:4px 6px;max-height:3.6em;overflow:hidden}
+.msg{font-size:12px;color:var(--dim);margin:6px 0}
+.msg.err{color:var(--bad)} .msg.ok{color:var(--ok)}
+.dock{position:fixed;left:0;right:0;bottom:0;background:rgba(20,23,28,.97);border-top:1px solid var(--line);padding:10px 16px;z-index:30}
+.dock .in{max-width:1280px;margin:0 auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal.on{display:flex}
+.modal .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;max-width:560px;width:100%;max-height:90vh;overflow:auto}
+.modal h3{margin-bottom:10px}
+.field{margin-bottom:12px} .field label{display:block;font-size:12px;color:var(--dim);margin-bottom:4px}
+.hint{font-size:11px;color:var(--dim)}
+.empty{text-align:center;padding:60px 16px;color:var(--dim)}
+.note{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:6px;padding:10px 12px;font-size:12px;color:var(--dim);margin-bottom:12px}
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <div class="brand"><i></i>画像入れ替えコンソール</div>
+  <select id="script" style="max-width:360px"></select>
+  <button id="b-reload">読み込み</button>
+  <span class="spacer"></span>
+  <a href="index.html" style="font-size:12px">統合コンソール</a>
+  <button id="b-settings">⚙ 接続設定</button>
+</div></header>
+
+<main>
+  <div class="note">
+    <b>使い方</b>　①「素材を自動取得」で、台本の場面に画像を一通り入れる（無料）→ ②このページで、合わない場面の画像を
+    <b>Pixabay / NASA / OpenAI</b> から選び直す → ③「保存」→ ④「生成を開始」。
+    画像はここで決めてから動画を作るので、作り直し（二重生成）になりません。OpenAIで描くときだけ、1枚ごとに課金されます。
+  </div>
+  <div id="stats" class="stats"></div>
+  <div id="filters" class="filters"></div>
+  <div id="msg" class="msg"></div>
+  <div id="empty" class="empty">台本を選んで「読み込み」を押してください。最初に「⚙ 接続設定」でGitHubにつなぎます。</div>
+  <div id="grid" class="grid"></div>
+</main>
+
+<div class="dock"><div class="in">
+  <button id="b-assets" title="本物の素材（NASA）と、Pixabayの写真を、台本の検索語で一通り取ります。絵の生成・音声・動画の書き出しはしません（無料）">① 素材を自動取得（無料）</button>
+  <button id="b-save" class="primary" disabled>③ 保存（0件の変更）</button>
+  <button id="b-run" class="warn" title="保存したあと、動画を作ってアップロードし、台本の日付の20時に予約公開します">④ 生成を開始</button>
+  <span id="dock-msg" class="msg" style="margin:0"></span>
+  <span class="spacer"></span>
+  <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
+</div></div>
+
+<div id="modal-settings" class="modal"><div class="box">
+  <h3>接続設定</h3>
+  <div class="field"><label>GitHub アクセストークン（Contents と Actions の Read and write）</label>
+    <input type="password" id="s-gh" placeholder="github_pat_…">
+    <div class="hint">統合コンソールと共通です。このブラウザの localStorage にだけ保存され、api.github.com 以外へは送りません。</div></div>
+  <div class="field"><label>Pixabay APIキー</label>
+    <input type="password" id="s-px" placeholder="統合コンソールで設定済みなら、そのまま使えます">
+    <div class="hint"><a href="https://pixabay.com/api/docs/" target="_blank" rel="noopener">pixabay.com/api/docs</a> の上部に、無料アカウントでログインすると表示されます。</div></div>
+  <div class="field"><label>OpenAI APIキー（画像を描くとき）</label>
+    <input type="password" id="s-oa" placeholder="sk-…">
+    <div class="hint">このブラウザにだけ保存され、api.openai.com へだけ送ります。<b>利用上限を付けたキー</b>を使ってください。描くのは、ボタンを押した場面だけです。</div></div>
+  <div class="row"><div style="flex:1"><label class="hint">モデル</label>
+    <select id="s-oa-model"><option value="gpt-image-1">gpt-image-1</option><option value="gpt-image-2">gpt-image-2</option></select></div>
+    <div style="flex:1"><label class="hint">品質（高いほど高額）</label>
+    <select id="s-oa-q"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></div></div>
+  <div class="hint" style="margin-bottom:12px">NASA の画像検索は、設定が要りません。</div>
+  <div class="row"><button id="s-save" class="primary">保存</button><button id="s-close">閉じる</button></div>
+</div></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+// ── 設定（統合コンソール index.html と同じ localStorage のキーを使う）────────
+const CHANNELS = {sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml"}};
+const GH_DIR = CHANNELS.sekai.dir, WF = CHANNELS.sekai.wf;
+const gh = {owner: "kohaku0521", repo: "kaitai-check", branch: "main", token: ""};
+const px = {apiKey: ""};
+const oa = {apiKey: "", model: "gpt-image-1", quality: "medium"};
+const ld = (k, o) => { try { Object.assign(o, JSON.parse(localStorage.getItem(k) || "{}")); } catch {} };
+const st = (k, o) => { try { localStorage.setItem(k, JSON.stringify(o)); } catch {} };
+ld("tas.gh", gh); ld("tas.pixabay", px); ld("tas.openai", oa);
+const ghReady = () => !!(gh.token && gh.owner && gh.repo && gh.branch);
+
+// ── GitHub API ───────────────────────────────────────────────────────────
+async function api(path, opt = {}){
+  const r = await fetch("https://api.github.com" + path, {...opt, headers: {
+    "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
+    "Authorization": "Bearer " + gh.token, ...(opt.headers || {}),
+  }});
+  if(r.status === 204) return null;
+  const j = await r.json().catch(() => null);
+  if(!r.ok) throw new Error(`GitHub ${r.status}: ${(j && j.message) || r.statusText}`);
+  return j;
+}
+const repoPath = p => `/repos/${gh.owner}/${gh.repo}${p}`;
+const refQ = () => `?ref=${encodeURIComponent(gh.branch)}`;
+function b64(bytes){ let s = ""; const C = 0x8000; for(let i = 0; i < bytes.length; i += C) s += String.fromCharCode.apply(null, bytes.subarray(i, i + C)); return btoa(s); }
+function unb64(s){ const bin = atob(s.replace(/\n/g, "")); const u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+const dec = u => new TextDecoder("utf-8").decode(u);
+const enc = s => new TextEncoder().encode(s);
+
+// 複数ファイルの追加・上書き・削除を、1コミットにまとめる（Git Data API）
+async function commitMany(changes, message){
+  for(let attempt = 0; attempt < 2; attempt++){
+    const ref = await api(repoPath(`/git/ref/heads/${encodeURIComponent(gh.branch)}`));
+    const base = ref.object.sha;
+    const baseCommit = await api(repoPath(`/git/commits/${base}`));
+    const tree = [];
+    for(const c of changes){
+      if(c.bytes){
+        const blob = await api(repoPath(`/git/blobs`), {method: "POST", body: JSON.stringify({content: b64(c.bytes), encoding: "base64"})});
+        tree.push({path: c.path, mode: "100644", type: "blob", sha: blob.sha});
+      }else{
+        tree.push({path: c.path, mode: "100644", type: "blob", sha: null});   // 削除
+      }
+    }
+    const nt = await api(repoPath(`/git/trees`), {method: "POST", body: JSON.stringify({base_tree: baseCommit.tree.sha, tree})});
+    const nc = await api(repoPath(`/git/commits`), {method: "POST", body: JSON.stringify({message, tree: nt.sha, parents: [base]})});
+    try{
+      await api(repoPath(`/git/refs/heads/${encodeURIComponent(gh.branch)}`), {method: "PATCH", body: JSON.stringify({sha: nc.sha})});
+      return nc;
+    }catch(e){
+      if(attempt === 0 && /422|fast.?forward/i.test(e.message)) continue;   // 他のコミットが先に入った。1回だけやり直す
+      throw e;
+    }
+  }
+}
+
+// ── 状態 ─────────────────────────────────────────────────────────────────
+const S = {
+  scripts: [], name: "", stem: "", json: null, scenes: [],
+  assets: {}, clips: {},          // 場面ID → {url,size}
+  filter: "review", open: null,
+  tabs: {}, results: {}, gens: {},   // 場面ごとの、タブ・検索結果・OpenAIの候補
+};
+const PHOTO_KINDS = new Set(["photo", "generated", "clip"]);
+const vis = s => (s.raw && s.raw.visual) || {};
+const kindOf = s => vis(s).kind || "slide";
+const sceneQuery = s => (vis(s).image_prompt_en || vis(s).subject || "").trim();
+const setMsg = (t, cls = "") => { const e = $("#msg"); e.textContent = t || ""; e.className = "msg " + cls; };
+const dockMsg = (t, cls = "") => { const e = $("#dock-msg"); e.textContent = t || ""; e.className = "msg " + cls; };
+
+// ── 台本・素材の読み込み ──────────────────────────────────────────────────
+async function loadScriptList(){
+  const items = await api(repoPath(`/contents/${GH_DIR}/data/scripts${refQ()}`));
+  S.scripts = items.filter(i => /-long\.json$/.test(i.name)).map(i => i.name).sort().reverse();
+  const sel = $("#script");
+  sel.innerHTML = S.scripts.map(n => `<option>${esc(n)}</option>`).join("");
+  const last = localStorage.getItem("tas.img.script");
+  if(last && S.scripts.includes(last)) sel.value = last;
+}
+async function listDir(path){
+  try{
+    const items = await api(repoPath(`/contents/${path}${refQ()}`));
+    return Array.isArray(items) ? items : [];
+  }catch(e){ if(/404/.test(e.message)) return []; throw e; }
+}
+async function loadScript(name){
+  setMsg("読み込んでいます…");
+  const f = await api(repoPath(`/contents/${GH_DIR}/data/scripts/${encodeURIComponent(name)}${refQ()}`));
+  const json = JSON.parse(dec(unb64(f.content)));
+  const ns = json.narrative_structure;
+  if(!Array.isArray(ns)) throw new Error("この台本は narrative_structure が無く、場面を読めません");
+  S.name = name; S.stem = name.replace(/\.json$/i, ""); S.json = json;
+  S.scenes = ns.map((raw, i) => ({
+    raw, idx: i, id: raw.id || `scene_${String(i + 1).padStart(2, "0")}`,
+    text: raw.text || "", chapter: raw.chapter_label || "",
+    staged: null, action: null,           // staged: {bytes,url,source} / action: "text"（文字・図にする）
+  }));
+  localStorage.setItem("tas.img.script", name);
+  await loadAssets();
+  S.open = null;
+  setMsg("");
+  render();
+}
+async function loadAssets(){
+  const [imgs, clips] = await Promise.all([
+    listDir(`${GH_DIR}/assets/images/generated/${S.stem}`),
+    listDir(`${GH_DIR}/assets/video_clips/${S.stem}`),
+  ]);
+  S.assets = {}; S.clips = {};
+  for(const i of imgs) if(/\.(png|jpe?g|webp)$/i.test(i.name)) S.assets[i.name.replace(/\.[^.]+$/, "")] = {url: i.download_url, size: i.size, name: i.name};
+  for(const i of clips) if(/\.mp4$/i.test(i.name)) S.clips[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, name: i.name};
+}
+
+// ── 画像の取り込み（どの取得元でも、16:9に切り出したPNGにそろえる）────────────────
+async function toPng(blob){
+  const bmp = await createImageBitmap(blob);
+  let w = bmp.width, h = bmp.height;
+  const target = 16 / 9;
+  let sx = 0, sy = 0, sw = w, sh = h;
+  if(w / h > target){ sw = Math.round(h * target); sx = Math.round((w - sw) / 2); }
+  else { sh = Math.round(w / target); sy = Math.round((h - sh) / 2); }
+  const scale = Math.min(1, 2560 / sw);
+  const cw = Math.round(sw * scale), ch = Math.round(sh * scale);
+  const cv = document.createElement("canvas"); cv.width = cw; cv.height = ch;
+  cv.getContext("2d").drawImage(bmp, sx, sy, sw, sh, 0, 0, cw, ch);
+  const out = await new Promise(res => cv.toBlob(res, "image/png"));
+  return new Uint8Array(await out.arrayBuffer());
+}
+async function fetchBlob(url, label){
+  let r;
+  try{ r = await fetch(url); }catch{ throw new Error(`${label}の画像を取得できません（通信を確認してください）`); }
+  if(!r.ok) throw new Error(`${label}の画像を取得できません（${r.status}）`);
+  return r.blob();
+}
+function stage(s, bytes, source){
+  if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url);
+  s.staged = {bytes, url: URL.createObjectURL(new Blob([bytes], {type: "image/png"})), source};
+  s.action = null;
+  render();
+}
+
+// ── Pixabay ──────────────────────────────────────────────────────────────
+async function pxSearch(q){
+  if(!px.apiKey) throw new Error("Pixabay のAPIキーが未設定です（⚙ 接続設定）");
+  const url = `https://pixabay.com/api/?key=${encodeURIComponent(px.apiKey)}&q=${encodeURIComponent(q)}&image_type=photo&orientation=horizontal&safesearch=true&per_page=20`;
+  let r; try{ r = await fetch(url); }catch{ throw new Error("Pixabay に接続できません"); }
+  if(!r.ok) throw new Error(r.status === 429 ? "Pixabay の利用回数上限です。少し待ってください" : `Pixabay ${r.status}`);
+  return ((await r.json()).hits || []).map(h => ({
+    thumb: h.webformatURL, full: h.largeImageURL, title: (h.tags || "").split(",").slice(0, 4).join(","),
+    source: {type: "pixabay", id: String(h.id), page: h.pageURL, credit: h.user},
+  }));
+}
+
+// ── NASA 画像ライブラリ ───────────────────────────────────────────────────
+async function nasaSearch(q){
+  const url = `https://images-api.nasa.gov/search?q=${encodeURIComponent(q)}&media_type=image&page_size=24`;
+  let r; try{ r = await fetch(url); }catch{ throw new Error("NASA に接続できません"); }
+  if(!r.ok) throw new Error(`NASA ${r.status}`);
+  const items = (await r.json()).collection.items || [];
+  return items.filter(i => i.data && i.data[0] && i.links && i.links[0]).map(i => ({
+    thumb: i.links[0].href, nasaId: i.data[0].nasa_id, title: i.data[0].title || "",
+    source: {type: "nasa", id: i.data[0].nasa_id, page: `https://images.nasa.gov/details/${encodeURIComponent(i.data[0].nasa_id)}`, credit: i.data[0].center || i.data[0].photographer || "NASA"},
+  }));
+}
+async function nasaFull(nasaId){
+  const r = await fetch(`https://images-api.nasa.gov/asset/${encodeURIComponent(nasaId)}`);
+  if(!r.ok) throw new Error(`NASA ${r.status}`);
+  const hrefs = ((await r.json()).collection.items || []).map(i => i.href).filter(h => /\.jpe?g$|\.png$/i.test(h));
+  const pick = ["~large", "~medium", "~orig", "~small"].map(k => hrefs.find(h => h.includes(k))).find(Boolean) || hrefs[0];
+  if(!pick) throw new Error("この NASA 画像は、使える大きさの画像がありません");
+  return pick.replace(/^http:/, "https:");
+}
+
+// ── OpenAI ───────────────────────────────────────────────────────────────
+const STYLES = {
+  photo: "A realistic documentary-style photograph, natural lighting, 16:9 composition, no text, no logos, no watermarks, no recognizable faces. Subject: ",
+  science: "A realistic science-documentary visual (telescope-image look or museum-quality reconstruction), 16:9 composition, no text, no logos, no watermarks, no recognizable faces. Subject: ",
+  raw: "",
+};
+async function openaiGenerate(prompt){
+  if(!oa.apiKey) throw new Error("OpenAI のAPIキーが未設定です（⚙ 接続設定）");
+  const call = async model => {
+    const r = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST", headers: {"Content-Type": "application/json", "Authorization": "Bearer " + oa.apiKey},
+      body: JSON.stringify({model, prompt, size: "1536x1024", quality: oa.quality || "medium", n: 1}),
+    });
+    const j = await r.json().catch(() => null);
+    if(!r.ok) throw new Error(`OpenAI ${r.status}: ${(j && j.error && j.error.message || r.statusText).slice(0, 200)}`);
+    const d = j.data && j.data[0];
+    if(!d || !d.b64_json) throw new Error("OpenAI が画像を返しませんでした");
+    return new Blob([unb64(d.b64_json)], {type: "image/png"});
+  };
+  try{ return await call(oa.model || "gpt-image-1"); }
+  catch(e){
+    if(oa.model === "gpt-image-2" && /model|not found|404|access/i.test(e.message)) return await call("gpt-image-1");
+    throw e;
+  }
+}
+
+// ── 画面 ─────────────────────────────────────────────────────────────────
+function needsReview(s){ return PHOTO_KINDS.has(kindOf(s)); }
+function currentOf(s){
+  if(s.staged) return {url: s.staged.url, label: "変更あり"};
+  if(s.action === "text") return {url: null, label: "文字・図にする"};
+  const a = S.assets[s.id];
+  if(a) return {url: a.url, label: ""};
+  if(S.clips[s.id]) return {url: null, label: "動画クリップ"};
+  return {url: null, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし（文字で表示）" : "文字・図で表示"};
+}
+const changedScenes = () => S.scenes.filter(s => s.staged || s.action);
+
+function render(){
+  const has = !!S.json;
+  $("#empty").style.display = has ? "none" : "";
+  $("#grid").innerHTML = ""; if(!has){ $("#stats").innerHTML = ""; $("#filters").innerHTML = ""; return; }
+  const need = S.scenes.filter(needsReview);
+  const noImg = need.filter(s => !S.assets[s.id] && !S.clips[s.id] && !s.staged);
+  const ch = changedScenes();
+  $("#stats").innerHTML = [
+    ["場面", S.scenes.length, ""], ["画像を使う場面", need.length, ""],
+    ["画像が無い（文字で表示）", noImg.length, noImg.length ? "warn" : "ok"], ["変更あり", ch.length, ch.length ? "warn" : ""],
+  ].map(([k, v, c]) => `<div class="stat ${c}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  const F = [["review", "画像を使う場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["all", "すべて"]];
+  $("#filters").innerHTML = F.map(([k, l]) => `<button data-f="${k}" class="${S.filter === k ? "on" : ""}">${l}</button>`).join("");
+  $("#filters").querySelectorAll("button").forEach(b => b.onclick = () => { S.filter = b.dataset.f; render(); });
+  const list = S.scenes.filter(s => S.filter === "all" ? true : S.filter === "changed" ? (s.staged || s.action)
+    : S.filter === "noimg" ? (needsReview(s) && !S.assets[s.id] && !S.clips[s.id] && !s.staged) : needsReview(s));
+  const grid = $("#grid");
+  for(const s of list){
+    const cur = currentOf(s);
+    const el = document.createElement("div");
+    el.className = "card" + (s.staged || s.action ? " changed" : "") + (S.open === s.id ? " open" : "");
+    el.innerHTML = `
+      <div class="thumb">${cur.url ? `<img loading="lazy" src="${esc(cur.url)}" alt="">` : esc(cur.label || "")}
+        <span class="badge ${s.staged || s.action ? "ch" : ""}">${esc(s.id.replace("scene_", ""))} · ${esc(kindOf(s))}${cur.label && cur.url ? " · " + esc(cur.label) : ""}</span></div>
+      <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>
+        <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
+        <div class="row" style="margin:0">${needsReview(s) ? `<button data-open="${esc(s.id)}">${S.open === s.id ? "閉じる" : "画像を選ぶ"}</button>` : `<span class="hint">図・スライドの場面（ここでは変更しません）</span>`}
+        ${s.staged || s.action ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}</div></div>`;
+    grid.appendChild(el);
+    if(S.open === s.id) el.appendChild(buildPanel(s));
+  }
+  grid.querySelectorAll("[data-open]").forEach(b => b.onclick = () => { S.open = S.open === b.dataset.open ? null : b.dataset.open; render(); const o = document.querySelector(".card.open"); if(o) o.scrollIntoView({block: "nearest"}); });
+  grid.querySelectorAll("[data-undo]").forEach(b => b.onclick = () => {
+    const s = S.scenes.find(x => x.id === b.dataset.undo);
+    if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url);
+    s.staged = null; s.action = null; render();
+  });
+  const n = ch.length;
+  $("#b-save").textContent = `③ 保存（${n}件の変更）`; $("#b-save").disabled = !n;
+}
+
+function buildPanel(s){
+  const tab = S.tabs[s.id] || "pixabay";
+  const p = document.createElement("div"); p.className = "panel";
+  const q0 = (S.results[s.id] && S.results[s.id].q) || sceneQuery(s);
+  p.innerHTML = `
+    <div class="tabs">
+      ${[["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["text", "文字・図にする"]]
+        .map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
+    </div>
+    <div id="tabbody"></div>`;
+  const body = p.querySelector("#tabbody");
+  p.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { S.tabs[s.id] = b.dataset.tab; render(); });
+  const res = S.results[s.id] || {};
+  if(tab === "pixabay" || tab === "nasa"){
+    body.innerHTML = `
+      <div class="row"><input type="text" id="q" value="${esc(q0)}" placeholder="英語の検索語（例: observatory telescope night）">
+        <button class="primary" id="go">検索</button></div>
+      <div class="hint" style="margin-bottom:6px">${tab === "nasa" ? "NASAの画像は公的な素材ですが、画像ごとに出典（機関名）が付きます。" : "Pixabayの写真は、検索語と意味が合うか、見て選んでください。"}</div>
+      <div class="msg ${res.err ? "err" : ""}" id="rm">${esc(res.err || (res.busy ? "検索しています…" : ""))}</div>
+      <div class="results" id="rs"></div>`;
+    const rs = body.querySelector("#rs");
+    if(res.tab === tab && res.items) res.items.forEach((it, i) => {
+      const d = document.createElement("div"); d.className = "res" + (it.sel ? " sel" : "");
+      d.innerHTML = `<img loading="lazy" src="${esc(it.thumb)}" alt=""><div class="t">${esc(it.title)}</div>`;
+      d.onclick = async () => {
+        const rm = body.querySelector("#rm"); rm.className = "msg"; rm.textContent = "画像を取り込んでいます…";
+        try{
+          const url = tab === "nasa" ? await nasaFull(it.nasaId) : it.full;
+          const png = await toPng(await fetchBlob(url, tab === "nasa" ? "NASA" : "Pixabay"));
+          stage(s, png, it.source);
+        }catch(e){ rm.className = "msg err"; rm.textContent = e.message; }
+      };
+      rs.appendChild(d);
+    });
+    const go = async () => {
+      const q = body.querySelector("#q").value.trim(); if(!q) return;
+      S.results[s.id] = {q, tab, busy: true}; render();
+      try{ const items = await (tab === "nasa" ? nasaSearch(q) : pxSearch(q)); S.results[s.id] = {q, tab, items}; if(!items.length) S.results[s.id].err = "見つかりませんでした。検索語を変えてみてください"; }
+      catch(e){ S.results[s.id] = {q, tab, err: e.message}; }
+      render();
+    };
+    body.querySelector("#go").onclick = go;
+    body.querySelector("#q").onkeydown = e => { if(e.key === "Enter") go(); };
+  }else if(tab === "openai"){
+    const g = S.gens[s.id] || (S.gens[s.id] = {cands: [], busy: false, err: "", style: "photo", prompt: ""});
+    if(!g.prompt) g.prompt = sceneQuery(s) || "";
+    body.innerHTML = `
+      <div class="field"><label>描かせる内容（英語で、実在の物・場所を具体的に）</label><textarea id="gp">${esc(g.prompt)}</textarea></div>
+      <div class="row"><select id="gs" style="width:auto"><option value="photo">実写風</option><option value="science">科学ビジュアル風（望遠鏡画像・復元）</option><option value="raw">そのまま（上の文だけ）</option></select>
+        <button class="primary" id="gen" ${g.busy ? "disabled" : ""}>${g.busy ? "描いています…" : "OpenAIで描く（1枚ごとに課金）"}</button>
+        <span class="hint">モデル ${esc(oa.model)} ／ 品質 ${esc(oa.quality)}</span></div>
+      <div class="msg ${g.err ? "err" : ""}">${esc(g.err)}</div>
+      <div class="results" id="cs"></div>`;
+    body.querySelector("#gs").value = g.style;
+    body.querySelector("#gp").oninput = e => g.prompt = e.target.value;
+    body.querySelector("#gs").onchange = e => g.style = e.target.value;
+    const cs = body.querySelector("#cs");
+    g.cands.forEach(c => {
+      const d = document.createElement("div"); d.className = "res"; d.innerHTML = `<img src="${esc(c.url)}" alt=""><div class="t">${esc(c.note)}（クリックで決定）</div>`;
+      d.onclick = async () => { stage(s, await toPng(c.blob), {type: "openai", id: c.note, credit: "OpenAI", page: ""}); };
+      cs.appendChild(d);
+    });
+    body.querySelector("#gen").onclick = async () => {
+      if(!g.prompt.trim()) return;
+      if(!confirm("OpenAIで画像を1枚描きます（課金されます）。よろしいですか？")) return;
+      g.busy = true; g.err = ""; render();
+      try{
+        const blob = await openaiGenerate(STYLES[g.style] + g.prompt.trim());
+        g.cands.unshift({blob, url: URL.createObjectURL(blob), note: `${g.style} ${new Date().toLocaleTimeString("ja-JP")}`});
+      }catch(e){ g.err = e.message; }
+      g.busy = false; render();
+    };
+  }else{
+    body.innerHTML = `
+      <div class="msg">この場面は、画像を使わず、文字・図で表示します（今ある画像は、保存のときに外れます）。</div>
+      <div class="row"><button id="mk" class="primary">文字・図にする</button></div>`;
+    body.querySelector("#mk").onclick = () => { if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = "text"; render(); };
+  }
+  return p;
+}
+
+// ── 保存（1コミット）──────────────────────────────────────────────────────
+async function saveAll(){
+  const ch = changedScenes(); if(!ch.length) return;
+  if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  const base = `${GH_DIR}/assets/images/generated/${S.stem}`;
+  const clipBase = `${GH_DIR}/assets/video_clips/${S.stem}`;
+  const json = JSON.parse(JSON.stringify(S.json));
+  let jsonChanged = false;
+  const changes = [], picks = [];
+  for(const s of ch){
+    const raw = json.narrative_structure[s.idx];
+    if(s.staged){
+      changes.push({path: `${base}/${s.id}.png`, bytes: s.staged.bytes});
+      for(const ext of ["jpg", "jpeg", "webp"]) if(S.assets[s.id] && S.assets[s.id].name === `${s.id}.${ext}`) changes.push({path: `${base}/${s.id}.${ext}`, bytes: null});
+      if(S.clips[s.id]){ changes.push({path: `${clipBase}/${S.clips[s.id].name}`, bytes: null}); }
+      if(raw.visual && raw.visual.kind === "clip"){ raw.visual.kind = "photo"; jsonChanged = true; }   // 動画クリップの場面を写真に替えたとき
+      if(raw.visual && raw.visual.real){ delete raw.visual.real; jsonChanged = true; }   // 手で選んだ画像を、NASA自動取得で上書きさせない
+      picks.push({scene: s.id, ...s.staged.source});
+    }else if(s.action === "text"){
+      if(S.assets[s.id]) changes.push({path: `${base}/${S.assets[s.id].name}`, bytes: null});
+      if(S.clips[s.id]) changes.push({path: `${clipBase}/${S.clips[s.id].name}`, bytes: null});
+      if(raw.visual && raw.visual.real){ delete raw.visual.real; jsonChanged = true; }
+      picks.push({scene: s.id, type: "text-slide"});
+    }
+  }
+  if(jsonChanged) changes.push({path: `${GH_DIR}/data/scripts/${S.name}`, bytes: enc(JSON.stringify(json, null, 2) + "\n")});
+  // 出典の控え（NASAの機関名・Pixabayの投稿者・OpenAI）
+  let old = [];
+  try{ const f = await api(repoPath(`/contents/${base}/_manual_picks.json${refQ()}`)); old = JSON.parse(dec(unb64(f.content))); }catch{}
+  const merged = old.filter(o => !picks.some(p => p.scene === o.scene)).concat(picks.map(p => ({...p, at: new Date().toISOString()})));
+  changes.push({path: `${base}/_manual_picks.json`, bytes: enc(JSON.stringify(merged, null, 2) + "\n")});
+  $("#b-save").disabled = true; dockMsg(`保存しています…（${ch.length}場面）`);
+  try{
+    await commitMany(changes, `${S.stem}: 画像を入れ替え（${ch.length}場面・画像入れ替えコンソール）`);
+    ch.forEach(s => { if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; });
+    if(jsonChanged){ S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw); }
+    await loadAssets(); render();
+    dockMsg(`保存しました（${ch.length}場面）。続けて「④ 生成を開始」を押せます`, "ok");
+  }catch(e){ dockMsg(e.message, "err"); $("#b-save").disabled = false; }
+}
+
+// ── ワークフローの起動 ────────────────────────────────────────────────────
+async function dispatch(inputs, doneMsg){
+  const script = `data/scripts/${S.name}`;
+  await api(repoPath(`/actions/workflows/${WF}/dispatches`), {method: "POST", body: JSON.stringify({ref: gh.branch, inputs: {script, ...inputs}})});
+  dockMsg(doneMsg, "ok");
+  const a = $("#run-link"); a.href = `https://github.com/${gh.owner}/${gh.repo}/actions/workflows/${WF}`; a.style.display = "";
+}
+async function runAssets(){
+  if(!S.json) return;
+  if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  if(!confirm("素材だけを取ります（NASA画像とPixabay写真。絵の生成・音声・動画・アップロードはしません）。\n終わったら「読み込み」を押して画像を確認してください。よろしいですか？")) return;
+  try{ await dispatch({fetch_pixabay: "true", assets_only: "true", upload: "false", slides_only: "false", shorts: "false"}, "素材の自動取得を始めました（数分）。終わったら「読み込み」を押してください"); }
+  catch(e){ dockMsg(e.message, "err"); }
+}
+async function runProduce(){
+  if(!S.json) return;
+  if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  if(changedScenes().length){ dockMsg("未保存の変更があります。先に「③ 保存」を押してください", "err"); return; }
+  const date = (S.json.date || "").slice(0, 10);
+  if(!confirm(`動画を作ってアップロードします（約40分）。\n台本の日付 ${date} の20時に、予約公開されます。\n\n・画像は、いまリポジトリにあるものを使います（取り直しません）\n・サムネの絵（OpenAI）と、切り抜きショートも作られます\n\nよろしいですか？`)) return;
+  try{ await dispatch({fetch_pixabay: "false", assets_only: "false", upload: "true", slides_only: "false", shorts: "true"}, "動画の生成を始めました（約40分）。結果はDiscordとチャットに届きます"); }
+  catch(e){ dockMsg(e.message, "err"); }
+}
+
+// ── 設定ダイアログ・起動 ──────────────────────────────────────────────────
+function openSettings(){
+  $("#s-gh").value = gh.token; $("#s-px").value = px.apiKey; $("#s-oa").value = oa.apiKey;
+  $("#s-oa-model").value = oa.model || "gpt-image-1"; $("#s-oa-q").value = oa.quality || "medium";
+  $("#modal-settings").classList.add("on");
+}
+$("#b-settings").onclick = openSettings;
+$("#s-close").onclick = () => $("#modal-settings").classList.remove("on");
+$("#s-save").onclick = async () => {
+  gh.token = $("#s-gh").value.trim(); px.apiKey = $("#s-px").value.trim(); oa.apiKey = $("#s-oa").value.trim();
+  oa.model = $("#s-oa-model").value; oa.quality = $("#s-oa-q").value;
+  st("tas.gh", gh); st("tas.pixabay", px); st("tas.openai", oa);
+  $("#modal-settings").classList.remove("on");
+  await start();
+};
+$("#b-reload").onclick = async () => {
+  if(changedScenes().length && !confirm("未保存の変更は消えます。読み込み直しますか？")) return;
+  try{ await loadScript($("#script").value); }catch(e){ setMsg(e.message, "err"); }
+};
+$("#b-save").onclick = saveAll;
+$("#b-assets").onclick = runAssets;
+$("#b-run").onclick = runProduce;
+window.addEventListener("beforeunload", e => { if(changedScenes().length){ e.preventDefault(); e.returnValue = ""; } });
+
+async function start(){
+  if(!ghReady()){ setMsg("「⚙ 接続設定」でGitHubのトークンを入れてください", "err"); return; }
+  try{ await loadScriptList(); await loadScript($("#script").value); }
+  catch(e){ setMsg(e.message, "err"); }
+}
+start();
+</script>
+</body>
+</html>
