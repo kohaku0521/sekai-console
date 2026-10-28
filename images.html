@@ -79,6 +79,7 @@ a{color:#7fb0ff}
 <body>
 <header><div class="bar">
   <div class="brand"><i></i>画像入れ替えコンソール</div>
+  <select id="chsel" style="width:auto" title="チャンネル（台本の置き場）を切り替える"></select>
   <select id="script" style="max-width:360px"></select>
   <button id="b-reload">読み込み</button>
   <span class="spacer"></span>
@@ -140,7 +141,12 @@ const CHANNELS = {
   // 絶滅した生物たち（2026-10-28）。生成のワークフローは作成後に wf を差し替える。画像は公開画像（Commons）から選ぶのが既定
   zetsumetsu: {dir: "CMO/YouTube/zetsumetsu", wf: "zetsumetsu-produce.yml", defaultTab: "commons", label: "絶滅した生物たち", scriptRel: "../zetsumetsu/data/scripts/"},
 };
-const CH_KEY = (new URLSearchParams(location.search).get("ch") || "sekai");
+// チャンネルは ?ch= で指定（無ければ、前回選んだもの。それも無ければセカイ秒読み）。ヘッダーの選択でも切り替えられる
+const CH_KEY = (() => {
+  let last = ""; try { last = localStorage.getItem("tas.img.ch") || ""; } catch {}
+  const k = new URLSearchParams(location.search).get("ch") || last || "sekai";
+  return CHANNELS[k] ? k : "sekai";
+})();
 const CH = CHANNELS[CH_KEY] || CHANNELS.sekai;
 const GH_DIR = CH.dir, WF = CH.wf;
 const gh = {owner: "kohaku0521", repo: "kaitai-check", branch: "main", token: ""};
@@ -664,6 +670,13 @@ async function start(){
   if(!ghReady()){ setMsg("「⚙ 接続設定」でGitHubのトークンを入れてください", "err"); return; }
   try{ await loadScriptList(); await loadScript($("#script").value); }
   catch(e){ setMsg(e.message, "err"); }
+}
+{
+  const cs = $("#chsel");
+  cs.innerHTML = Object.entries(CHANNELS).map(([k, v]) => `<option value="${esc(k)}">${esc(v.label || "セカイ秒読み")}</option>`).join("");
+  cs.value = CH_KEY;
+  cs.onchange = () => { try { localStorage.setItem("tas.img.ch", cs.value); } catch {} location.search = "?ch=" + encodeURIComponent(cs.value); };
+  try { localStorage.setItem("tas.img.ch", CH_KEY); } catch {}
 }
 start();
 </script>
