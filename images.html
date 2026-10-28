@@ -34,6 +34,8 @@ a{color:#7fb0ff}
 .stat.warn .v{color:var(--warn)} .stat.ok .v{color:var(--ok)}
 .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .filters button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.pages button{padding:6px 10px;font-size:12px}
+.pages button.has{border-color:var(--warn)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
 .card.changed{border-color:var(--warn)}
@@ -92,6 +94,7 @@ a{color:#7fb0ff}
   </div>
   <div id="stats" class="stats"></div>
   <div id="filters" class="filters"></div>
+  <div id="pages" class="filters pages"></div>
   <div id="msg" class="msg"></div>
   <div id="empty" class="empty">台本を選んで「読み込み」を押してください。最初に「⚙ 接続設定」でGitHubにつなぎます。</div>
   <div id="grid" class="grid"></div>
@@ -190,7 +193,7 @@ async function commitMany(changes, message){
 const S = {
   scripts: [], name: "", stem: "", json: null, scenes: [],
   assets: {}, clips: {},          // 場面ID → {url,size}
-  filter: "review", open: null,
+  filter: "review", open: null, page: 0,
   tabs: {}, results: {}, gens: {},   // 場面ごとの、タブ・検索結果・OpenAIの候補
 };
 const PHOTO_KINDS = new Set(["photo", "generated", "clip"]);
@@ -392,7 +395,7 @@ const changedScenes = () => S.scenes.filter(s => s.staged || s.action);
 function render(){
   const has = !!S.json;
   $("#empty").style.display = has ? "none" : "";
-  $("#grid").innerHTML = ""; if(!has){ $("#stats").innerHTML = ""; $("#filters").innerHTML = ""; return; }
+  $("#grid").innerHTML = ""; if(!has){ $("#stats").innerHTML = ""; $("#filters").innerHTML = ""; $("#pages").innerHTML = ""; return; }
   const need = S.scenes.filter(needsReview);
   const noImg = need.filter(s => !S.assets[s.id] && !S.clips[s.id] && !s.staged);
   const ch = changedScenes();
@@ -402,11 +405,23 @@ function render(){
   ].map(([k, v, c]) => `<div class="stat ${c}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
   const F = [["review", "画像を使う場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["all", "すべて"]];
   $("#filters").innerHTML = F.map(([k, l]) => `<button data-f="${k}" class="${S.filter === k ? "on" : ""}">${l}</button>`).join("");
-  $("#filters").querySelectorAll("button").forEach(b => b.onclick = () => { S.filter = b.dataset.f; render(); });
+  $("#filters").querySelectorAll("button").forEach(b => b.onclick = () => { S.filter = b.dataset.f; S.page = 0; S.open = null; render(); });
   const list = S.scenes.filter(s => S.filter === "all" ? true : S.filter === "changed" ? (s.staged || s.action)
     : S.filter === "noimg" ? (needsReview(s) && !S.assets[s.id] && !S.clips[s.id] && !s.staged) : needsReview(s));
+  // 一度にたくさんの画像を読み込むと重いので、15場面ごとのタブに分けて、いまのタブの分だけ表示する
+  const PER = 15;
+  const pageCount = Math.max(1, Math.ceil(list.length / PER));
+  if(S.page >= pageCount) S.page = pageCount - 1;
+  const pg = $("#pages");
+  pg.innerHTML = pageCount <= 1 ? "" : Array.from({length: pageCount}, (_, i) => {
+    const chunk = list.slice(i * PER, (i + 1) * PER);
+    const a = chunk[0].id.replace("scene_", ""), b = chunk[chunk.length - 1].id.replace("scene_", "");
+    const mark = chunk.some(x => x.staged || x.action) ? " ●" : "";
+    return `<button data-p="${i}" class="${i === S.page ? "on" : ""}${mark ? " has" : ""}">${a}〜${b}${mark}</button>`;
+  }).join("");
+  pg.querySelectorAll("button").forEach(b => b.onclick = () => { S.page = +b.dataset.p; S.open = null; render(); window.scrollTo({top: 0}); });
   const grid = $("#grid");
-  for(const s of list){
+  for(const s of list.slice(S.page * PER, (S.page + 1) * PER)){
     const cur = currentOf(s);
     const el = document.createElement("div");
     el.className = "card" + (s.staged || s.action ? " changed" : "") + (S.open === s.id ? " open" : "");
