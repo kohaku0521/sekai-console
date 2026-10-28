@@ -448,7 +448,9 @@ function render(){
 }
 
 function buildPanel(s){
-  const tab = S.tabs[s.id] || "pixabay";
+  // 星・天体・宇宙機の場面は、NASA画像のタブから開く（2026-10-28 社長指示「星の画像はなるべくNASA画像を」）
+  const ASTRO = /\b(stars?|planets?|galax(y|ies)|nebula|supernova|moon|sun|mars|jupiter|saturn|venus|mercury|neptune|uranus|pluto|comet|asteroid|meteor|telescope|spacecraft|rocket|satellite|orbit|solar|milky|exoplanet|cosmos|universe|eclipse|aurora)\b/i;
+  const tab = S.tabs[s.id] || (ASTRO.test(sceneQuery(s)) ? "nasa" : "pixabay");
   const p = document.createElement("div"); p.className = "panel";
   const q0 = (S.results[s.id] && S.results[s.id].q) || sceneQuery(s);
   p.innerHTML = `
