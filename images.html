@@ -135,8 +135,14 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 // ── 設定（統合コンソール index.html と同じ localStorage のキーを使う）────────
-const CHANNELS = {sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml"}};
-const GH_DIR = CHANNELS.sekai.dir, WF = CHANNELS.sekai.wf;
+const CHANNELS = {
+  sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml"},
+  // 絶滅した生物たち（2026-10-28）。生成のワークフローは作成後に wf を差し替える。画像は公開画像（Commons）から選ぶのが既定
+  zetsumetsu: {dir: "CMO/YouTube/zetsumetsu", wf: "zetsumetsu-produce.yml", defaultTab: "commons", label: "絶滅した生物たち"},
+};
+const CH_KEY = (new URLSearchParams(location.search).get("ch") || "sekai");
+const CH = CHANNELS[CH_KEY] || CHANNELS.sekai;
+const GH_DIR = CH.dir, WF = CH.wf;
 const gh = {owner: "kohaku0521", repo: "kaitai-check", branch: "main", token: ""};
 const px = {apiKey: ""};
 const oa = {apiKey: "", model: "gpt-image-1", quality: "medium"};
@@ -307,6 +313,38 @@ async function nasaFull(nasaId){
   return pick.replace(/^http:/, "https:");
 }
 
+// ── Wikimedia Commons（公開画像。2026-10-28 絶滅した生物たち用）────────────────
+// 既定ではパブリックドメイン／CC0 だけを出す。CC BY・CC BY-SA は、チェックを入れたときだけ（使うと出典の表示が要る。BY-SA は動画全体が継承の対象になる恐れ）
+const PD_RE = /^(public domain|pd[- ]|cc0|cc-zero)/i;
+async function commonsSearch(q, allowBy){
+  const url = "https://commons.wikimedia.org/w/api.php?" + new URLSearchParams({
+    action: "query", generator: "search", gsrsearch: q + " filetype:bitmap", gsrnamespace: "6", gsrlimit: "40",
+    prop: "imageinfo", iiprop: "url|extmetadata|size|mime", iiurlwidth: "1600", format: "json", origin: "*",
+  });
+  let r; try{ r = await fetch(url); }catch{ throw new Error("Wikimedia Commons に接続できません"); }
+  if(!r.ok) throw new Error(`Commons ${r.status}`);
+  const pages = Object.values(((await r.json()).query || {}).pages || {}).sort((a, b) => (a.index || 0) - (b.index || 0));
+  const plain = h => String(h || "").replace(/<[^>]+>/g, "").trim();
+  const out = [];
+  for(const p of pages){
+    const ii = (p.imageinfo || [])[0]; if(!ii || !/^image\/(jpeg|png)/.test(ii.mime || "")) continue;
+    if((ii.width || 0) < 800) continue;
+    const em = ii.extmetadata || {};
+    const lic = plain((em.LicenseShortName || {}).value) || "不明";
+    const pd = PD_RE.test(lic);
+    const by = /^cc[- ]by/i.test(lic) && !/nc|nd/i.test(lic);
+    if(!pd && !(allowBy && by)) continue;
+    const artist = plain((em.Artist || {}).value).slice(0, 60);
+    const date = plain((em.DateTimeOriginal || {}).value).slice(0, 30);
+    out.push({
+      thumb: ii.thumburl, full: ii.thumburl, pd,
+      title: `${p.title.replace(/^File:/, "").slice(0, 40)} ／ ${lic}${date ? " ／ " + date : ""}`,
+      source: {type: "commons", id: p.title, page: ii.descriptionurl, credit: `${artist || "作者不明"} / ${lic} / Wikimedia Commons`, license: lic, date},
+    });
+  }
+  return out;
+}
+
 // ── OpenAI ───────────────────────────────────────────────────────────────
 const STYLES = {
   photo: "A realistic documentary-style photograph, natural lighting, 16:9 composition, no text, no logos, no watermarks, no recognizable faces. Subject: ",
@@ -450,23 +488,24 @@ function render(){
 function buildPanel(s){
   // 星・天体・宇宙機の場面は、NASA画像のタブから開く（2026-10-28 社長指示「星の画像はなるべくNASA画像を」）
   const ASTRO = /\b(stars?|planets?|galax(y|ies)|nebula|supernova|moon|sun|mars|jupiter|saturn|venus|mercury|neptune|uranus|pluto|comet|asteroid|meteor|telescope|spacecraft|rocket|satellite|orbit|solar|milky|exoplanet|cosmos|universe|eclipse|aurora)\b/i;
-  const tab = S.tabs[s.id] || (ASTRO.test(sceneQuery(s)) ? "nasa" : "pixabay");
+  const tab = S.tabs[s.id] || CH.defaultTab || (ASTRO.test(sceneQuery(s)) ? "nasa" : "pixabay");
   const p = document.createElement("div"); p.className = "panel";
   const q0 = (S.results[s.id] && S.results[s.id].q) || sceneQuery(s);
   p.innerHTML = `
     <div class="tabs">
-      ${[["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["text", "文字・図にする"]]
+      ${[["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["text", "文字・図にする"]]
         .map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
     </div>
     <div id="tabbody"></div>`;
   const body = p.querySelector("#tabbody");
   p.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { S.tabs[s.id] = b.dataset.tab; render(); });
   const res = S.results[s.id] || {};
-  if(tab === "pixabay" || tab === "nasa"){
+  if(tab === "pixabay" || tab === "nasa" || tab === "commons"){
     body.innerHTML = `
       <div class="row"><input type="text" id="q" value="${esc(q0)}" placeholder="英語の検索語（例: observatory telescope night）">
         <button class="primary" id="go">検索</button></div>
-      <div class="hint" style="margin-bottom:6px">${tab === "nasa" ? "NASAの画像は公的な素材ですが、画像ごとに出典（機関名）が付きます。" : "Pixabayの写真は、検索語と意味が合うか、見て選んでください。"}</div>
+      ${tab === "commons" ? `<label class="hint" style="display:block;margin-bottom:6px"><input type="checkbox" id="by" ${res.by ? "checked" : ""}> CC BY・CC BY-SA の画像も出す（使うと出典の表示が要ります。BY-SA は避けてください）</label>` : ""}
+      <div class="hint" style="margin-bottom:6px">${tab === "commons" ? "Wikimedia Commons の画像です。パブリックドメイン／CC0 だけを出しています。作者・年・権利は各画像の下に出ます。1929年より前の図や写真でも、原産国の条件は画像のページで確認してください。" : tab === "nasa" ? "NASAの画像は公的な素材ですが、画像ごとに出典（機関名）が付きます。" : "Pixabayの写真は、検索語と意味が合うか、見て選んでください。"}</div>
       <div class="msg ${res.err ? "err" : ""}" id="rm">${esc(res.err || (res.busy ? "検索しています…" : ""))}</div>
       <div class="results" id="rs"></div>`;
     const rs = body.querySelector("#rs");
@@ -477,7 +516,7 @@ function buildPanel(s){
         const rm = body.querySelector("#rm"); rm.className = "msg"; rm.textContent = "画像を取り込んでいます…";
         try{
           const url = tab === "nasa" ? await nasaFull(it.nasaId) : it.full;
-          const png = await toPng(await fetchBlob(url, tab === "nasa" ? "NASA" : "Pixabay"));
+          const png = await toPng(await fetchBlob(url, tab === "nasa" ? "NASA" : tab === "commons" ? "Commons" : "Pixabay"));
           stage(s, png, it.source);
         }catch(e){ rm.className = "msg err"; rm.textContent = e.message; }
       };
@@ -485,9 +524,10 @@ function buildPanel(s){
     });
     const go = async () => {
       const q = body.querySelector("#q").value.trim(); if(!q) return;
-      S.results[s.id] = {q, tab, busy: true}; render();
-      try{ const items = await (tab === "nasa" ? nasaSearch(q) : pxSearch(q)); S.results[s.id] = {q, tab, items}; if(!items.length) S.results[s.id].err = "見つかりませんでした。検索語を変えてみてください"; }
-      catch(e){ S.results[s.id] = {q, tab, err: e.message}; }
+      const by = !!(body.querySelector("#by") && body.querySelector("#by").checked);
+      S.results[s.id] = {q, tab, busy: true, by}; render();
+      try{ const items = await (tab === "nasa" ? nasaSearch(q) : tab === "commons" ? commonsSearch(q, by) : pxSearch(q)); S.results[s.id] = {q, tab, items, by}; if(!items.length) S.results[s.id].err = "見つかりませんでした。検索語を変えてみてください"; }
+      catch(e){ S.results[s.id] = {q, tab, err: e.message, by}; }
       render();
     };
     body.querySelector("#go").onclick = go;
