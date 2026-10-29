@@ -148,7 +148,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 
 // ── 設定（統合コンソール index.html と同じ localStorage のキーを使う）────────
 const CHANNELS = {
-  sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml"},
+  sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml", previewWf: "trend-auto-studio-preview.yml"},
   // 絶滅した生物たち（2026-10-28）。生成のワークフローは作成後に wf を差し替える。画像は公開画像（Commons）から選ぶのが既定
   virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", previewWf: "virus-preview.yml", artQuality: true, defaultTab: "commons", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
   zetsumetsu: {dir: "CMO/YouTube/zetsumetsu", wf: "zetsumetsu-produce.yml", defaultTab: "commons", label: "絶滅した生物たち", scriptRel: "../zetsumetsu/data/scripts/"},
@@ -174,7 +174,7 @@ async function api(path, opt = {}){
   const r = await fetch("https://api.github.com" + path, {...opt, headers: {
     "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
     "Authorization": "Bearer " + gh.token, ...(opt.headers || {}),
-  }});
+  }}).catch(() => { throw new Error("GitHubに接続できません（通信状態を確認してください）"); });
   if(r.status === 204) return null;
   const j = await r.json().catch(() => null);
   if(!r.ok) throw new Error(`GitHub ${r.status}: ${(j && j.message) || r.statusText}`);
@@ -245,7 +245,7 @@ async function translateEn(text){
     headers: {"Content-Type": "application/json", "Authorization": "Bearer " + oa.apiKey},
     body: JSON.stringify({model: "gpt-4o-mini", temperature: 0.2, messages: [
       {role: "system", content: "Translate the Japanese narration line of a YouTube explainer video into natural English. Keep every hedge (such as とされる, 推計で, 〜と考えられている) as hedged English, keep all numbers and proper nouns exactly, do not add facts. Output only the English translation."},
-      {role: "user", content: text}]})});
+      {role: "user", content: text}]})}).catch(() => { throw new Error("OpenAIに接続できません（通信状態・ブラウザの拡張機能を確認してください）"); });
   const j = await r.json().catch(() => null);
   if(!r.ok) throw new Error(`OpenAI ${r.status}: ${(j && j.error && j.error.message || r.statusText).slice(0, 160)}`);
   const out = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
@@ -301,6 +301,7 @@ async function loadScript(name){
     text: raw.text || "", chapter: raw.chapter_label || "",
     staged: null, action: null,           // staged: {bytes,url,source} / action: "text"（文字・図にする）
     style: JSON.parse(JSON.stringify(raw.slide_style || {})), styleDirty: false,   // 文字の色（slide_style。2026-10-29）
+    edits: {},                            // 文字の内容・改行・スペースの手直し（キー→文字列）
   }));
   localStorage.setItem("tas.img.script", name);
   loadEn();
@@ -425,7 +426,7 @@ async function openaiGenerate(prompt, quality){
     const r = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST", headers: {"Content-Type": "application/json", "Authorization": "Bearer " + oa.apiKey},
       body: JSON.stringify({model, prompt, size: "1536x1024", quality: quality || oa.quality || "medium", n: 1}),
-    });
+    }).catch(() => { throw new Error("OpenAIに接続できません（通信状態・ブラウザの拡張機能を確認してください）"); });
     const j = await r.json().catch(() => null);
     if(!r.ok) throw new Error(`OpenAI ${r.status}: ${(j && j.error && j.error.message || r.statusText).slice(0, 200)}`);
     const d = j.data && j.data[0];
@@ -509,6 +510,7 @@ function currentOf(s){
   if(pv) return {url: null, asset: pv, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし → この文字で表示" : "この図・文字で表示"};
   return {url: null, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし（文字で表示）" : "文字・図で表示"};
 }
+function updateSaveBtn(){ const n = changedScenes().length; $("#b-save").textContent = `③ 保存（${n}件の変更）`; $("#b-save").disabled = !n; }
 const isChg = s => !!(s.staged || s.action || s.styleDirty);
 const changedScenes = () => S.scenes.filter(isChg);
 
@@ -548,11 +550,12 @@ function render(){
   const grid = $("#grid");
   for(const s of list.slice(S.page * PER, (S.page + 1) * PER)){
     const cur = currentOf(s);
+    const approx = showsText(s) && (s.styleDirty || !(S.prev && S.prev[s.id]));
     const el = document.createElement("div");
     el.className = "card" + (isChg(s) ? " changed" : "") + (S.open === s.id ? " open" : "");
     el.innerHTML = `
-      <div class="thumb">${cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
-        <span class="badge ${isChg(s) ? "ch" : ""}">${esc(s.id.replace("scene_", ""))} · ${esc(kindOf(s))}${cur.label && (cur.url || cur.asset) ? " · " + esc(cur.label) : ""}</span></div>
+      <div class="thumb">${approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
+        <span class="badge ${isChg(s) ? "ch" : ""}">${esc(s.id.replace("scene_", ""))} · ${esc(kindOf(s))}${approx ? " · この文字で表示（目安）" : cur.label && (cur.url || cur.asset) ? " · " + esc(cur.label) : ""}</span></div>
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
         <div class="row" style="margin:0"><button data-open="${esc(s.id)}">${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}
@@ -569,7 +572,7 @@ function render(){
   grid.querySelectorAll("[data-undo]").forEach(b => b.onclick = () => {
     const s = S.scenes.find(x => x.id === b.dataset.undo);
     if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url);
-    s.staged = null; s.action = null; s.style = JSON.parse(JSON.stringify(s.raw.slide_style || {})); s.styleDirty = false; render();
+    s.staged = null; s.action = null; s.style = JSON.parse(JSON.stringify(s.raw.slide_style || {})); s.edits = {}; s.styleDirty = false; render();
   });
   observeImages();
   const n = ch.length;
@@ -577,6 +580,52 @@ function render(){
 }
 
 // ── 文字の色（場面ごと・単語ごと。2026-10-29 社長指示）─────────────────────────────
+// 画像が無いときの文字スライドの見出し・補足（src/script_loader.py の fallback_headline と同じ規則の写し）
+function fbHead(narr){
+  const WHOLE = 38, HEAD = 28, SUB = 44, SHORT = 12, MINSUB = 10;
+  const sents = String(narr || "").split("。").map(t => t.replace(/^[、 　]+|[、 　]+$/g, "")).filter(Boolean);
+  let first = sents[0] || "";
+  for(const nx of sents.slice(1)){ if(first.length >= SHORT) break; first = first + "。" + nx; }
+  if(first.length <= WHOLE) return [first, ""];
+  const parts = first.split("、").filter(Boolean);
+  const upto = (arr, lim) => { let out = "", used = 0; for(const p of arr){ const c = out ? out + "、" + p : p; if(c.length > lim) break; out = c; used++; } return [out, used]; };
+  let [head, used] = upto(parts, HEAD);
+  if(!head) return [first.slice(0, HEAD), ""];
+  let rest = parts.slice(used);
+  if(rest.length && rest.join("、").length < MINSUB && used > 1 && parts.slice(0, used - 1).join("、").length >= MINSUB){ used -= 1; head = parts.slice(0, used).join("、"); rest = parts.slice(used); }
+  return [head, upto(rest, SUB)[0]];
+}
+const getPath = (o, k) => k.split(".").reduce((a, x) => (a == null ? a : a[x]), o);
+const setPath = (o, k, v) => { const ks = k.split("."); const last = ks.pop(); const t = ks.reduce((a, x) => a[x], o); t[last] = v; };
+// この場面の文字スライドの、手直しできる文字（キー・見出し・いまの値）
+function slideFields(s){
+  const sl = (s.raw && s.raw.slide) || {};
+  const out = [];
+  const add = (key, label) => { const v = getPath(sl, key); if(typeof v === "string") out.push({key, label, def: v}); };
+  if(sl && Object.keys(sl).length){
+    add("headline", "見出し"); add("sub", "補足");
+    (sl.bullets || []).forEach((_, i) => add("bullets." + i, "箇条書き " + (i + 1)));
+    (sl.cards || []).forEach((_, i) => { add(`cards.${i}.label`, `カード${i + 1}（上）`); add(`cards.${i}.value`, `カード${i + 1}（下）`); });
+    ["left", "right"].forEach(sd => ["label", "value", "note"].forEach(k => add(`${sd}.${k}`, `${sd === "left" ? "左" : "右"}の${{label: "見出し", value: "文字", note: "補足"}[k]}`)));
+    add("label", "ラベル"); add("unit", "単位"); add("quote", "引用文");
+  }else{
+    const st = (s.raw && s.raw.slide_text) || {}, [h, sb] = fbHead(s.text);
+    out.push({key: "headline", label: "見出し（画像が無いときに出る文字）", def: st.headline != null ? st.headline : h});
+    out.push({key: "sub", label: "補足", def: st.headline != null ? (st.sub || "") : sb});
+  }
+  return out;
+}
+const curVal = (s, f) => (s.edits && s.edits[f.key] !== undefined) ? s.edits[f.key] : f.def;
+const showsText = s => !s.staged && (s.action === "text" || !needsReview(s) || (!S.assets[s.id] && !S.clips[s.id]));
+// カードの小さな表示（目安）。確認画像がまだ無い・編集中のときに、文字がちゃんと見えるようにする
+function approxHtml(s){
+  const fs = slideFields(s), st = s.style || {}, light = ((s.raw && s.raw.slide) || {}).theme === "light";
+  const bg = light ? "linear-gradient(160deg,#f7f8fb,#e6ebf2)" : "linear-gradient(160deg,#070c18,#141e3a)";
+  const main = st.color || (light ? "#121826" : "#ffffff"), sub = st.sub_color || (light ? "#4a5466" : "#9aa3b2");
+  const lines = fs.map((f, i) => ({v: curVal(s, f), head: i === 0})).filter(x => x.v && x.v.trim());
+  const body = lines.slice(0, 5).map(x => `<div style="white-space:pre-wrap;word-break:break-all;${x.head ? `font-weight:800;font-size:15px;color:${main};margin-bottom:4px` : `font-size:11.5px;color:${sub};line-height:1.45`}">${paintLine(x.v, st.spans)}</div>`).join("");
+  return `<div style="position:absolute;inset:0;background:${bg};padding:14px 14px 18px;overflow:hidden;display:flex;flex-direction:column;justify-content:center">${body}</div>`;
+}
 const PALETTE = [["白", "#ffffff"], ["黄", "#ffd54a"], ["琥珀", "#e8a74a"], ["赤", "#ff6b6b"], ["水色", "#6ec6ff"], ["緑", "#7bd88f"], ["灰", "#9aa3b2"]];
 const hasStyle = s => !!(s.style && (s.style.color || s.style.sub_color || (s.style.spans || []).length));
 function styleLines(s){
@@ -609,11 +658,16 @@ document.addEventListener("selectionchange", () => {
 function renderStyleTab(s, body){
   const st = s.style || (s.style = {});
   lastSel = "";
-  const lines = styleLines(s);
+  const fields = slideFields(s);
+  const lines = fields.map(f => curVal(s, f)).filter(v => v && v.trim());
+  if(!lines.length) lines.push(s.text);
   const touch = () => { s.styleDirty = true; render(); };
   const chips = (group, extra = "") => PALETTE.map(([n, c]) => `<span class="chip" data-g="${group}" data-c="${c}"><i style="background:${c}"></i>${n}</span>`).join("") + extra;
   body.innerHTML = `
-    <div class="hint">文字スライド（画像が無い場面や、図・文字の場面）の文字の色を変えます。画像がある場面では、「文字・図にする」を選んだときに使われます。</div>
+    <div class="hint">文字スライド（画像が無い場面や、図・文字の場面）の、文字・改行・スペース・色を直します。画像がある場面では、「文字・図にする」を選んだとき、または画像が取れなかったときに使われます。</div>
+    <div class="field"><label>文字の内容と配置（Enterで改行、スペースで位置を調整）</label>
+      ${fields.map((f, i) => `<div style="margin-bottom:8px"><div class="hint">${esc(f.label)}</div><textarea data-ed="${i}" rows="${Math.min(5, Math.max(2, (curVal(s, f).match(/\n/g) || []).length + 2))}" style="white-space:pre;font-size:16px">${esc(curVal(s, f))}</textarea></div>`).join("")}
+      <div class="row"><button id="ed-reset">文字を標準に戻す</button><button id="ed-sp" title="カーソルの位置に、全角スペースを入れます">全角スペースを入れる</button></div></div>
     <div class="sty-prev" style="${st.color ? "color:" + st.color : ""}">${lines.slice(0, 3).map((l, i) => `<div class="${i ? "s" : ""}" style="${i && st.sub_color ? "color:" + st.sub_color : ""}">${paintLine(l, st.spans)}</div>`).join("")}<div class="hint" style="margin-top:8px;font-weight:400">↑ 目安です。実際の表示は、保存→「図・文字の表示を作る」で確認できます</div></div>
     <div class="field"><label>見出し・本文の色（この場面ぜんぶ）</label>
       <div>${chips("main", `<span class="chip" data-g="main" data-c="">標準</span><input type="color" id="c-main" value="${st.color || "#ffffff"}" style="width:44px;height:36px;vertical-align:middle">`)}</div></div>
@@ -625,6 +679,15 @@ function renderStyleTab(s, body){
       <div>${chips("word", `<span class="chip" data-g="word" data-c="">この言葉の色を消す</span><input type="color" id="c-word" value="#ffd54a" style="width:44px;height:36px;vertical-align:middle">`)}</div>
       <div id="sty-list" style="margin-top:6px">${(st.spans || []).map((x, i) => `<span class="chip" data-del="${i}"><i style="background:${x.color}"></i>${escHtml(x.text)} ✕</span>`).join("") || '<span class="hint">色を付けた言葉は、まだありません</span>'}</div></div>`;
   body.querySelectorAll(".chip,[data-del]").forEach(el => el.addEventListener("pointerdown", e => e.preventDefault()));   // 選択を消さない
+  let lastTa = null;
+  body.querySelectorAll("[data-ed]").forEach(ta => {
+    const f = fields[+ta.dataset.ed];
+    ta.addEventListener("focus", () => lastTa = ta);
+    ta.oninput = () => { s.edits[f.key] = ta.value; s.styleDirty = true; const pv = body.querySelector(".sty-prev"); if(pv) pv.innerHTML = `<div style="white-space:pre-wrap">${paintLine(curVal(s, fields[0]), st.spans)}</div>` + (fields[1] ? `<div class="s" style="white-space:pre-wrap">${paintLine(curVal(s, fields[1]), st.spans)}</div>` : ""); updateSaveBtn(); };
+    ta.onchange = () => render();
+  });
+  const rs = body.querySelector("#ed-reset"); if(rs) rs.onclick = () => { s.edits = {}; if(s.raw.slide_text){ /* 保存済みの手直しは、保存時に消す */ s.edits = {headline: fbHead(s.text)[0], sub: fbHead(s.text)[1]}; } s.styleDirty = true; render(); };
+  const sp = body.querySelector("#ed-sp"); if(sp){ sp.addEventListener("pointerdown", e => e.preventDefault()); sp.onclick = () => { const ta = lastTa || body.querySelector("[data-ed]"); if(!ta) return; const a = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, a) + "　" + ta.value.slice(ta.selectionEnd ?? a); ta.selectionStart = ta.selectionEnd = a + 1; ta.dispatchEvent(new Event("input")); ta.focus(); }; }
   const setBase = (g, c) => { if(g === "main"){ if(c) st.color = c; else delete st.color; } else { if(c) st.sub_color = c; else delete st.sub_color; } touch(); };
   const setWord = c => {
     const w = lastSel;
@@ -795,6 +858,15 @@ async function saveAll(){
       if((st.spans || []).length) clean.spans = st.spans.map(x => ({text: x.text, color: x.color}));
       if(Object.keys(clean).length) raw.slide_style = clean; else delete raw.slide_style;
       jsonChanged = true;
+      const eds = Object.entries(s.edits || {});
+      if(eds.length){   // 文字の内容・改行・スペース
+        if(raw.slide && Object.keys(raw.slide).length){ for(const [k, v] of eds) setPath(raw.slide, k, v); }
+        else{
+          const fs = slideFields(s), h = fs.find(f => f.key === "headline"), sb = fs.find(f => f.key === "sub");
+          raw.slide_text = {headline: h ? curVal(s, h) : "", sub: sb ? curVal(s, sb) : ""};
+        }
+        s.edits = {};
+      }
     }
     if(s.staged){
       changes.push({path: `${base}/${s.id}.png`, bytes: s.staged.bytes});
