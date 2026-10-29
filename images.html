@@ -457,7 +457,7 @@ async function wsWait(g, onTick){
 }
 async function wsGenerate(s, g, onTick){
   const m = WS_MODES[g.mode];
-  const payload = {prompt: g.prompt, duration: WS_SEC};
+  const payload = {prompt: (VIDEO_STYLES[g.style] ? VIDEO_STYLES[g.style] + " " : "") + g.prompt, duration: WS_SEC};
   if(m.needImage){ onTick("元の画像を用意しています…"); payload.image = await wsImageDataUrl(s); }
   onTick("WaveSpeed に依頼しています…");
   const j = await wsReq(`${WS_BASE}/${m.model}`, {method: "POST", body: JSON.stringify(payload)});
@@ -523,7 +523,19 @@ async function commonsSearch(q, allowBy){
 const STYLES = {
   photo: "A realistic documentary-style photograph, natural lighting, 16:9 composition, no text, no logos, no watermarks, no recognizable faces. Subject: ",
   science: "A realistic science-documentary visual (telescope-image look or museum-quality reconstruction), 16:9 composition, no text, no logos, no watermarks, no recognizable faces. Subject: ",
+  anime: "A Japanese anime-style illustration, clean line art, vivid cel-shaded colors, cinematic lighting, 16:9 composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
+  illust: "A flat modern vector-style illustration, simple shapes, limited harmonious color palette, soft shading, 16:9 composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
+  manga: "A black-and-white Japanese manga-style drawing, bold ink lines, screentone shading, dramatic composition, 16:9 composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
+  cg: "A polished 3D CG render, soft studio lighting, clean materials, shallow depth of field, 16:9 composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
+  watercolor: "A soft watercolor painting, gentle brush texture, muted colors, paper grain, 16:9 composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
   raw: "",
+};
+// 画風の選択肢（OpenAIの絵と、WaveSpeedの動画で共通。2026-10-29 社長指示）
+const STYLE_OPTS = [["photo", "実写風"], ["anime", "アニメ風"], ["illust", "イラスト風（フラット）"], ["manga", "マンガ風（白黒）"], ["cg", "3DCG風"], ["watercolor", "水彩画風"], ["science", "科学ビジュアル風（望遠鏡画像・復元）"], ["raw", "そのまま（上の文だけ）"]];
+// 動画に付ける、画風の英語の指定（photo と raw は何も付けない）
+const VIDEO_STYLES = {
+  anime: "Japanese anime style, cel-shaded, clean line art.", illust: "Flat vector illustration style, simple shapes.", manga: "Black-and-white manga style, ink lines.",
+  cg: "Polished 3D CG animation style.", watercolor: "Soft watercolor painting style.", science: "Science-documentary visual style.",
 };
 async function openaiGenerate(prompt, quality){
   if(!oa.apiKey) throw new Error("OpenAI のAPIキーが未設定です（⚙ 接続設定）");
@@ -868,17 +880,20 @@ function buildPanel(s){
     body.querySelector("#q").onkeydown = e => { if(e.key === "Enter") go(); };
   }else if(tab === "wsclip"){
     S.wsg = S.wsg || {};
-    const g = S.wsg[s.id] || (S.wsg[s.id] = {busy: false, err: "", note: "", mode: S.assets[s.id] || s.staged ? "fast-i2v" : "std-t2v", prompt: "", getUrl: "", outUrl: ""});
+    const g = S.wsg[s.id] || (S.wsg[s.id] = {busy: false, err: "", note: "", mode: S.assets[s.id] || s.staged ? "fast-i2v" : "std-t2v", prompt: "", style: "photo", getUrl: "", outUrl: ""});
     if(!g.prompt) g.prompt = (sceneQuery(s) ? sceneQuery(s).replace(/\.$/, "") + ". " : "") + "Slow cinematic camera movement, subtle natural motion, photoreal.";
     const m = WS_MODES[g.mode];
     body.innerHTML = `
-      <div class="hint" style="margin-bottom:6px">WaveSpeed（Hailuo 02）で、${WS_SEC}秒の動画クリップをAIに作らせます。<b>押すたびに課金されます。</b>できたクリップは、この場面の候補として表示され、「③ 保存」でこの場面が動画クリップになります。ナレーションが長い場面は、クリップが最大2倍まで引き伸ばされます（${WS_SEC}秒のクリップで、ナレーションは約${Math.round(WS_SEC * 2 * 6.36)}文字まで。それより長いと台本の検査で警告が出ます）。</div>
+      <div class="hint" style="margin-bottom:6px">WaveSpeed（Hailuo 02）で、${WS_SEC}秒の動画クリップをAIに作らせます。<b>押すたびに課金されます。</b>画風を選ぶと、その指定が文の先頭に付きます（画像を動かす場合、画風は元の画像のままです。画風を変えたいときは、先に「OpenAIで描く」でその画風の絵を作ってください）。できたクリップは、この場面の候補として表示され、「③ 保存」でこの場面が動画クリップになります。ナレーションが長い場面は、クリップが最大2倍まで引き伸ばされます（${WS_SEC}秒のクリップで、ナレーションは約${Math.round(WS_SEC * 2 * 6.36)}文字まで。それより長いと台本の検査で警告が出ます）。</div>
       <div class="field"><label>どんな動画か（英語で。画像を動かす場合は、動き方だけでも構いません）</label><textarea id="wp">${esc(g.prompt)}</textarea></div>
+      <div class="row"><select id="wst" style="width:auto" title="画風（選ぶと、英語の指定が文の先頭に付きます）">${STYLE_OPTS.filter(([k]) => k !== "raw").map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("")}</select></div>
       <div class="row"><select id="wm" style="width:auto">${Object.entries(WS_MODES).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("")}</select>
         <button class="primary" id="wgo" ${g.busy ? "disabled" : ""}>${g.busy ? "作っています…" : "AIで動画クリップを作る（課金）"}</button></div>
       <div class="msg ${g.err ? "err" : ""}" id="wmsg">${esc(g.err || g.note)}</div>
       ${g.getUrl && !g.busy && g.err ? `<div class="row"><button id="wfetch">結果を取りに行く（再課金なし）</button>${g.outUrl ? `<a href="${esc(g.outUrl)}" target="_blank" rel="noopener">動画を開く</a>` : ""}</div>` : ""}
       ${s.stagedClip && s.stagedClip.source.type === "wavespeed" ? `<div class="hint">できたクリップが、上のこの場面の画面に出ています。気に入らなければ、もう一度作れます。</div>` : ""}`;
+    body.querySelector("#wst").value = g.style;
+    body.querySelector("#wst").onchange = e => { g.style = e.target.value; };
     body.querySelector("#wm").value = g.mode;
     body.querySelector("#wm").onchange = e => { g.mode = e.target.value; render(); };
     body.querySelector("#wp").oninput = e => g.prompt = e.target.value;
@@ -907,7 +922,7 @@ function buildPanel(s){
       <div class="row"><button id="gp-subj">主題だけにする</button><button id="gp-both">主題＋ナレーションの英訳にする</button></div>` : `<div class="hint" style="margin-bottom:6px">この場面には、ナレーションの英訳がありません。</div>
       <div class="row"><button id="mk-en" class="primary">この場面の英訳を作る（OpenAI・1円未満）</button></div>`}
       <div class="row"><button id="cp-prompt">プロンプトをコピー</button>${narEn ? `<button id="cp-en">ナレーションの英訳をコピー</button>` : ""}<button id="cp-ja">日本語のナレーションをコピー</button></div>
-      <div class="row"><select id="gs" style="width:auto"><option value="photo">実写風</option><option value="science">科学ビジュアル風（望遠鏡画像・復元）</option><option value="raw">そのまま（上の文だけ）</option></select>
+      <div class="row"><select id="gs" style="width:auto" title="画風">${STYLE_OPTS.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("")}</select>
         <button class="primary" id="gen" ${g.busy ? "disabled" : ""}>${g.busy ? "描いています…" : "OpenAIで描く（1枚ごとに課金）"}</button>
         <select id="gq" style="width:auto" title="画質。low は安く、medium は細部がきれいです（1枚ごとの目安: low 約0.016ドル、medium 約0.06ドル。円で約2〜10円）"><option value="low">low（安い・約2円）</option><option value="medium">medium（標準・約10円）</option></select>
         <span class="hint">モデル ${esc(oa.model)}</span></div>
