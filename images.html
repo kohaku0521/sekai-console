@@ -120,7 +120,7 @@ a{color:#7fb0ff}
   <button id="b-short" class="warn" style="display:none" title="本編はアップロードせず、台本の「shorts」の切り抜きショートだけを作って、予約投稿します">⑤ 切り抜きショートだけ作って予約</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/29 18:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/29 19:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -283,7 +283,7 @@ const dockMsg = (t, cls = "") => { const e = $("#dock-msg"); e.textContent = t |
 // ── 台本・素材の読み込み ──────────────────────────────────────────────────
 async function loadScriptList(){
   const items = await api(repoPath(`/contents/${GH_DIR}/data/scripts${refQ()}`));
-  S.scripts = items.filter(i => /-long\.json$/.test(i.name)).map(i => i.name).sort().reverse();
+  S.scripts = items.filter(i => /-(long|short)\.json$/.test(i.name)).map(i => i.name).sort().reverse();
   const sel = $("#script");
   sel.innerHTML = S.scripts.map(n => `<option>${esc(n)}</option>`).join("");
   const last = localStorage.getItem("tas.img.script");
@@ -311,6 +311,8 @@ async function loadScript(name){
     edits: {},                            // 文字の内容・改行・スペースの手直し（キー→文字列）
   }));
   localStorage.setItem("tas.img.script", name);
+  // 長尺の台本に切り抜きの指定（shorts）が無ければ、④で切り抜きは作らない（ショートは、ショート専用の台本から⑤で作る）
+  $("#c-shorts").checked = !json.standalone_short && (json.shorts || []).length > 0;
   loadEn();
   await loadAssets();
   S.open = null;
@@ -1098,6 +1100,7 @@ async function runAssets(){
 }
 async function runProduce(){
   if(!S.json) return;
+  if(S.json.standalone_short){ dockMsg("これはショート専用の台本です。「⑤ 切り抜きショートだけ作って予約」を押してください（④は長尺用です）", "err"); return; }
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
   if(changedScenes().length){ dockMsg("未保存の変更があります。先に「③ 保存」を押してください", "err"); return; }
   const date = (S.json.date || "").slice(0, 10);
@@ -1173,7 +1176,8 @@ $("#b-short").onclick = async () => {
   const sh = S.json.shorts || [];
   if(!sh.length){ dockMsg("この台本には、切り抜きショートの指定（shorts）がありません", "err"); return; }
   const hooks = sh.filter(x => x.hook_prompt).length;
-  if(!confirm(`切り抜きショートだけを作って、予約投稿します（約10〜15分）。\n\n・切り抜き ${sh.length} 本（${sh.map(x => `${x.from}〜${x.to}`).join("、")}）\n・本編は、作りもアップロードもしません（切り抜く場面だけ、音声と映像を作ります）\n・予約の時刻は、チャンネルの決まりの枠に自動で入ります\n・本編を先に公開していても、概要欄に本編のURLは入りません（動画の最後の案内は出ます）\n・冒頭のフック動画が課金されます（${hooks}本・1本 約15円。作ってあるものは使い回し、二重には課金されません）\n\nよろしいですか？`)) return;
+  const alone = !!S.json.standalone_short;
+  if(!confirm(alone ? `ショート専用の台本から、ショートを作って予約投稿します（約10分）。\n\n・題名: ${sh[0].title || S.json.title}\n・最後の案内に出す本編の題名: ${S.json.main_title || "（未設定）"}\n・予約の時刻は、チャンネルの決まりの枠に自動で入ります\n・冒頭のフック動画が課金されます（${hooks}本・約15円。作ってあるものは使い回し、二重には課金されません）\n\nよろしいですか？` : `切り抜きショートだけを作って、予約投稿します（約10〜15分）。\n\n・切り抜き ${sh.length} 本（${sh.map(x => `${x.from}〜${x.to}`).join("、")}）\n・本編は、作りもアップロードもしません（切り抜く場面だけ、音声と映像を作ります）\n・予約の時刻は、チャンネルの決まりの枠に自動で入ります\n・本編を先に公開していても、概要欄に本編のURLは入りません（動画の最後の案内は出ます）\n・冒頭のフック動画が課金されます（${hooks}本・1本 約15円。作ってあるものは使い回し、二重には課金されません）\n\nよろしいですか？`)) return;
   try{ await dispatch({fetch_pixabay: "false", assets_only: "false", upload: "false", slides_only: "false", short_only: "true", shorts: "true"}, "切り抜きショートの生成を始めました（約10〜15分）。結果はDiscordとチャットに届きます"); }
   catch(e){ dockMsg(e.message, "err"); }
 };
