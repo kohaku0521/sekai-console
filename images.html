@@ -301,6 +301,7 @@ async function loadScript(name){
     text: raw.text || "", chapter: raw.chapter_label || "",
     staged: null, action: null,           // staged: {bytes,url,source} / action: "text"（文字・図にする）
     style: JSON.parse(JSON.stringify(raw.slide_style || {})), styleDirty: false,   // 文字の色（slide_style。2026-10-29）
+    stagedClip: null,                     // Pixabay動画クリップの選択（{bytes,url,source}）
     edits: {},                            // 文字の内容・改行・スペースの手直し（キー→文字列）
   }));
   localStorage.setItem("tas.img.script", name);
@@ -344,6 +345,8 @@ async function fetchBlob(url, label){
   return r.blob();
 }
 function stage(s, bytes, source){
+  if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url);
+  s.stagedClip = null;
   if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url);
   s.staged = {bytes, url: URL.createObjectURL(new Blob([bytes], {type: "image/png"})), source};
   s.action = null;
@@ -360,6 +363,40 @@ async function pxSearch(q){
     thumb: h.webformatURL, full: h.largeImageURL, title: (h.tags || "").split(",").slice(0, 4).join(","),
     source: {type: "pixabay", id: String(h.id), page: h.pageURL, credit: h.user},
   }));
+}
+
+// ── Pixabay 動画クリップ（無料。2026-10-29 社長指示）──────────────────────────────
+async function pxSearchVideo(q){
+  if(!px.apiKey) throw new Error("Pixabay のAPIキーが未設定です（⚙ 接続設定）");
+  // 動画は、プレビューが重いので、件数を絞る（多いとブラウザが重くなる）
+  const url = `https://pixabay.com/api/videos/?key=${encodeURIComponent(px.apiKey)}&q=${encodeURIComponent(q)}&safesearch=true&per_page=8`;
+  let r; try{ r = await fetch(url); }catch{ throw new Error("Pixabay に接続できません"); }
+  if(!r.ok) throw new Error(r.status === 429 ? "Pixabay の利用回数上限です。少し待ってください" : r.status === 400 ? "Pixabay が検索語を受け付けませんでした（短くしてみてください）" : `Pixabay ${r.status}`);
+  return ((await r.json()).hits || []).map(h => {
+    const v = h.videos || {};
+    return {hit: h, thumb: (v.tiny && v.tiny.thumbnail) || (v.small && v.small.thumbnail) || "", preview: (v.tiny && v.tiny.url) || (v.small && v.small.url) || "",
+      title: `${h.duration || "?"}秒 ／ ${(h.tags || "").split(",").slice(0, 3).join(",")}`,
+      source: {type: "pixabay-video", id: String(h.id), page: h.pageURL, credit: h.user}};
+  });
+}
+// medium → large → small → tiny の順に、ダウンロードできたものを使う。大きすぎるとブラウザのメモリが足りなくなる（20MB超は使わない）
+async function pxFetchBestVideo(hit){
+  const v = hit.videos || {};
+  const tiers = [v.medium, v.large, v.small, v.tiny].filter(t => t && t.url && (!t.size || t.size < 20 * 1024 * 1024));
+  if(!tiers.length) throw new Error("この動画は、使える大きさのファイルがありません");
+  let lastErr;
+  for(const t of tiers){
+    try{ const r = await fetch(t.url); if(!r.ok) throw new Error(`Pixabay動画 ${r.status}`); return {bytes: new Uint8Array(await r.arrayBuffer()), picked: t}; }
+    catch(e){ lastErr = e; }
+  }
+  throw new Error("動画を取得できません（" + (lastErr && lastErr.message || "通信エラー") + "）");
+}
+function stageClip(s, bytes, source){
+  if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url);
+  if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url);
+  s.staged = null; s.action = null;
+  s.stagedClip = {bytes, url: URL.createObjectURL(new Blob([bytes], {type: "video/mp4"})), source};
+  render();
 }
 
 // ── NASA 画像ライブラリ ───────────────────────────────────────────────────
@@ -501,6 +538,7 @@ function observeImages(){
 // ── 画面 ─────────────────────────────────────────────────────────────────
 function needsReview(s){ return PHOTO_KINDS.has(kindOf(s)); }
 function currentOf(s){
+  if(s.stagedClip) return {url: null, label: "動画クリップに変更"};
   if(s.staged) return {url: s.staged.url, label: "変更あり"};
   const pv = S.prev && S.prev[s.id];
   if(s.action === "text") return pv ? {url: null, asset: pv, label: "文字・図にする（この表示）"} : {url: null, label: "文字・図にする"};
@@ -511,7 +549,7 @@ function currentOf(s){
   return {url: null, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし（文字で表示）" : "文字・図で表示"};
 }
 function updateSaveBtn(){ const n = changedScenes().length; $("#b-save").textContent = `③ 保存（${n}件の変更）`; $("#b-save").disabled = !n; }
-const isChg = s => !!(s.staged || s.action || s.styleDirty);
+const isChg = s => !!(s.staged || s.stagedClip || s.action || s.styleDirty);
 const changedScenes = () => S.scenes.filter(isChg);
 
 function render(){
@@ -550,12 +588,12 @@ function render(){
   const grid = $("#grid");
   for(const s of list.slice(S.page * PER, (S.page + 1) * PER)){
     const cur = currentOf(s);
-    const approx = showsText(s) && (s.styleDirty || !(S.prev && S.prev[s.id]));
+    const approx = !s.stagedClip && showsText(s) && (s.styleDirty || !(S.prev && S.prev[s.id]));
     const el = document.createElement("div");
     el.className = "card" + (isChg(s) ? " changed" : "") + (S.open === s.id ? " open" : "");
     el.innerHTML = `
-      <div class="thumb">${approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
-        <span class="badge ${isChg(s) ? "ch" : ""}">${esc(s.id.replace("scene_", ""))} · ${esc(kindOf(s))}${approx ? " · この文字で表示（目安）" : cur.label && (cur.url || cur.asset) ? " · " + esc(cur.label) : ""}</span></div>
+      <div class="thumb">${s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
+        <span class="badge ${isChg(s) ? "ch" : ""}">${esc(s.id.replace("scene_", ""))} · ${esc(kindOf(s))}${approx ? " · この文字で表示（目安）" : cur.label && (cur.url || cur.asset || s.stagedClip) ? " · " + esc(cur.label) : ""}</span></div>
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
         <div class="row" style="margin:0"><button data-open="${esc(s.id)}">${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}
@@ -572,7 +610,7 @@ function render(){
   grid.querySelectorAll("[data-undo]").forEach(b => b.onclick = () => {
     const s = S.scenes.find(x => x.id === b.dataset.undo);
     if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url);
-    s.staged = null; s.action = null; s.style = JSON.parse(JSON.stringify(s.raw.slide_style || {})); s.edits = {}; s.styleDirty = false; render();
+    if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; s.staged = null; s.action = null; s.style = JSON.parse(JSON.stringify(s.raw.slide_style || {})); s.edits = {}; s.styleDirty = false; render();
   });
   observeImages();
   const n = ch.length;
@@ -616,7 +654,7 @@ function slideFields(s){
   return out;
 }
 const curVal = (s, f) => (s.edits && s.edits[f.key] !== undefined) ? s.edits[f.key] : f.def;
-const showsText = s => !s.staged && (s.action === "text" || !needsReview(s) || (!S.assets[s.id] && !S.clips[s.id]));
+const showsText = s => !s.staged && !s.stagedClip && (s.action === "text" || !needsReview(s) || (!S.assets[s.id] && !S.clips[s.id]));
 // カードの小さな表示（目安）。確認画像がまだ無い・編集中のときに、文字がちゃんと見えるようにする
 function approxHtml(s){
   const fs = slideFields(s), st = s.style || {}, light = ((s.raw && s.raw.slide) || {}).theme === "light";
@@ -714,28 +752,35 @@ function buildPanel(s){
   const q0 = (S.results[s.id] && S.results[s.id].q) || sceneQuery(s);
   p.innerHTML = `
     <div class="tabs">
-      ${(needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]] : [["style", "文字の色"]])
+      ${(needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["clip", "動画クリップ（Pixabay）"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]] : [["style", "文字の色"]])
         .map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
     </div>
     <div id="tabbody"></div>`;
   const body = p.querySelector("#tabbody");
   p.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { S.tabs[s.id] = b.dataset.tab; render(); });
   const res = S.results[s.id] || {};
-  if(tab === "pixabay" || tab === "nasa" || tab === "commons"){
+  if(tab === "pixabay" || tab === "nasa" || tab === "commons" || tab === "clip"){
     body.innerHTML = `
       <div class="row"><input type="text" id="q" value="${esc(q0)}" placeholder="英語の検索語（例: observatory telescope night）">
         <button class="primary" id="go">検索</button></div>
       ${tab === "commons" ? `<label class="hint" style="display:block;margin-bottom:6px"><input type="checkbox" id="by" ${res.by ? "checked" : ""}> CC BY・CC BY-SA の画像も出す（使うと出典の表示が要ります。BY-SA は避けてください）</label>` : ""}
-      <div class="hint" style="margin-bottom:6px">${tab === "commons" ? "Wikimedia Commons の画像です。パブリックドメイン／CC0 だけを出しています。作者・年・権利は各画像の下に出ます。1929年より前の図や写真でも、原産国の条件は画像のページで確認してください。" : tab === "nasa" ? "NASAの画像は公的な素材ですが、画像ごとに出典（機関名）が付きます。" : "Pixabayの写真は、検索語と意味が合うか、見て選んでください。"}</div>
+      <div class="hint" style="margin-bottom:6px">${tab === "clip" ? "Pixabay の無料の動画クリップです（再生は動画のこの場面だけ。長い動画は、冒頭の数秒が使われます）。選ぶと、この場面は動画クリップになります。" : tab === "commons" ? "Wikimedia Commons の画像です。パブリックドメイン／CC0 だけを出しています。作者・年・権利は各画像の下に出ます。1929年より前の図や写真でも、原産国の条件は画像のページで確認してください。" : tab === "nasa" ? "NASAの画像は公的な素材ですが、画像ごとに出典（機関名）が付きます。" : "Pixabayの写真は、検索語と意味が合うか、見て選んでください。"}</div>
       <div class="msg ${res.err ? "err" : ""}" id="rm">${esc(res.err || (res.busy ? "検索しています…" : ""))}</div>
       <div class="results" id="rs"></div>`;
     const rs = body.querySelector("#rs");
     if(res.tab === tab && res.items) res.items.forEach((it, i) => {
       const d = document.createElement("div"); d.className = "res" + (it.sel ? " sel" : "");
-      d.innerHTML = `<img loading="lazy" src="${esc(it.thumb)}" alt=""><div class="t">${esc(it.title)}</div>`;
+      d.innerHTML = tab === "clip"
+        ? `${it.thumb ? `<img loading="lazy" src="${esc(it.thumb)}" alt="">` : `<video muted playsinline preload="metadata" src="${esc(it.preview)}#t=0.5" style="width:100%;display:block"></video>`}<div class="t">▶ ${esc(it.title)}</div>`
+        : `<img loading="lazy" src="${esc(it.thumb)}" alt=""><div class="t">${esc(it.title)}</div>`;
       d.onclick = async () => {
         const rm = body.querySelector("#rm"); rm.className = "msg"; rm.textContent = "画像を取り込んでいます…";
         try{
+          if(tab === "clip"){
+            const {bytes, picked} = await pxFetchBestVideo(it.hit);
+            stageClip(s, bytes, {...it.source, size: picked.size || bytes.length});
+            return;
+          }
           const url = tab === "nasa" ? await nasaFull(it.nasaId) : it.full;
           const png = await toPng(await fetchBlob(url, tab === "nasa" ? "NASA" : tab === "commons" ? "Commons" : "Pixabay"));
           stage(s, png, it.source);
@@ -747,7 +792,7 @@ function buildPanel(s){
       const q = body.querySelector("#q").value.trim(); if(!q) return;
       const by = !!(body.querySelector("#by") && body.querySelector("#by").checked);
       S.results[s.id] = {q, tab, busy: true, by}; render();
-      try{ const items = await (tab === "nasa" ? nasaSearch(q) : tab === "commons" ? commonsSearch(q, by) : pxSearch(q)); S.results[s.id] = {q, tab, items, by}; if(!items.length) S.results[s.id].err = "見つかりませんでした。検索語を変えてみてください"; }
+      try{ const items = await (tab === "nasa" ? nasaSearch(q) : tab === "commons" ? commonsSearch(q, by) : tab === "clip" ? pxSearchVideo(q) : pxSearch(q)); S.results[s.id] = {q, tab, items, by}; if(!items.length) S.results[s.id].err = "見つかりませんでした。検索語を変えてみてください"; }
       catch(e){ S.results[s.id] = {q, tab, err: e.message, by}; }
       render();
     };
@@ -868,7 +913,15 @@ async function saveAll(){
         s.edits = {};
       }
     }
-    if(s.staged){
+    if(s.stagedClip){   // Pixabay の動画クリップ。この場面を kind=clip にして、画像は外す
+      changes.push({path: `${clipBase}/${s.id}.mp4`, bytes: s.stagedClip.bytes});
+      if(S.assets[s.id]) changes.push({path: `${base}/${S.assets[s.id].name}`, bytes: null});
+      if(S.clips[s.id] && S.clips[s.id].name !== `${s.id}.mp4`) changes.push({path: `${clipBase}/${S.clips[s.id].name}`, bytes: null});
+      raw.visual = raw.visual || {};
+      raw.visual.kind = "clip"; raw.visual.clip_sec = raw.visual.clip_sec || 8; delete raw.visual.real;
+      jsonChanged = true;
+      picks.push({scene: s.id, ...s.stagedClip.source});
+    }else if(s.staged){
       changes.push({path: `${base}/${s.id}.png`, bytes: s.staged.bytes});
       for(const ext of ["jpg", "jpeg", "webp"]) if(S.assets[s.id] && S.assets[s.id].name === `${s.id}.${ext}`) changes.push({path: `${base}/${s.id}.${ext}`, bytes: null});
       if(S.clips[s.id]){ changes.push({path: `${clipBase}/${S.clips[s.id].name}`, bytes: null}); }
@@ -891,7 +944,7 @@ async function saveAll(){
   $("#b-save").disabled = true; dockMsg(`保存しています…（${ch.length}場面）`);
   try{
     await commitMany(changes, `${S.stem}: 画像を入れ替え（${ch.length}場面・画像入れ替えコンソール）`);
-    ch.forEach(s => { if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; });
+    ch.forEach(s => { if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; });
     if(jsonChanged){ S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw); }
     await loadAssets(); render();
     dockMsg(`保存しました（${ch.length}場面）。続けて「④ 生成を開始」を押せます`, "ok");
