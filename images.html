@@ -797,7 +797,8 @@ function renderStyleTab(s, body){
     <div class="hint">文字スライド（画像が無い場面や、図・文字の場面）の、文字・改行・スペース・色を直します。画像がある場面では、「文字・図にする」を選んだとき、または画像が取れなかったときに使われます。</div>
     <div class="field"><label>文字の内容と配置（Enterで改行、スペースで位置を調整）</label>
       ${fields.map((f, i) => `<div style="margin-bottom:8px"><div class="hint">${esc(f.label)}</div><textarea data-ed="${i}" rows="${Math.min(5, Math.max(2, (curVal(s, f).match(/\n/g) || []).length + 2))}" style="white-space:pre;font-size:16px">${esc(curVal(s, f))}</textarea></div>`).join("")}
-      <div class="row"><button id="ed-reset">文字を標準に戻す</button><button id="ed-sp" title="カーソルの位置に、全角スペースを入れます">全角スペースを入れる</button></div></div>
+      <div class="row"><button id="ed-reset">文字を標準に戻す</button><button id="ed-sp" title="カーソルの位置に、全角スペースを入れます">全角スペースを入れる</button></div>
+      ${CH.previewWf ? `<div class="row"><button class="primary" id="ed-apply">反映（保存して、確認画像を作り直す）</button></div><div class="hint">直した文字・色・改行を保存し、動画と同じ表示の確認画像を作り直します（約3分・課金なし）。終わると自動でカードに出ます。</div>` : ""}</div>
     <div class="sty-prev" style="${st.color ? "color:" + st.color : ""}">${lines.slice(0, 3).map((l, i) => `<div class="${i ? "s" : ""}" style="${i && st.sub_color ? "color:" + st.sub_color : ""}">${paintLine(l, st.spans)}</div>`).join("")}<div class="hint" style="margin-top:8px;font-weight:400">↑ 目安です。実際の表示は、保存→「図・文字の表示を作る」で確認できます</div></div>
     <div class="field"><label>見出し・本文の色（この場面ぜんぶ）</label>
       <div>${chips("main", `<span class="chip" data-g="main" data-c="">標準</span><input type="color" id="c-main" value="${st.color || "#ffffff"}" style="width:44px;height:36px;vertical-align:middle">`)}</div></div>
@@ -817,6 +818,12 @@ function renderStyleTab(s, body){
     ta.onchange = () => render();
   });
   const rs = body.querySelector("#ed-reset"); if(rs) rs.onclick = () => { s.edits = {}; if(s.raw.slide_text){ /* 保存済みの手直しは、保存時に消す */ s.edits = {headline: fbHead(s.text)[0], sub: fbHead(s.text)[1]}; } s.styleDirty = true; render(); };
+  const ap = body.querySelector("#ed-apply");
+  if(ap) ap.addEventListener("pointerdown", e => e.preventDefault());   // 文字欄の入力が終わった合図（再描画）で、押したボタンが消えないように
+  if(ap) ap.onclick = async () => {
+    if(changedScenes().length){ await saveAll(); if(changedScenes().length) return; }   // 保存に失敗したら、確認画像は作らない
+    try{ await startPreview(); dockMsg("保存しました。確認画像を作り始めました（約3分）。終わると自動でカードに出ます", "ok"); }catch(e){ dockMsg(e.message, "err"); }
+  };
   const sp = body.querySelector("#ed-sp"); if(sp){ sp.addEventListener("pointerdown", e => e.preventDefault()); sp.onclick = () => { const ta = lastTa || body.querySelector("[data-ed]"); if(!ta) return; const a = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, a) + "　" + ta.value.slice(ta.selectionEnd ?? a); ta.selectionStart = ta.selectionEnd = a + 1; ta.dispatchEvent(new Event("input")); ta.focus(); }; }
   const setBase = (g, c) => { if(g === "main"){ if(c) st.color = c; else delete st.color; } else { if(c) st.sub_color = c; else delete st.sub_color; } touch(); };
   const setWord = c => {
@@ -1128,15 +1135,31 @@ if(CH.artQuality){
   try{ $("#s-art").value = localStorage.getItem("tas.img.artq") || "medium"; }catch{ $("#s-art").value = "medium"; }
   $("#s-art").onchange = () => { try{ localStorage.setItem("tas.img.artq", $("#s-art").value); }catch{} };
 }
+// 確認画像の作り直しを頼む。終わるまで30秒おきに見に行き、作り直されたら自動で画面に出す（最長8分）
+async function startPreview(){
+  await api(repoPath(`/actions/workflows/${CH.previewWf}/dispatches`), {method: "POST", body: JSON.stringify({ref: gh.branch, inputs: {script: `${CH.scriptRel || "data/scripts/"}${S.name}`}})});
+  const a = $("#run-link"); a.href = `https://github.com/${gh.owner}/${gh.repo}/actions/workflows/${CH.previewWf}`; a.style.display = "";
+  watchPreview();   // 待たずに、裏で見に行く
+}
+async function watchPreview(){
+  const stem = S.stem, before = Object.fromEntries(Object.entries(S.prev || {}).map(([k, v]) => [k, v.sha]));
+  const tid = ++previewPoll;
+  for(let i = 0; i < 16; i++){
+    await new Promise(res => setTimeout(res, 30000));
+    if(tid !== previewPoll || stem !== S.stem) return;
+    try{
+      await loadAssets();
+      if(Object.entries(S.prev || {}).some(([k, v]) => before[k] !== v.sha)){ render(); dockMsg("確認画像が作り直されました。カードに本物の表示が出ています", "ok"); return; }
+    }catch{}
+  }
+}
+let previewPoll = 0;
 $("#b-prev").onclick = async () => {
   if(!S.json) return;
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
-  if(!confirm("文字・図解・グラフになる場面の、動画での表示を、確認画像にして作ります（音声・動画・課金は使いません。約3分）。\n終わったら「読み込み」を押してください。よろしいですか？")) return;
-  try{
-    await api(repoPath(`/actions/workflows/${CH.previewWf}/dispatches`), {method: "POST", body: JSON.stringify({ref: gh.branch, inputs: {script: `${CH.scriptRel || "data/scripts/"}${S.name}`}})});
-    dockMsg("表示の確認画像を作り始めました（約3分）。終わったら「読み込み」を押してください", "ok");
-    const a = $("#run-link"); a.href = `https://github.com/${gh.owner}/${gh.repo}/actions/workflows/${CH.previewWf}`; a.style.display = "";
-  }catch(e){ dockMsg(e.message, "err"); }
+  if(!confirm("文字・図解・グラフになる場面の、動画での表示を、確認画像にして作ります（音声・動画・課金は使いません。約3分）。\n終わると、自動で画面に出ます。よろしいですか？")) return;
+  try{ await startPreview(); dockMsg("表示の確認画像を作り始めました（約3分）。終わると自動で画面に出ます", "ok"); }
+  catch(e){ dockMsg(e.message, "err"); }
 };
 $("#b-run").onclick = runProduce;
 window.addEventListener("beforeunload", e => { if(changedScenes().length){ e.preventDefault(); e.returnValue = ""; } });
