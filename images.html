@@ -137,6 +137,9 @@ a{color:#7fb0ff}
     <select id="s-oa-model"><option value="gpt-image-2">gpt-image-2</option><option value="gpt-image-1-mini">gpt-image-1-mini（いちばん安い）</option><option value="gpt-image-1.5">gpt-image-1.5</option><option value="gpt-image-1">gpt-image-1</option></select></div>
     <div style="flex:1"><label class="hint">品質（高いほど高額）</label>
     <select id="s-oa-q"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></div></div>
+  <div class="field"><label>WaveSpeed APIキー（AIで動画クリップを作るとき）</label>
+    <input type="password" id="s-ws" placeholder="wavespeed.ai の API Keys で作ったキー">
+    <div class="hint">このブラウザにだけ保存され、api.wavespeed.ai へだけ送ります。クリップ1本ごとに課金されます（約15円〜約42円）。</div></div>
   <div class="hint" style="margin-bottom:12px">NASA の画像検索は、設定が要りません。</div>
   <div class="row"><button id="s-save" class="primary">保存</button><button id="s-close">閉じる</button></div>
 </div></div>
@@ -164,9 +167,10 @@ const GH_DIR = CH.dir, WF = CH.wf;
 const gh = {owner: "kohaku0521", repo: "kaitai-check", branch: "main", token: ""};
 const px = {apiKey: ""};
 const oa = {apiKey: "", model: "gpt-image-2", quality: "medium"};
+const ws = {apiKey: ""};
 const ld = (k, o) => { try { Object.assign(o, JSON.parse(localStorage.getItem(k) || "{}")); } catch {} };
 const st = (k, o) => { try { localStorage.setItem(k, JSON.stringify(o)); } catch {} };
-ld("tas.gh", gh); ld("tas.pixabay", px); ld("tas.openai", oa);
+ld("tas.gh", gh); ld("tas.pixabay", px); ld("tas.openai", oa); ld("tas.wavespeed", ws);
 const ghReady = () => !!(gh.token && gh.owner && gh.repo && gh.branch);
 
 // ── GitHub API ───────────────────────────────────────────────────────────
@@ -397,6 +401,70 @@ function stageClip(s, bytes, source){
   s.staged = null; s.action = null;
   s.stagedClip = {bytes, url: URL.createObjectURL(new Blob([bytes], {type: "video/mp4"})), source};
   render();
+}
+
+// ── WaveSpeed のAI動画クリップ（有料。2026-10-29 社長指示）─────────────────────────────
+// 動画のモデルとお金は、フック動画（news-shorts/scripts/generate_hook.py）の実測に合わせる。
+//   fast     … 画像から動かす専用。6秒・約$0.10（約15円）
+//   standard … 文章からも、画像からも作れる。6秒・約$0.28（約42円）
+const WS_BASE = "https://api.wavespeed.ai/api/v3";
+const WS_MODES = {
+  "fast-i2v": {model: "minimax/hailuo-02/fast", needImage: true, usd: 0.10, label: "fast・いまの画像を動かす（約15円・約80秒）"},
+  "std-t2v": {model: "minimax/hailuo-02/standard", needImage: false, usd: 0.28, label: "standard・文章から作る（約42円・約150秒）"},
+  "std-i2v": {model: "minimax/hailuo-02/standard", needImage: true, usd: 0.28, label: "standard・いまの画像を動かす（約42円・約150秒）"},
+};
+const WS_SEC = 6;
+// 動かす元の画像（このあと保存する画像があればそれ、無ければリポジトリの画像）を、小さい JPEG の data URL にする
+async function wsImageDataUrl(s){
+  let blob;
+  if(s.staged) blob = new Blob([s.staged.bytes], {type: "image/png"});
+  else if(S.assets[s.id]){
+    const r = await fetch(`https://api.github.com${repoPath(`/contents/${S.assets[s.id].path.split("/").map(encodeURIComponent).join("/")}${refQ()}`)}`, {headers: {
+      "Accept": "application/vnd.github.raw+json", "X-GitHub-Api-Version": "2022-11-28", "Authorization": "Bearer " + gh.token}}).catch(() => null);
+    if(!r || !r.ok) throw new Error("この場面の画像をGitHubから取得できません");
+    blob = await r.blob();
+  }else throw new Error("この場面には動かす元の画像がありません。先に画像を選ぶか、「standard・文章から作る」を選んでください");
+  const bmp = await createImageBitmap(blob);
+  const w = Math.min(1280, bmp.width), h = Math.round(bmp.height * w / bmp.width);
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  cv.getContext("2d").drawImage(bmp, 0, 0, w, h);
+  return cv.toDataURL("image/jpeg", 0.9);
+}
+async function wsReq(url, opt){
+  let r;
+  try{ r = await fetch(url, {...opt, headers: {"Content-Type": "application/json", "Authorization": "Bearer " + ws.apiKey, ...(opt && opt.headers || {})}}); }
+  catch{ throw new Error("WaveSpeed に接続できません（ブラウザからの通信が許可されていない可能性があります）"); }
+  const j = await r.json().catch(() => null);
+  if(!r.ok) throw new Error(r.status === 401 || r.status === 403 ? "WaveSpeed のAPIキーが違います（⚙ 接続設定）" : r.status === 402 ? "WaveSpeed の残高が足りません" : `WaveSpeed ${r.status}: ${(j && (j.message || (j.data && j.data.error))) || r.statusText}`);
+  return j;
+}
+// 受付番号（getUrl）から結果を待って、動画のバイト列を返す。課金は受け付けた時点で済んでいる
+async function wsWait(g, onTick){
+  for(let i = 0; i < 150; i++){      // 5秒おき・最長12分
+    const d = ((await wsReq(g.getUrl, {method: "GET"})).data) || {};
+    if(d.status === "completed"){
+      const u = (d.outputs || [])[0]; if(!u) throw new Error("WaveSpeed の結果に動画がありません");
+      g.outUrl = u;
+      let v; try{ v = await fetch(u); }catch{ throw new Error("動画はできましたが、ブラウザから取り込めません（下の「動画を開く」で保存できます）"); }
+      if(!v.ok) throw new Error(`動画の取得に失敗しました（${v.status}）`);
+      return new Uint8Array(await v.arrayBuffer());
+    }
+    if(d.status === "failed") throw new Error("WaveSpeed の生成が失敗しました: " + (d.error || "原因不明") + "（失敗分は課金されないことが多いです）");
+    onTick(`生成中…（${i * 5}秒）${d.status ? " " + d.status : ""}`);
+    await new Promise(res => setTimeout(res, 5000));
+  }
+  throw new Error("時間切れです。生成は進んでいる可能性があります（下の「結果を取りに行く」を押してください）");
+}
+async function wsGenerate(s, g, onTick){
+  const m = WS_MODES[g.mode];
+  const payload = {prompt: g.prompt, duration: WS_SEC};
+  if(m.needImage){ onTick("元の画像を用意しています…"); payload.image = await wsImageDataUrl(s); }
+  onTick("WaveSpeed に依頼しています…");
+  const j = await wsReq(`${WS_BASE}/${m.model}`, {method: "POST", body: JSON.stringify(payload)});
+  const u = j && j.data && j.data.urls && j.data.urls.get;
+  if(!u) throw new Error("WaveSpeed の応答に受付番号がありません");
+  g.getUrl = u;
+  return wsWait(g, onTick);
 }
 
 // ── NASA 画像ライブラリ ───────────────────────────────────────────────────
@@ -752,7 +820,7 @@ function buildPanel(s){
   const q0 = (S.results[s.id] && S.results[s.id].q) || sceneQuery(s);
   p.innerHTML = `
     <div class="tabs">
-      ${(needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["clip", "動画クリップ（Pixabay）"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]] : [["style", "文字の色"]])
+      ${(needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["clip", "動画クリップ（Pixabay）"], ["wsclip", "AI動画クリップ（WaveSpeed）"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]] : [["style", "文字の色"]])
         .map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
     </div>
     <div id="tabbody"></div>`;
@@ -798,6 +866,34 @@ function buildPanel(s){
     };
     body.querySelector("#go").onclick = go;
     body.querySelector("#q").onkeydown = e => { if(e.key === "Enter") go(); };
+  }else if(tab === "wsclip"){
+    S.wsg = S.wsg || {};
+    const g = S.wsg[s.id] || (S.wsg[s.id] = {busy: false, err: "", note: "", mode: S.assets[s.id] || s.staged ? "fast-i2v" : "std-t2v", prompt: "", getUrl: "", outUrl: ""});
+    if(!g.prompt) g.prompt = (sceneQuery(s) ? sceneQuery(s).replace(/\.$/, "") + ". " : "") + "Slow cinematic camera movement, subtle natural motion, photoreal.";
+    const m = WS_MODES[g.mode];
+    body.innerHTML = `
+      <div class="hint" style="margin-bottom:6px">WaveSpeed（Hailuo 02）で、${WS_SEC}秒の動画クリップをAIに作らせます。<b>押すたびに課金されます。</b>できたクリップは、この場面の候補として表示され、「③ 保存」でこの場面が動画クリップになります。ナレーションが長い場面は、クリップが最大2倍まで引き伸ばされます（${WS_SEC}秒のクリップで、ナレーションは約${Math.round(WS_SEC * 2 * 6.36)}文字まで。それより長いと台本の検査で警告が出ます）。</div>
+      <div class="field"><label>どんな動画か（英語で。画像を動かす場合は、動き方だけでも構いません）</label><textarea id="wp">${esc(g.prompt)}</textarea></div>
+      <div class="row"><select id="wm" style="width:auto">${Object.entries(WS_MODES).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("")}</select>
+        <button class="primary" id="wgo" ${g.busy ? "disabled" : ""}>${g.busy ? "作っています…" : "AIで動画クリップを作る（課金）"}</button></div>
+      <div class="msg ${g.err ? "err" : ""}" id="wmsg">${esc(g.err || g.note)}</div>
+      ${g.getUrl && !g.busy && g.err ? `<div class="row"><button id="wfetch">結果を取りに行く（再課金なし）</button>${g.outUrl ? `<a href="${esc(g.outUrl)}" target="_blank" rel="noopener">動画を開く</a>` : ""}</div>` : ""}
+      ${s.stagedClip && s.stagedClip.source.type === "wavespeed" ? `<div class="hint">できたクリップが、上のこの場面の画面に出ています。気に入らなければ、もう一度作れます。</div>` : ""}`;
+    body.querySelector("#wm").value = g.mode;
+    body.querySelector("#wm").onchange = e => { g.mode = e.target.value; render(); };
+    body.querySelector("#wp").oninput = e => g.prompt = e.target.value;
+    const done = bytes => { g.busy = false; g.err = ""; g.note = "できました。保存するには「③ 保存」を押してください"; stageClip(s, bytes, {type: "wavespeed", id: m.model, credit: "", page: "", sec: WS_SEC}); };
+    const fail = e => { g.busy = false; g.err = e.message; render(); };
+    const tick = t => { const e = body.querySelector("#wmsg"); if(e){ e.className = "msg"; e.textContent = t; } };
+    body.querySelector("#wgo").onclick = async () => {
+      if(!ws.apiKey){ g.err = "WaveSpeed のAPIキーが未設定です（⚙ 接続設定）"; render(); return; }
+      if(!g.prompt.trim()){ g.err = "どんな動画かを書いてください"; render(); return; }
+      if(!confirm(`WaveSpeed で${WS_SEC}秒の動画クリップを1本作ります。\n\n${m.label}\n\n課金されます（約$${m.usd.toFixed(2)}）。よろしいですか？`)) return;
+      g.busy = true; g.err = ""; g.note = ""; g.getUrl = ""; g.outUrl = ""; render();
+      try{ done(await wsGenerate(s, g, tick)); }catch(e){ fail(e); }
+    };
+    const wf = body.querySelector("#wfetch");
+    if(wf) wf.onclick = async () => { g.busy = true; g.err = ""; render(); try{ done(await wsWait(g, tick)); }catch(e){ fail(e); } };
   }else if(tab === "openai"){
     const g = S.gens[s.id] || (S.gens[s.id] = {cands: [], busy: false, err: "", style: "photo", prompt: "", quality: ["low", "medium"].includes(oa.quality) ? oa.quality : "medium"});
     if(!g.quality) g.quality = "medium";
@@ -918,7 +1014,7 @@ async function saveAll(){
       if(S.assets[s.id]) changes.push({path: `${base}/${S.assets[s.id].name}`, bytes: null});
       if(S.clips[s.id] && S.clips[s.id].name !== `${s.id}.mp4`) changes.push({path: `${clipBase}/${S.clips[s.id].name}`, bytes: null});
       raw.visual = raw.visual || {};
-      raw.visual.kind = "clip"; raw.visual.clip_sec = raw.visual.clip_sec || 8; delete raw.visual.real;
+      raw.visual.kind = "clip"; raw.visual.clip_sec = s.stagedClip.source.sec || raw.visual.clip_sec || 8; delete raw.visual.real;
       jsonChanged = true;
       picks.push({scene: s.id, ...s.stagedClip.source});
     }else if(s.staged){
@@ -979,7 +1075,7 @@ async function runProduce(){
 
 // ── 設定ダイアログ・起動 ──────────────────────────────────────────────────
 function openSettings(){
-  $("#s-gh").value = gh.token; $("#s-px").value = px.apiKey; $("#s-oa").value = oa.apiKey;
+  $("#s-gh").value = gh.token; $("#s-px").value = px.apiKey; $("#s-oa").value = oa.apiKey; $("#s-ws").value = ws.apiKey;
   $("#s-oa-model").value = oa.model || "gpt-image-2"; $("#s-oa-q").value = oa.quality || "medium";
   $("#modal-settings").classList.add("on");
 }
@@ -987,8 +1083,8 @@ $("#b-settings").onclick = openSettings;
 $("#s-close").onclick = () => $("#modal-settings").classList.remove("on");
 $("#s-save").onclick = async () => {
   gh.token = $("#s-gh").value.trim(); px.apiKey = $("#s-px").value.trim(); oa.apiKey = $("#s-oa").value.trim();
-  oa.model = $("#s-oa-model").value; oa.quality = $("#s-oa-q").value;
-  st("tas.gh", gh); st("tas.pixabay", px); st("tas.openai", oa);
+  oa.model = $("#s-oa-model").value; oa.quality = $("#s-oa-q").value; ws.apiKey = $("#s-ws").value.trim();
+  st("tas.gh", gh); st("tas.pixabay", px); st("tas.openai", oa); st("tas.wavespeed", ws);
   $("#modal-settings").classList.remove("on");
   await start();
 };
