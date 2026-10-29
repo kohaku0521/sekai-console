@@ -127,7 +127,7 @@ a{color:#7fb0ff}
     <input type="password" id="s-oa" placeholder="sk-…">
     <div class="hint">このブラウザにだけ保存され、api.openai.com へだけ送ります。<b>利用上限を付けたキー</b>を使ってください。描くのは、ボタンを押した場面だけです。</div></div>
   <div class="row"><div style="flex:1"><label class="hint">モデル</label>
-    <select id="s-oa-model"><option value="gpt-image-2">gpt-image-2</option><option value="gpt-image-1.5">gpt-image-1.5</option><option value="gpt-image-1">gpt-image-1</option></select></div>
+    <select id="s-oa-model"><option value="gpt-image-2">gpt-image-2</option><option value="gpt-image-1-mini">gpt-image-1-mini（いちばん安い）</option><option value="gpt-image-1.5">gpt-image-1.5</option><option value="gpt-image-1">gpt-image-1</option></select></div>
     <div style="flex:1"><label class="hint">品質（高いほど高額）</label>
     <select id="s-oa-q"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></div></div>
   <div class="hint" style="margin-bottom:12px">NASA の画像検索は、設定が要りません。</div>
@@ -426,7 +426,7 @@ async function openaiGenerate(prompt, quality){
   };
   // 選んだモデルが、このアカウントで使えない（「does not exist」「access」「verified」）ときは、ほかのモデルを順に試す。
   // 使えたモデルは、設定に覚えておく（2026-10-29 「The model 'gpt-image-1' does not exist」で描けなかった）
-  const models = [...new Set([oa.model || "gpt-image-2", "gpt-image-2", "gpt-image-1.5", "gpt-image-1"])];
+  const models = [...new Set([oa.model || "gpt-image-2", "gpt-image-2", "gpt-image-1.5", "gpt-image-1-mini", "gpt-image-1"])];
   let lastErr;
   for(const m of models){
     try{
