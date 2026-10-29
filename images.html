@@ -82,6 +82,7 @@ a{color:#7fb0ff}
   <select id="chsel" style="width:auto" title="チャンネル（台本の置き場）を切り替える"></select>
   <select id="script" style="max-width:360px"></select>
   <button id="b-reload">読み込み</button>
+  <button id="b-enall" title="英訳のない場面を、OpenAIでまとめて英訳します（全部で数円以下）。このブラウザに保存します">全場面の英訳を作る</button>
   <button id="b-prev" style="display:none" title="文字・図解・グラフになる場面が、動画でどう見えるかの確認画像を作ります（音声・動画・課金は使いません。約3分）">図・文字の表示を作る</button>
   <span class="spacer"></span>
   <a href="index.html" style="font-size:12px">統合コンソール</a>
@@ -208,6 +209,7 @@ async function commitMany(changes, message){
 
 // ── 状態 ─────────────────────────────────────────────────────────────────
 const S = {
+  en: {},
   scripts: [], name: "", stem: "", json: null, scenes: [],
   assets: {}, clips: {},          // 場面ID → {url,size}
   filter: "review", open: null, page: 0,
@@ -224,6 +226,42 @@ async function copyText(text, btn){
     const ta = document.createElement("textarea"); ta.value = text; ta.style.cssText = "position:fixed;left:-9999px;top:0";
     document.body.appendChild(ta); ta.focus(); ta.select(); const ok = document.execCommand("copy"); ta.remove(); done(ok);
   }catch{ done(false); }
+}
+// ── ナレーションの英訳（台本の text_en。無い台本・場面は、OpenAIで作ってブラウザに保存する）──────────────────
+const enOf = s => (s.raw && s.raw.text_en) || (S.en && S.en[s.id]) || "";
+const enKey = () => "tas.img.en." + S.stem;
+function loadEn(){ try{ S.en = JSON.parse(localStorage.getItem(enKey()) || "{}"); }catch{ S.en = {}; } }
+function saveEn(){ try{ localStorage.setItem(enKey(), JSON.stringify(S.en)); }catch{} }
+async function translateEn(text){
+  if(!oa.apiKey) throw new Error("OpenAI のAPIキーが未設定です（⚙ 接続設定）");
+  const r = await fetch("https://api.openai.com/v1/chat/completions", {method: "POST",
+    headers: {"Content-Type": "application/json", "Authorization": "Bearer " + oa.apiKey},
+    body: JSON.stringify({model: "gpt-4o-mini", temperature: 0.2, messages: [
+      {role: "system", content: "Translate the Japanese narration line of a YouTube explainer video into natural English. Keep every hedge (such as とされる, 推計で, 〜と考えられている) as hedged English, keep all numbers and proper nouns exactly, do not add facts. Output only the English translation."},
+      {role: "user", content: text}]})});
+  const j = await r.json().catch(() => null);
+  if(!r.ok) throw new Error(`OpenAI ${r.status}: ${(j && j.error && j.error.message || r.statusText).slice(0, 160)}`);
+  const out = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+  if(!out) throw new Error("英訳が返りませんでした");
+  return out.trim();
+}
+async function makeEn(s, btn){
+  const old = btn && btn.textContent; if(btn){ btn.disabled = true; btn.textContent = "英訳を作っています…"; }
+  try{ S.en[s.id] = await translateEn(s.text); saveEn(); render(); }
+  catch(e){ if(btn){ btn.disabled = false; btn.textContent = old; } dockMsg(e.message, "err"); }
+}
+async function makeEnAll(btn){
+  const todo = S.scenes.filter(x => !enOf(x));
+  if(!todo.length){ dockMsg("すべての場面に英訳があります", "ok"); return; }
+  if(!confirm(`英訳のない${todo.length}場面を、OpenAI（gpt-4o-mini）で英訳します。1場面あたり1円未満（全部で数円以下）の課金です。よろしいですか？`)) return;
+  let n = 0;
+  for(const x of todo){
+    btn.textContent = `英訳を作っています… ${n}/${todo.length}`; btn.disabled = true;
+    try{ S.en[x.id] = await translateEn(x.text); n++; saveEn(); }
+    catch(e){ dockMsg(e.message, "err"); break; }
+  }
+  btn.disabled = false; btn.textContent = "全場面の英訳を作る"; render();
+  if(n === todo.length) dockMsg(`${n}場面の英訳を作りました（このブラウザに保存）`, "ok");
 }
 const sceneQuery = s => (vis(s).image_prompt_en || vis(s).subject || "").trim();
 const setMsg = (t, cls = "") => { const e = $("#msg"); e.textContent = t || ""; e.className = "msg " + cls; };
@@ -257,6 +295,7 @@ async function loadScript(name){
     staged: null, action: null,           // staged: {bytes,url,source} / action: "text"（文字・図にする）
   }));
   localStorage.setItem("tas.img.script", name);
+  loadEn();
   await loadAssets();
   S.open = null;
   setMsg("");
@@ -499,13 +538,14 @@ function render(){
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
         <div class="row" style="margin:0">${needsReview(s) ? `<button data-open="${esc(s.id)}">${S.open === s.id ? "閉じる" : "画像を選ぶ"}</button>` : `<span class="hint">図・スライドの場面（ここでは変更しません）</span>`}
         ${s.staged || s.action ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
-        ${s.raw && s.raw.text_en ? `<button data-copyen="${esc(s.id)}" title="この場面のナレーションの英訳をコピーします">英訳をコピー</button>` : ""}
+        ${enOf(s) ? `<button data-copyen="${esc(s.id)}" title="この場面のナレーションの英訳をコピーします">英訳をコピー</button>` : `<button data-makeen="${esc(s.id)}" title="OpenAIで、この場面のナレーションを英訳します（1円未満）">英訳を作る</button>`}
         <button data-copyja="${esc(s.id)}" title="この場面のナレーション（日本語）をコピーします">本文をコピー</button></div></div>`;
     grid.appendChild(el);
     if(S.open === s.id) el.appendChild(buildPanel(s));
   }
   grid.querySelectorAll("[data-open]").forEach(b => b.onclick = () => { S.open = S.open === b.dataset.open ? null : b.dataset.open; render(); const o = document.querySelector(".card.open"); if(o) o.scrollIntoView({block: "nearest"}); });
-  grid.querySelectorAll("[data-copyen]").forEach(b => b.onclick = () => copyText(S.scenes.find(x => x.id === b.dataset.copyen).raw.text_en, b));
+  grid.querySelectorAll("[data-copyen]").forEach(b => b.onclick = () => copyText(enOf(S.scenes.find(x => x.id === b.dataset.copyen)), b));
+  grid.querySelectorAll("[data-makeen]").forEach(b => b.onclick = () => makeEn(S.scenes.find(x => x.id === b.dataset.makeen), b));
   grid.querySelectorAll("[data-copyja]").forEach(b => b.onclick = () => copyText(S.scenes.find(x => x.id === b.dataset.copyja).text, b));
   grid.querySelectorAll("[data-undo]").forEach(b => b.onclick = () => {
     const s = S.scenes.find(x => x.id === b.dataset.undo);
@@ -568,13 +608,14 @@ function buildPanel(s){
     const g = S.gens[s.id] || (S.gens[s.id] = {cands: [], busy: false, err: "", style: "photo", prompt: "", quality: ["low", "medium"].includes(oa.quality) ? oa.quality : "medium"});
     if(!g.quality) g.quality = "medium";
     // 台本に text_en（ナレーションの英訳）があれば、主題＋ナレーションの英訳を、英語のプロンプトの初期値にする（2026-10-29 社長指示）
-    const subj = sceneQuery(s) || "", narEn = (s.raw && s.raw.text_en) || "";
+    const subj = sceneQuery(s) || "", narEn = enOf(s);
     const mkPrompt = withNar => (withNar && narEn) ? `${subj}. Scene narration (English): "${narEn}"` : subj;
     if(!g.prompt) g.prompt = mkPrompt(true);
     body.innerHTML = `
       <div class="field"><label>描かせる内容（英語で、実在の物・場所を具体的に）</label><textarea id="gp">${esc(g.prompt)}</textarea></div>
       ${narEn ? `<div class="hint" style="margin-bottom:6px">この場面のナレーションの英訳: ${esc(narEn)}</div>
-      <div class="row"><button id="gp-subj">主題だけにする</button><button id="gp-both">主題＋ナレーションの英訳にする</button></div>` : `<div class="hint" style="margin-bottom:6px">この台本には、ナレーションの英訳（text_en）がありません。</div>`}
+      <div class="row"><button id="gp-subj">主題だけにする</button><button id="gp-both">主題＋ナレーションの英訳にする</button></div>` : `<div class="hint" style="margin-bottom:6px">この場面には、ナレーションの英訳がありません。</div>
+      <div class="row"><button id="mk-en" class="primary">この場面の英訳を作る（OpenAI・1円未満）</button></div>`}
       <div class="row"><button id="cp-prompt">プロンプトをコピー</button>${narEn ? `<button id="cp-en">ナレーションの英訳をコピー</button>` : ""}<button id="cp-ja">日本語のナレーションをコピー</button></div>
       <div class="row"><select id="gs" style="width:auto"><option value="photo">実写風</option><option value="science">科学ビジュアル風（望遠鏡画像・復元）</option><option value="raw">そのまま（上の文だけ）</option></select>
         <button class="primary" id="gen" ${g.busy ? "disabled" : ""}>${g.busy ? "描いています…" : "OpenAIで描く（1枚ごとに課金）"}</button>
@@ -586,6 +627,7 @@ function buildPanel(s){
     body.querySelector("#gq").value = g.quality;
     body.querySelector("#gq").onchange = e => g.quality = e.target.value;
     body.querySelector("#gp").oninput = e => g.prompt = e.target.value;
+    const mke = body.querySelector("#mk-en"); if(mke) mke.onclick = () => makeEn(s, mke);
     body.querySelector("#cp-prompt").onclick = e => copyText(body.querySelector("#gp").value, e.target);
     const cen = body.querySelector("#cp-en"); if(cen) cen.onclick = e => copyText(narEn, e.target);
     body.querySelector("#cp-ja").onclick = e => copyText(s.text, e.target);
@@ -709,6 +751,7 @@ $("#b-reload").onclick = async () => {
 $("#b-save").onclick = saveAll;
 $("#b-assets").onclick = runAssets;
 // 図・文字の表示の確認画像を作る（previewWf があるチャンネルだけ）。音声・動画・課金は使わない
+$("#b-enall").onclick = e => { if(!S.json) return; if(!oa.apiKey){ dockMsg("OpenAI のAPIキーが未設定です（⚙ 接続設定）", "err"); return; } makeEnAll(e.target); };
 if(CH.previewWf) $("#b-prev").style.display = "";
 if(CH.artQuality){
   $("#l-art").style.display = "flex";
