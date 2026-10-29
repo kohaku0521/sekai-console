@@ -120,7 +120,7 @@ a{color:#7fb0ff}
   <button id="b-short" class="warn" style="display:none" title="本編はアップロードせず、台本の「shorts」の切り抜きショートだけを作って、予約投稿します">⑤ 切り抜きショートだけ作って予約</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/29 17:40</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/29 18:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -1173,8 +1173,8 @@ $("#b-short").onclick = async () => {
   const sh = S.json.shorts || [];
   if(!sh.length){ dockMsg("この台本には、切り抜きショートの指定（shorts）がありません", "err"); return; }
   const hooks = sh.filter(x => x.hook_prompt).length;
-  if(!confirm(`切り抜きショートだけを作って、予約投稿します（約40分）。\n\n・切り抜き ${sh.length} 本（${sh.map(x => `${x.from}〜${x.to}`).join("、")}）\n・本編は、アップロードしません（ショートの元にするため、動画は作り直します）\n・予約の時刻は、チャンネルの決まりの枠に自動で入ります\n・本編を先に公開していても、概要欄に本編のURLは入りません（動画の最後の案内は出ます）\n・冒頭のフック動画が課金されます（${hooks}本・1本 約15円。作ってあるものは使い回し、二重には課金されません）\n\nよろしいですか？`)) return;
-  try{ await dispatch({fetch_pixabay: "false", assets_only: "false", upload: "false", slides_only: "false", short_only: "true", shorts: "true"}, "切り抜きショートの生成を始めました（約40分）。結果はDiscordとチャットに届きます"); }
+  if(!confirm(`切り抜きショートだけを作って、予約投稿します（約10〜15分）。\n\n・切り抜き ${sh.length} 本（${sh.map(x => `${x.from}〜${x.to}`).join("、")}）\n・本編は、作りもアップロードもしません（切り抜く場面だけ、音声と映像を作ります）\n・予約の時刻は、チャンネルの決まりの枠に自動で入ります\n・本編を先に公開していても、概要欄に本編のURLは入りません（動画の最後の案内は出ます）\n・冒頭のフック動画が課金されます（${hooks}本・1本 約15円。作ってあるものは使い回し、二重には課金されません）\n\nよろしいですか？`)) return;
+  try{ await dispatch({fetch_pixabay: "false", assets_only: "false", upload: "false", slides_only: "false", short_only: "true", shorts: "true"}, "切り抜きショートの生成を始めました（約10〜15分）。結果はDiscordとチャットに届きます"); }
   catch(e){ dockMsg(e.message, "err"); }
 };
 window.addEventListener("beforeunload", e => { if(changedScenes().length){ e.preventDefault(); e.returnValue = ""; } });
