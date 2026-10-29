@@ -409,7 +409,8 @@ function stageClip(s, bytes, source){
 //   standard … 文章からも、画像からも作れる。6秒・約$0.28（約42円）
 const WS_BASE = "https://api.wavespeed.ai/api/v3";
 const WS_MODES = {
-  "fast-i2v": {model: "minimax/hailuo-02/fast", needImage: true, usd: 0.10, label: "fast・いまの画像を動かす（約15円・約80秒）"},
+  "fast-i2v": {model: "minimax/hailuo-02/fast", needImage: true, usd: 0.10, label: "fast・いまの画像を動かす（最安・約15円・約80秒）"},
+  "std-t2v": {model: "minimax/hailuo-02/standard", needImage: false, usd: 0.28, label: "standard・文章から作る（画像が無い場面用・約42円・約150秒）"},
 };
 // フック動画（generate_hook.py）と同じ、動かし方の指定。画像の中身は変えず、動きだけを渡す
 const WS_MOTION = "slow cinematic push in, atmospheric haze drifts, light shifts gently, particles float";
@@ -423,7 +424,7 @@ async function wsImageDataUrl(s){
       "Accept": "application/vnd.github.raw+json", "X-GitHub-Api-Version": "2022-11-28", "Authorization": "Bearer " + gh.token}}).catch(() => null);
     if(!r || !r.ok) throw new Error("この場面の画像をGitHubから取得できません");
     blob = await r.blob();
-  }else throw new Error("この場面には動かす元の画像がありません。先に画像を選ぶか、「standard・文章から作る」を選んでください");
+  }else throw new Error("この場面には動かす元の画像がありません。先に画像を選ぶか、動画の種類を「standard・文章から作る」にしてください");
   const bmp = await createImageBitmap(blob);
   const w = Math.min(1280, bmp.width), h = Math.round(bmp.height * w / bmp.width);
   const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
@@ -457,7 +458,7 @@ async function wsWait(g, onTick){
 }
 async function wsGenerate(s, g, onTick){
   const m = WS_MODES[g.mode];
-  const payload = {prompt: g.prompt, duration: WS_SEC};
+  const payload = {prompt: g.prompts[g.mode], duration: WS_SEC};
   if(m.needImage){ onTick("元の画像を用意しています…"); payload.image = await wsImageDataUrl(s); }
   onTick("WaveSpeed に依頼しています…");
   const j = await wsReq(`${WS_BASE}/${m.model}`, {method: "POST", body: JSON.stringify(payload)});
@@ -889,22 +890,28 @@ function buildPanel(s){
     body.querySelector("#q").onkeydown = e => { if(e.key === "Enter") go(); };
   }else if(tab === "wsclip"){
     S.wsg = S.wsg || {};
-    const g = S.wsg[s.id] || (S.wsg[s.id] = {busy: false, err: "", note: "", mode: "fast-i2v", prompt: WS_MOTION, getUrl: "", outUrl: ""});
+    const g = S.wsg[s.id] || (S.wsg[s.id] = {busy: false, err: "", note: "", mode: S.assets[s.id] || s.staged ? "fast-i2v" : "std-t2v", prompts: {}, getUrl: "", outUrl: ""});
+    // 文章から作るときの初期値は、場面の主題＋ナレーションの英訳。画像を動かすときは、フック動画と同じ動かし方
+    const defPrompt = mode => mode === "std-t2v" ? ((sceneQuery(s) ? sceneQuery(s).replace(/\.$/, "") + ". " : "") + (enOf(s) ? `Scene: ${enOf(s)} ` : "") + "Slow cinematic camera movement, photoreal.").trim() : WS_MOTION;
+    if(g.prompts[g.mode] === undefined) g.prompts[g.mode] = defPrompt(g.mode);
     const m = WS_MODES[g.mode];
     body.innerHTML = `
-      <div class="hint" style="margin-bottom:6px">ショートのフック動画と同じ仕様（Hailuo 02 fast・${WS_SEC}秒・画像から動かす）で、この場面の<b>いまの画像</b>を動かします。<b>押すたびに約15円かかります。</b>画像が無い場面は、先に「OpenAIで描く」（low なら約2円）などで画像を選んでください。できたクリップは「③ 保存」でこの場面の動画クリップになります。ナレーションが長い場面は、クリップが最大2倍まで引き伸ばされます（約${Math.round(WS_SEC * 2 * 6.36)}文字まで。それより長いと台本の検査で警告が出ます）。</div>
-      <div class="field"><label>動かし方（英語。標準はフック動画と同じです）</label><textarea id="wp">${esc(g.prompt)}</textarea></div>
-      <div class="row"><button class="primary" id="wgo" ${g.busy ? "disabled" : ""}>${g.busy ? "作っています…" : "AIで動画クリップを作る（課金）"}</button></div>
+      <div class="hint" style="margin-bottom:6px">標準は、ショートのフック動画と同じ仕様（Hailuo 02 fast・${WS_SEC}秒・この場面の<b>いまの画像</b>を動かす・最安の約15円）です。画像が無い場面は、「standard・文章から作る」（約42円）にするか、先に「OpenAIで描く」（low なら約2円）などで画像を選んでください。<b>押すたびに課金されます。</b>できたクリップは「③ 保存」でこの場面の動画クリップになります。ナレーションが長い場面は、クリップが最大2倍まで引き伸ばされます（約${Math.round(WS_SEC * 2 * 6.36)}文字まで。それより長いと台本の検査で警告が出ます）。</div>
+      <div class="field"><label>${g.mode === "std-t2v" ? "どんな動画か（英語）" : "動かし方（英語。標準はフック動画と同じです）"}</label><textarea id="wp">${esc(g.prompts[g.mode])}</textarea></div>
+      <div class="row"><select id="wm" style="width:auto">${Object.entries(WS_MODES).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("")}</select>
+        <button class="primary" id="wgo" ${g.busy ? "disabled" : ""}>${g.busy ? "作っています…" : "AIで動画クリップを作る（課金）"}</button></div>
       <div class="msg ${g.err ? "err" : ""}" id="wmsg">${esc(g.err || g.note)}</div>
       ${g.getUrl && !g.busy && g.err ? `<div class="row"><button id="wfetch">結果を取りに行く（再課金なし）</button>${g.outUrl ? `<a href="${esc(g.outUrl)}" target="_blank" rel="noopener">動画を開く</a>` : ""}</div>` : ""}
       ${s.stagedClip && s.stagedClip.source.type === "wavespeed" ? `<div class="hint">できたクリップが、上のこの場面の画面に出ています。気に入らなければ、もう一度作れます。</div>` : ""}`;
-    body.querySelector("#wp").oninput = e => g.prompt = e.target.value;
+    body.querySelector("#wm").value = g.mode;
+    body.querySelector("#wm").onchange = e => { g.mode = e.target.value; render(); };
+    body.querySelector("#wp").oninput = e => g.prompts[g.mode] = e.target.value;
     const done = bytes => { g.busy = false; g.err = ""; g.note = "できました。保存するには「③ 保存」を押してください"; stageClip(s, bytes, {type: "wavespeed", id: m.model, credit: "", page: "", sec: WS_SEC}); };
     const fail = e => { g.busy = false; g.err = e.message; render(); };
     const tick = t => { const e = body.querySelector("#wmsg"); if(e){ e.className = "msg"; e.textContent = t; } };
     body.querySelector("#wgo").onclick = async () => {
       if(!ws.apiKey){ g.err = "WaveSpeed のAPIキーが未設定です（⚙ 接続設定）"; render(); return; }
-      if(!g.prompt.trim()){ g.err = "どんな動画かを書いてください"; render(); return; }
+      if(!(g.prompts[g.mode] || "").trim()){ g.err = "どんな動画かを書いてください"; render(); return; }
       if(!confirm(`WaveSpeed で${WS_SEC}秒の動画クリップを1本作ります。\n\n${m.label}\n\n課金されます（約$${m.usd.toFixed(2)}）。よろしいですか？`)) return;
       g.busy = true; g.err = ""; g.note = ""; g.getUrl = ""; g.outUrl = ""; render();
       try{ done(await wsGenerate(s, g, tick)); }catch(e){ fail(e); }
