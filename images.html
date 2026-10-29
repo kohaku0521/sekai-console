@@ -117,6 +117,7 @@ a{color:#7fb0ff}
   <label class="hint" style="display:flex;align-items:center;gap:6px;cursor:pointer" title="外すと、切り抜きショート（長尺の宣伝用の2本）は作らず、予約もしません"><input type="checkbox" id="c-shorts" checked> 切り抜きショートも作る</label>
   <label id="l-art" class="hint" style="display:none;align-items:center;gap:6px" title="サムネの背景の絵（OpenAI）の画質。low は安く、medium は細部がきれいです。描いてある絵は描き直しません"><span>サムネの絵</span><select id="s-art" style="width:auto"><option value="low">low（安い）</option><option value="medium">medium</option></select></label>
   <button id="b-run" class="warn" title="保存したあと、動画を作ってアップロードし、台本の日付の20時に予約公開します">④ 生成を開始</button>
+  <button id="b-short" class="warn" style="display:none" title="本編はアップロードせず、台本の「shorts」の切り抜きショートだけを作って、予約投稿します">⑤ 切り抜きショートだけ作って予約</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
@@ -153,7 +154,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const CHANNELS = {
   sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml", previewWf: "trend-auto-studio-preview.yml"},
   // 絶滅した生物たち（2026-10-28）。生成のワークフローは作成後に wf を差し替える。画像は公開画像（Commons）から選ぶのが既定
-  virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", previewWf: "virus-preview.yml", artQuality: true, defaultTab: "commons", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
+  virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", previewWf: "virus-preview.yml", artQuality: true, shortOnly: true, defaultTab: "commons", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
   zetsumetsu: {dir: "CMO/YouTube/zetsumetsu", wf: "zetsumetsu-produce.yml", defaultTab: "commons", label: "絶滅した生物たち", scriptRel: "../zetsumetsu/data/scripts/"},
 };
 // チャンネルは ?ch= で指定（無ければ、前回選んだもの。それも無ければセカイ秒読み）。ヘッダーの選択でも切り替えられる
@@ -1162,6 +1163,19 @@ $("#b-prev").onclick = async () => {
   catch(e){ dockMsg(e.message, "err"); }
 };
 $("#b-run").onclick = runProduce;
+// 切り抜きショートだけを作って予約する（本編の無い・本編は別に出したいとき。workflow の short_only。2026-10-29 社長指示）
+if(CH.shortOnly) $("#b-short").style.display = "";
+$("#b-short").onclick = async () => {
+  if(!S.json) return;
+  if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  if(changedScenes().length){ dockMsg("未保存の変更があります。先に「③ 保存」を押してください", "err"); return; }
+  const sh = S.json.shorts || [];
+  if(!sh.length){ dockMsg("この台本には、切り抜きショートの指定（shorts）がありません", "err"); return; }
+  const hooks = sh.filter(x => x.hook_prompt).length;
+  if(!confirm(`切り抜きショートだけを作って、予約投稿します（約40分）。\n\n・切り抜き ${sh.length} 本（${sh.map(x => `${x.from}〜${x.to}`).join("、")}）\n・本編は、アップロードしません（ショートの元にするため、動画は作り直します）\n・予約の時刻は、チャンネルの決まりの枠に自動で入ります\n・本編を先に公開していても、概要欄に本編のURLは入りません（動画の最後の案内は出ます）\n・冒頭のフック動画が課金されます（${hooks}本・1本 約15円。作ってあるものは使い回し、二重には課金されません）\n\nよろしいですか？`)) return;
+  try{ await dispatch({fetch_pixabay: "false", assets_only: "false", upload: "false", slides_only: "false", short_only: "true", shorts: "true"}, "切り抜きショートの生成を始めました（約40分）。結果はDiscordとチャットに届きます"); }
+  catch(e){ dockMsg(e.message, "err"); }
+};
 window.addEventListener("beforeunload", e => { if(changedScenes().length){ e.preventDefault(); e.returnValue = ""; } });
 
 async function start(){
