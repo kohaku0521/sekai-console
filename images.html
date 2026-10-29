@@ -216,7 +216,7 @@ async function commitMany(changes, message){
 
 // ── 状態 ─────────────────────────────────────────────────────────────────
 const S = {
-  en: {},
+  en: {}, up: {},
   scripts: [], name: "", stem: "", json: null, scenes: [],
   assets: {}, clips: {},          // 場面ID → {url,size}
   filter: "review", open: null, page: 0,
@@ -599,6 +599,7 @@ function paintLine(text, spans){
   return out;
 }
 const escHtml = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+document.addEventListener("paste", e => { if(window.__upPaste && document.querySelector("#up-drop")) window.__upPaste(e); });
 let lastSel = "";
 document.addEventListener("selectionchange", () => {
   const sel = window.getSelection(), src = document.querySelector("#sty-src");
@@ -650,7 +651,7 @@ function buildPanel(s){
   const q0 = (S.results[s.id] && S.results[s.id].q) || sceneQuery(s);
   p.innerHTML = `
     <div class="tabs">
-      ${(needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["text", "文字・図にする"], ["style", "文字の色"]] : [["style", "文字の色"]])
+      ${(needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]] : [["style", "文字の色"]])
         .map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
     </div>
     <div id="tabbody"></div>`;
@@ -736,6 +737,33 @@ function buildPanel(s){
       }catch(e){ g.err = e.message; }
       g.busy = false; render();
     };
+  }else if(tab === "upload"){
+    const up = S.up[s.id] || (S.up[s.id] = {credit: "", err: ""});
+    body.innerHTML = `
+      <div class="hint" style="margin-bottom:6px">自分で用意した画像（スマホの写真・パソコンの画像）を、この場面に使います。16:9に切り出して、保存すると動画に使われます。</div>
+      <div class="field"><label>出典・権利（任意。入れると、概要欄の「映像・画像の出典」に載ります）</label>
+        <input type="text" id="up-credit" value="${esc(up.credit)}" placeholder="例: 自分で撮影／NHKのウェブサイト（引用）／○○さん提供"></div>
+      <div class="row"><label class="chip" style="cursor:pointer"><input type="file" id="up-file" accept="image/*" style="display:none">📁 画像を選ぶ（アップロード）</label>
+        <span class="hint">対応: JPEG・PNG・WebP。大きい画像は、自動で縮小します</span></div>
+      <div id="up-drop" class="sty-src" style="text-align:center;font-size:14px;color:var(--dim)">ここに画像をドラッグ＆ドロップ（パソコン）／または、クリップボードの画像を貼り付け（Ctrl+V）</div>
+      <div class="msg ${up.err ? "err" : ""}" id="up-msg">${esc(up.err)}</div>`;
+    const take = async file => {
+      const msg = body.querySelector("#up-msg");
+      if(!file || !/^image\//.test(file.type || "image/")){ msg.className = "msg err"; msg.textContent = "画像のファイルを選んでください"; return; }
+      msg.className = "msg"; msg.textContent = "取り込んでいます…";
+      try{
+        const png = await toPng(file);
+        stage(s, png, {type: "upload", id: file.name || "upload", credit: (body.querySelector("#up-credit").value || "").trim(), page: ""});
+      }catch(e){ msg.className = "msg err"; msg.textContent = "この画像は取り込めません（形式を、JPEGかPNGにしてください）"; }
+    };
+    body.querySelector("#up-credit").oninput = e => up.credit = e.target.value;
+    body.querySelector("#up-file").onchange = e => take(e.target.files && e.target.files[0]);
+    const drop = body.querySelector("#up-drop");
+    drop.ondragover = e => { e.preventDefault(); drop.style.borderColor = "var(--accent)"; };
+    drop.ondragleave = () => drop.style.borderColor = "";
+    drop.ondrop = e => { e.preventDefault(); drop.style.borderColor = ""; take(e.dataTransfer.files && e.dataTransfer.files[0]); };
+    drop.onpaste = null;
+    window.__upPaste = e => { const f = [...(e.clipboardData && e.clipboardData.files || [])].find(x => /^image\//.test(x.type)); if(f){ e.preventDefault(); take(f); } };
   }else if(tab === "style"){
     renderStyleTab(s, body);
   }else{
