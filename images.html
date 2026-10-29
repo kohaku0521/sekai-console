@@ -117,11 +117,10 @@ a{color:#7fb0ff}
   <button id="b-save" class="primary" disabled>③ 保存（0件の変更）</button>
   <label class="hint" style="display:flex;align-items:center;gap:6px;cursor:pointer" title="外すと、切り抜きショート（長尺の宣伝用の2本）は作らず、予約もしません"><input type="checkbox" id="c-shorts" checked> 切り抜きショートも作る</label>
   <label id="l-art" class="hint" style="display:none;align-items:center;gap:6px" title="サムネの背景の絵（OpenAI）の画質。low は安く、medium は細部がきれいです。描いてある絵は描き直しません"><span>サムネの絵</span><select id="s-art" style="width:auto"><option value="low">low（安い）</option><option value="medium">medium</option></select></label>
-  <button id="b-run" class="warn" title="保存したあと、動画を作ってアップロードし、台本の日付の20時に予約公開します">④ 生成を開始</button>
-  <button id="b-short" class="warn" style="display:none" title="本編はアップロードせず、台本の「shorts」の切り抜きショートだけを作って、予約投稿します">⑤ 切り抜きショートだけ作って予約</button>
+  <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/29 20:30</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/29 21:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -154,9 +153,9 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 
 // ── 設定（統合コンソール index.html と同じ localStorage のキーを使う）────────
 const CHANNELS = {
-  sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml", previewWf: "trend-auto-studio-preview.yml", shortOnly: true},
+  sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml", previewWf: "trend-auto-studio-preview.yml"},
   // 絶滅した生物たち（2026-10-28）。生成のワークフローは作成後に wf を差し替える。画像は公開画像（Commons）から選ぶのが既定
-  virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", previewWf: "virus-preview.yml", artQuality: true, shortOnly: true, defaultTab: "commons", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
+  virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", previewWf: "virus-preview.yml", artQuality: true, defaultTab: "commons", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
   zetsumetsu: {dir: "CMO/YouTube/zetsumetsu", wf: "zetsumetsu-produce.yml", defaultTab: "commons", label: "絶滅した生物たち", scriptRel: "../zetsumetsu/data/scripts/"},
 };
 // チャンネルは ?ch= で指定（無ければ、前回選んだもの。それも無ければセカイ秒読み）。ヘッダーの選択でも切り替えられる
@@ -314,7 +313,7 @@ async function loadScript(name){
   }));
   localStorage.setItem("tas.img.script", name);
   buildRanges();
-  // 長尺の台本に切り抜きの指定（shorts）が無ければ、④で切り抜きは作らない（ショートは、ショート専用の台本から⑤で作る）
+  // 長尺の台本に切り抜きの指定（shorts）が無ければ、④で切り抜きは作らない（ショートは、ショート専用の台本を読み込んで④で作る）
   $("#c-shorts").checked = !json.standalone_short && (json.shorts || []).length > 0;
   loadEn();
   await loadAssets();
@@ -1126,9 +1125,20 @@ async function runAssets(){
 }
 async function runProduce(){
   if(!S.json) return;
-  if(S.json.standalone_short){ dockMsg("これはショート専用の台本です。「⑤ 切り抜きショートだけ作って予約」を押してください（④は長尺用です）", "err"); return; }
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
   if(changedScenes().length){ dockMsg("未保存の変更があります。先に「③ 保存」を押してください", "err"); return; }
+  // ショート専用の台本（…-short.json）は、④でショートだけを作って予約する（2026-10-29 社長指示「⑤は消して。ショートも台本を読み込んで、画像を選んで、④を押す」）。
+  // 長尺は作らず・アップロードせず、台本の shorts[] の場面だけ、音声と映像を作る（workflow の short_only）
+  if(S.json.standalone_short){
+    const sh = S.json.shorts || [];
+    if(!sh.length){ dockMsg("この台本には、ショートの指定（shorts）がありません", "err"); return; }
+    const hooks = sh.filter(x => x.hook_prompt).length;
+    if(!confirm(`ショート専用の台本から、ショートを作って予約投稿します（約10分）。\n\n・題名: ${sh[0].title || S.json.title}\n・最後の案内に出す本編の題名: ${S.json.main_title || "（未設定）"}\n・予約の時刻は、チャンネルの決まりの枠に自動で入ります\n・冒頭のフック動画が課金されます（${hooks}本・約15円。作ってあるものは使い回し、二重には課金されません）\n\nよろしいですか？`)) return;
+    const extraS = CH.artQuality ? {art_quality: $("#s-art").value} : {};
+    try{ await dispatch({fetch_pixabay: "false", assets_only: "false", upload: "false", slides_only: "false", short_only: "true", shorts: "true", ...extraS}, "ショートの生成を始めました（約10分）。結果はDiscordとチャットに届きます"); }
+    catch(e){ dockMsg(e.message, "err"); }
+    return;
+  }
   const date = (S.json.date || "").slice(0, 10);
   const shorts = $("#c-shorts").checked;
   if(!confirm(`動画を作ってアップロードします（約40分）。\n台本の日付 ${date} の20時に、予約公開されます。\n\n・画像は、いまリポジトリにあるものを使います（取り直しません）\n・サムネの絵（OpenAI）は、描いてあれば描き直しません\n・切り抜きショート: ${shorts ? "作って予約します（冒頭のフック動画が課金されます）" : "作りません"}\n\n※同じ台本の動画が、すでにアップロード・予約されている場合は、二重になります。先に古い動画を削除してください。\n\nよろしいですか？`)) return;
@@ -1193,20 +1203,6 @@ $("#b-prev").onclick = async () => {
   catch(e){ dockMsg(e.message, "err"); }
 };
 $("#b-run").onclick = runProduce;
-// 切り抜きショートだけを作って予約する（本編の無い・本編は別に出したいとき。workflow の short_only。2026-10-29 社長指示）
-if(CH.shortOnly) $("#b-short").style.display = "";
-$("#b-short").onclick = async () => {
-  if(!S.json) return;
-  if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
-  if(changedScenes().length){ dockMsg("未保存の変更があります。先に「③ 保存」を押してください", "err"); return; }
-  const sh = S.json.shorts || [];
-  if(!sh.length){ dockMsg("この台本には、切り抜きショートの指定（shorts）がありません", "err"); return; }
-  const hooks = sh.filter(x => x.hook_prompt).length;
-  const alone = !!S.json.standalone_short;
-  if(!confirm(alone ? `ショート専用の台本から、ショートを作って予約投稿します（約10分）。\n\n・題名: ${sh[0].title || S.json.title}\n・最後の案内に出す本編の題名: ${S.json.main_title || "（未設定）"}\n・予約の時刻は、チャンネルの決まりの枠に自動で入ります\n・冒頭のフック動画が課金されます（${hooks}本・約15円。作ってあるものは使い回し、二重には課金されません）\n\nよろしいですか？` : `切り抜きショートだけを作って、予約投稿します（約10〜15分）。\n\n・切り抜き ${sh.length} 本（${sh.map(x => `${x.from}〜${x.to}`).join("、")}）\n・本編は、作りもアップロードもしません（切り抜く場面だけ、音声と映像を作ります）\n・予約の時刻は、チャンネルの決まりの枠に自動で入ります\n・本編を先に公開していても、概要欄に本編のURLは入りません（動画の最後の案内は出ます）\n・冒頭のフック動画が課金されます（${hooks}本・1本 約15円。作ってあるものは使い回し、二重には課金されません）\n\nよろしいですか？`)) return;
-  try{ await dispatch({fetch_pixabay: "false", assets_only: "false", upload: "false", slides_only: "false", short_only: "true", shorts: "true"}, "切り抜きショートの生成を始めました（約10〜15分）。結果はDiscordとチャットに届きます"); }
-  catch(e){ dockMsg(e.message, "err"); }
-};
 window.addEventListener("beforeunload", e => { if(changedScenes().length){ e.preventDefault(); e.returnValue = ""; } });
 
 async function start(){
