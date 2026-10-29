@@ -57,6 +57,13 @@ a{color:#7fb0ff}
 .tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 .row > input[type=text]{flex:1;min-width:180px}
+.sty-src{user-select:text;-webkit-user-select:text;background:#0e1220;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:19px;line-height:1.8;margin:6px 0}
+.sty-src div{margin:6px 0;word-break:break-all}
+.sty-prev{background:linear-gradient(160deg,#070c18,#141e3a);border-radius:8px;padding:18px 16px;margin:6px 0 10px;font-weight:800;font-size:20px;line-height:1.5;color:#fff}
+.sty-prev .s{font-weight:500;color:#9aa3b2;font-size:15px;margin-top:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;border-radius:999px;border:1px solid var(--line);background:var(--panel);cursor:pointer;margin:3px;user-select:none;-webkit-user-select:none;font-size:13px}
+.chip i{width:15px;height:15px;border-radius:50%;display:inline-block;border:1px solid #556}
+.chip:hover{border-color:var(--accent)}
 .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
 .res{background:var(--panel);border:2px solid transparent;border-radius:6px;overflow:hidden;cursor:pointer;position:relative}
 .res:hover{border-color:var(--accent)} .res.sel{border-color:var(--ok)}
@@ -293,6 +300,7 @@ async function loadScript(name){
     raw, idx: i, id: raw.id || `scene_${String(i + 1).padStart(2, "0")}`,
     text: raw.text || "", chapter: raw.chapter_label || "",
     staged: null, action: null,           // staged: {bytes,url,source} / action: "text"（文字・図にする）
+    style: JSON.parse(JSON.stringify(raw.slide_style || {})), styleDirty: false,   // 文字の色（slide_style。2026-10-29）
   }));
   localStorage.setItem("tas.img.script", name);
   loadEn();
@@ -501,7 +509,8 @@ function currentOf(s){
   if(pv) return {url: null, asset: pv, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし → この文字で表示" : "この図・文字で表示"};
   return {url: null, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし（文字で表示）" : "文字・図で表示"};
 }
-const changedScenes = () => S.scenes.filter(s => s.staged || s.action);
+const isChg = s => !!(s.staged || s.action || s.styleDirty);
+const changedScenes = () => S.scenes.filter(isChg);
 
 function render(){
   const has = !!S.json;
@@ -517,7 +526,7 @@ function render(){
   const F = [["review", "画像を使う場面"], ["slides", "図・文字の場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["all", "すべて"]];
   $("#filters").innerHTML = F.map(([k, l]) => `<button data-f="${k}" class="${S.filter === k ? "on" : ""}">${l}</button>`).join("");
   $("#filters").querySelectorAll("button").forEach(b => b.onclick = () => { S.filter = b.dataset.f; S.page = 0; S.open = null; render(); });
-  const list = S.scenes.filter(s => S.filter === "all" ? true : S.filter === "slides" ? !needsReview(s) : S.filter === "changed" ? (s.staged || s.action)
+  const list = S.scenes.filter(s => S.filter === "all" ? true : S.filter === "slides" ? !needsReview(s) : S.filter === "changed" ? isChg(s)
     : S.filter === "noimg" ? (needsReview(s) && !S.assets[s.id] && !S.clips[s.id] && !s.staged) : needsReview(s));
   // 一度にたくさんの画像を読み込むと重いので、15場面ごとのタブに分けて、いまのタブの分だけ表示する
   const PER = 15;
@@ -527,7 +536,7 @@ function render(){
   pg.innerHTML = pageCount <= 1 ? "" : Array.from({length: pageCount}, (_, i) => {
     const chunk = list.slice(i * PER, (i + 1) * PER);
     const a = chunk[0].id.replace("scene_", ""), b = chunk[chunk.length - 1].id.replace("scene_", "");
-    const mark = chunk.some(x => x.staged || x.action) ? " ●" : "";
+    const mark = chunk.some(isChg) ? " ●" : "";
     return `<button data-p="${i}" class="${i === S.page ? "on" : ""}${mark ? " has" : ""}">${a}〜${b}${mark}</button>`;
   }).join("");
   pg.querySelectorAll("button").forEach(b => b.onclick = () => { S.page = +b.dataset.p; S.open = null; render(); window.scrollTo({top: 0}); });
@@ -540,14 +549,14 @@ function render(){
   for(const s of list.slice(S.page * PER, (S.page + 1) * PER)){
     const cur = currentOf(s);
     const el = document.createElement("div");
-    el.className = "card" + (s.staged || s.action ? " changed" : "") + (S.open === s.id ? " open" : "");
+    el.className = "card" + (isChg(s) ? " changed" : "") + (S.open === s.id ? " open" : "");
     el.innerHTML = `
       <div class="thumb">${cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
-        <span class="badge ${s.staged || s.action ? "ch" : ""}">${esc(s.id.replace("scene_", ""))} · ${esc(kindOf(s))}${cur.label && (cur.url || cur.asset) ? " · " + esc(cur.label) : ""}</span></div>
+        <span class="badge ${isChg(s) ? "ch" : ""}">${esc(s.id.replace("scene_", ""))} · ${esc(kindOf(s))}${cur.label && (cur.url || cur.asset) ? " · " + esc(cur.label) : ""}</span></div>
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
-        <div class="row" style="margin:0">${needsReview(s) ? `<button data-open="${esc(s.id)}">${S.open === s.id ? "閉じる" : "画像を選ぶ"}</button>` : `<span class="hint">図・スライドの場面（ここでは変更しません）</span>`}
-        ${s.staged || s.action ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
+        <div class="row" style="margin:0"><button data-open="${esc(s.id)}">${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}
+        ${isChg(s) ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
         ${enOf(s) ? `<button data-copyen="${esc(s.id)}" title="この場面のナレーションの英訳をコピーします">英訳をコピー</button>` : `<button data-makeen="${esc(s.id)}" title="OpenAIで、この場面のナレーションを英訳します（1円未満）">英訳を作る</button>`}
         <button data-copyja="${esc(s.id)}" title="この場面のナレーション（日本語）をコピーします">本文をコピー</button></div></div>`;
     grid.appendChild(el);
@@ -560,22 +569,88 @@ function render(){
   grid.querySelectorAll("[data-undo]").forEach(b => b.onclick = () => {
     const s = S.scenes.find(x => x.id === b.dataset.undo);
     if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url);
-    s.staged = null; s.action = null; render();
+    s.staged = null; s.action = null; s.style = JSON.parse(JSON.stringify(s.raw.slide_style || {})); s.styleDirty = false; render();
   });
   observeImages();
   const n = ch.length;
   $("#b-save").textContent = `③ 保存（${n}件の変更）`; $("#b-save").disabled = !n;
 }
 
+// ── 文字の色（場面ごと・単語ごと。2026-10-29 社長指示）─────────────────────────────
+const PALETTE = [["白", "#ffffff"], ["黄", "#ffd54a"], ["琥珀", "#e8a74a"], ["赤", "#ff6b6b"], ["水色", "#6ec6ff"], ["緑", "#7bd88f"], ["灰", "#9aa3b2"]];
+const hasStyle = s => !!(s.style && (s.style.color || s.style.sub_color || (s.style.spans || []).length));
+function styleLines(s){
+  const sl = (s.raw && s.raw.slide) || {}, out = [];
+  const add = t => { if(typeof t === "string" && t.trim() && !out.includes(t)) out.push(t); };
+  add(sl.headline); add(sl.sub); (sl.bullets || []).forEach(add);
+  (sl.cards || []).forEach(c => { add(c.label); add(c.value); });
+  ["left", "right"].forEach(k => { if(sl[k]){ add(sl[k].label); add(sl[k].value); add(sl[k].note); } });
+  add(sl.label); add(sl.unit); add(sl.quote);
+  if(!out.length) add(s.text);   // 画像が無いときの文字スライドは、ナレーションの文から作られる
+  return out;
+}
+function paintLine(text, spans){
+  const m = new Map((spans || []).filter(x => x.text && /^#[0-9a-f]{6}$/i.test(x.color)).map(x => [escHtml(x.text), x.color]));
+  let out = escHtml(text);
+  if(m.size){
+    const re = new RegExp([...m.keys()].sort((a, b) => b.length - a.length).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g");
+    out = out.replace(re, k => `<span style="color:${m.get(k)}">${k}</span>`);
+  }
+  return out;
+}
+const escHtml = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+let lastSel = "";
+document.addEventListener("selectionchange", () => {
+  const sel = window.getSelection(), src = document.querySelector("#sty-src");
+  const t = sel ? sel.toString().trim() : "";
+  if(t && src && sel.anchorNode && src.contains(sel.anchorNode)) lastSel = t;
+});
+function renderStyleTab(s, body){
+  const st = s.style || (s.style = {});
+  lastSel = "";
+  const lines = styleLines(s);
+  const touch = () => { s.styleDirty = true; render(); };
+  const chips = (group, extra = "") => PALETTE.map(([n, c]) => `<span class="chip" data-g="${group}" data-c="${c}"><i style="background:${c}"></i>${n}</span>`).join("") + extra;
+  body.innerHTML = `
+    <div class="hint">文字スライド（画像が無い場面や、図・文字の場面）の文字の色を変えます。画像がある場面では、「文字・図にする」を選んだときに使われます。</div>
+    <div class="sty-prev" style="${st.color ? "color:" + st.color : ""}">${lines.slice(0, 3).map((l, i) => `<div class="${i ? "s" : ""}" style="${i && st.sub_color ? "color:" + st.sub_color : ""}">${paintLine(l, st.spans)}</div>`).join("")}<div class="hint" style="margin-top:8px;font-weight:400">↑ 目安です。実際の表示は、保存→「図・文字の表示を作る」で確認できます</div></div>
+    <div class="field"><label>見出し・本文の色（この場面ぜんぶ）</label>
+      <div>${chips("main", `<span class="chip" data-g="main" data-c="">標準</span><input type="color" id="c-main" value="${st.color || "#ffffff"}" style="width:44px;height:36px;vertical-align:middle">`)}</div></div>
+    <div class="field"><label>補足の色（小さい文字）</label>
+      <div>${chips("sub", `<span class="chip" data-g="sub" data-c="">標準</span><input type="color" id="c-sub" value="${st.sub_color || "#9aa3b2"}" style="width:44px;height:36px;vertical-align:middle">`)}</div></div>
+    <div class="field"><label>一部の言葉だけ色を変える</label>
+      <div class="hint">下の文の、色を変えたい言葉を、指でなぞって選んでから、色を押してください。</div>
+      <div id="sty-src" class="sty-src">${lines.map(l => `<div>${paintLine(l, st.spans)}</div>`).join("")}</div>
+      <div>${chips("word", `<span class="chip" data-g="word" data-c="">この言葉の色を消す</span><input type="color" id="c-word" value="#ffd54a" style="width:44px;height:36px;vertical-align:middle">`)}</div>
+      <div id="sty-list" style="margin-top:6px">${(st.spans || []).map((x, i) => `<span class="chip" data-del="${i}"><i style="background:${x.color}"></i>${escHtml(x.text)} ✕</span>`).join("") || '<span class="hint">色を付けた言葉は、まだありません</span>'}</div></div>`;
+  body.querySelectorAll(".chip,[data-del]").forEach(el => el.addEventListener("pointerdown", e => e.preventDefault()));   // 選択を消さない
+  const setBase = (g, c) => { if(g === "main"){ if(c) st.color = c; else delete st.color; } else { if(c) st.sub_color = c; else delete st.sub_color; } touch(); };
+  const setWord = c => {
+    const w = lastSel;
+    if(!w){ dockMsg("先に、色を変えたい言葉を、上の文から選んでください", "err"); return; }
+    st.spans = (st.spans || []).filter(x => x.text !== w);
+    if(c) st.spans.push({text: w, color: c});
+    touch();
+  };
+  body.querySelectorAll(".chip[data-g]").forEach(el => el.onclick = () => {
+    const g = el.dataset.g, c = el.dataset.c;
+    if(g === "word") setWord(c); else setBase(g, c);
+  });
+  body.querySelector("#c-main").onchange = e => setBase("main", e.target.value);
+  body.querySelector("#c-sub").onchange = e => setBase("sub", e.target.value);
+  body.querySelector("#c-word").onchange = e => setWord(e.target.value);
+  body.querySelectorAll("[data-del]").forEach(el => el.onclick = () => { st.spans.splice(+el.dataset.del, 1); touch(); });
+}
+
 function buildPanel(s){
   // 星・天体・宇宙機の場面は、NASA画像のタブから開く（2026-10-28 社長指示「星の画像はなるべくNASA画像を」）
   const ASTRO = /\b(stars?|planets?|galax(y|ies)|nebula|supernova|moon|sun|mars|jupiter|saturn|venus|mercury|neptune|uranus|pluto|comet|asteroid|meteor|telescope|spacecraft|rocket|satellite|orbit|solar|milky|exoplanet|cosmos|universe|eclipse|aurora)\b/i;
-  const tab = S.tabs[s.id] || CH.defaultTab || (ASTRO.test(sceneQuery(s)) ? "nasa" : "pixabay");
+  const tab = !needsReview(s) ? "style" : (S.tabs[s.id] || CH.defaultTab || (ASTRO.test(sceneQuery(s)) ? "nasa" : "pixabay"));
   const p = document.createElement("div"); p.className = "panel";
   const q0 = (S.results[s.id] && S.results[s.id].q) || sceneQuery(s);
   p.innerHTML = `
     <div class="tabs">
-      ${[["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["text", "文字・図にする"]]
+      ${(needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["text", "文字・図にする"], ["style", "文字の色"]] : [["style", "文字の色"]])
         .map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
     </div>
     <div id="tabbody"></div>`;
@@ -661,6 +736,8 @@ function buildPanel(s){
       }catch(e){ g.err = e.message; }
       g.busy = false; render();
     };
+  }else if(tab === "style"){
+    renderStyleTab(s, body);
   }else{
     body.innerHTML = `
       <div class="msg">この場面は、画像を使わず、文字・図で表示します（今ある画像は、保存のときに外れます）。</div>
@@ -683,6 +760,14 @@ async function saveAll(){
   const changes = [], picks = [];
   for(const s of ch){
     const raw = json.narrative_structure[s.idx];
+    if(s.styleDirty){   // 文字の色（slide_style）。空なら消す
+      const st = s.style || {}, clean = {};
+      if(st.color) clean.color = st.color;
+      if(st.sub_color) clean.sub_color = st.sub_color;
+      if((st.spans || []).length) clean.spans = st.spans.map(x => ({text: x.text, color: x.color}));
+      if(Object.keys(clean).length) raw.slide_style = clean; else delete raw.slide_style;
+      jsonChanged = true;
+    }
     if(s.staged){
       changes.push({path: `${base}/${s.id}.png`, bytes: s.staged.bytes});
       for(const ext of ["jpg", "jpeg", "webp"]) if(S.assets[s.id] && S.assets[s.id].name === `${s.id}.${ext}`) changes.push({path: `${base}/${s.id}.${ext}`, bytes: null});
@@ -706,7 +791,7 @@ async function saveAll(){
   $("#b-save").disabled = true; dockMsg(`保存しています…（${ch.length}場面）`);
   try{
     await commitMany(changes, `${S.stem}: 画像を入れ替え（${ch.length}場面・画像入れ替えコンソール）`);
-    ch.forEach(s => { if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; });
+    ch.forEach(s => { if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; });
     if(jsonChanged){ S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw); }
     await loadAssets(); render();
     dockMsg(`保存しました（${ch.length}場面）。続けて「④ 生成を開始」を押せます`, "ok");
