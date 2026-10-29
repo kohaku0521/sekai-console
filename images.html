@@ -127,7 +127,7 @@ a{color:#7fb0ff}
     <input type="password" id="s-oa" placeholder="sk-…">
     <div class="hint">このブラウザにだけ保存され、api.openai.com へだけ送ります。<b>利用上限を付けたキー</b>を使ってください。描くのは、ボタンを押した場面だけです。</div></div>
   <div class="row"><div style="flex:1"><label class="hint">モデル</label>
-    <select id="s-oa-model"><option value="gpt-image-1">gpt-image-1</option><option value="gpt-image-2">gpt-image-2</option></select></div>
+    <select id="s-oa-model"><option value="gpt-image-2">gpt-image-2</option><option value="gpt-image-1.5">gpt-image-1.5</option><option value="gpt-image-1">gpt-image-1</option></select></div>
     <div style="flex:1"><label class="hint">品質（高いほど高額）</label>
     <select id="s-oa-q"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></div></div>
   <div class="hint" style="margin-bottom:12px">NASA の画像検索は、設定が要りません。</div>
@@ -156,7 +156,7 @@ const CH = CHANNELS[CH_KEY] || CHANNELS.sekai;
 const GH_DIR = CH.dir, WF = CH.wf;
 const gh = {owner: "kohaku0521", repo: "kaitai-check", branch: "main", token: ""};
 const px = {apiKey: ""};
-const oa = {apiKey: "", model: "gpt-image-1", quality: "medium"};
+const oa = {apiKey: "", model: "gpt-image-2", quality: "medium"};
 const ld = (k, o) => { try { Object.assign(o, JSON.parse(localStorage.getItem(k) || "{}")); } catch {} };
 const st = (k, o) => { try { localStorage.setItem(k, JSON.stringify(o)); } catch {} };
 ld("tas.gh", gh); ld("tas.pixabay", px); ld("tas.openai", oa);
@@ -424,11 +424,21 @@ async function openaiGenerate(prompt, quality){
     if(!d || !d.b64_json) throw new Error("OpenAI が画像を返しませんでした");
     return new Blob([unb64(d.b64_json)], {type: "image/png"});
   };
-  try{ return await call(oa.model || "gpt-image-1"); }
-  catch(e){
-    if(oa.model === "gpt-image-2" && /model|not found|404|access/i.test(e.message)) return await call("gpt-image-1");
-    throw e;
+  // 選んだモデルが、このアカウントで使えない（「does not exist」「access」「verified」）ときは、ほかのモデルを順に試す。
+  // 使えたモデルは、設定に覚えておく（2026-10-29 「The model 'gpt-image-1' does not exist」で描けなかった）
+  const models = [...new Set([oa.model || "gpt-image-2", "gpt-image-2", "gpt-image-1.5", "gpt-image-1"])];
+  let lastErr;
+  for(const m of models){
+    try{
+      const blob = await call(m);
+      if(oa.model !== m){ oa.model = m; st("tas.openai", oa); }
+      return blob;
+    }catch(e){
+      lastErr = e;
+      if(!/does not exist|not found|404|access|verified|not supported|invalid model/i.test(e.message)) throw e;
+    }
   }
+  throw new Error(lastErr.message + "（試したモデル: " + models.join("・") + "。OpenAIの管理画面で、使えるモデルを確認してください）");
 }
 
 // ── リポジトリの画像を、縮小して表示する ───────────────────────────────────────
@@ -732,7 +742,7 @@ async function runProduce(){
 // ── 設定ダイアログ・起動 ──────────────────────────────────────────────────
 function openSettings(){
   $("#s-gh").value = gh.token; $("#s-px").value = px.apiKey; $("#s-oa").value = oa.apiKey;
-  $("#s-oa-model").value = oa.model || "gpt-image-1"; $("#s-oa-q").value = oa.quality || "medium";
+  $("#s-oa-model").value = oa.model || "gpt-image-2"; $("#s-oa-q").value = oa.quality || "medium";
   $("#modal-settings").classList.add("on");
 }
 $("#b-settings").onclick = openSettings;
