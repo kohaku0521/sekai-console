@@ -216,6 +216,15 @@ const S = {
 const PHOTO_KINDS = new Set(["photo", "generated", "clip"]);
 const vis = s => (s.raw && s.raw.visual) || {};
 const kindOf = s => vis(s).kind || "slide";
+// クリップボードにコピー（スマホ・古いブラウザでも動くように、失敗したら選択コピーに切り替える）
+async function copyText(text, btn){
+  const done = ok => { if(!btn) return; const old = btn.dataset.l || (btn.dataset.l = btn.textContent); btn.textContent = ok ? "✓ コピーしました" : "コピーできません"; setTimeout(() => btn.textContent = old, 1400); };
+  try{ await navigator.clipboard.writeText(text); done(true); return; }catch{}
+  try{
+    const ta = document.createElement("textarea"); ta.value = text; ta.style.cssText = "position:fixed;left:-9999px;top:0";
+    document.body.appendChild(ta); ta.focus(); ta.select(); const ok = document.execCommand("copy"); ta.remove(); done(ok);
+  }catch{ done(false); }
+}
 const sceneQuery = s => (vis(s).image_prompt_en || vis(s).subject || "").trim();
 const setMsg = (t, cls = "") => { const e = $("#msg"); e.textContent = t || ""; e.className = "msg " + cls; };
 const dockMsg = (t, cls = "") => { const e = $("#dock-msg"); e.textContent = t || ""; e.className = "msg " + cls; };
@@ -489,11 +498,15 @@ function render(){
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
         <div class="row" style="margin:0">${needsReview(s) ? `<button data-open="${esc(s.id)}">${S.open === s.id ? "閉じる" : "画像を選ぶ"}</button>` : `<span class="hint">図・スライドの場面（ここでは変更しません）</span>`}
-        ${s.staged || s.action ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}</div></div>`;
+        ${s.staged || s.action ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
+        ${s.raw && s.raw.text_en ? `<button data-copyen="${esc(s.id)}" title="この場面のナレーションの英訳をコピーします">英訳をコピー</button>` : ""}
+        <button data-copyja="${esc(s.id)}" title="この場面のナレーション（日本語）をコピーします">本文をコピー</button></div></div>`;
     grid.appendChild(el);
     if(S.open === s.id) el.appendChild(buildPanel(s));
   }
   grid.querySelectorAll("[data-open]").forEach(b => b.onclick = () => { S.open = S.open === b.dataset.open ? null : b.dataset.open; render(); const o = document.querySelector(".card.open"); if(o) o.scrollIntoView({block: "nearest"}); });
+  grid.querySelectorAll("[data-copyen]").forEach(b => b.onclick = () => copyText(S.scenes.find(x => x.id === b.dataset.copyen).raw.text_en, b));
+  grid.querySelectorAll("[data-copyja]").forEach(b => b.onclick = () => copyText(S.scenes.find(x => x.id === b.dataset.copyja).text, b));
   grid.querySelectorAll("[data-undo]").forEach(b => b.onclick = () => {
     const s = S.scenes.find(x => x.id === b.dataset.undo);
     if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url);
@@ -562,6 +575,7 @@ function buildPanel(s){
       <div class="field"><label>描かせる内容（英語で、実在の物・場所を具体的に）</label><textarea id="gp">${esc(g.prompt)}</textarea></div>
       ${narEn ? `<div class="hint" style="margin-bottom:6px">この場面のナレーションの英訳: ${esc(narEn)}</div>
       <div class="row"><button id="gp-subj">主題だけにする</button><button id="gp-both">主題＋ナレーションの英訳にする</button></div>` : `<div class="hint" style="margin-bottom:6px">この台本には、ナレーションの英訳（text_en）がありません。</div>`}
+      <div class="row"><button id="cp-prompt">プロンプトをコピー</button>${narEn ? `<button id="cp-en">ナレーションの英訳をコピー</button>` : ""}<button id="cp-ja">日本語のナレーションをコピー</button></div>
       <div class="row"><select id="gs" style="width:auto"><option value="photo">実写風</option><option value="science">科学ビジュアル風（望遠鏡画像・復元）</option><option value="raw">そのまま（上の文だけ）</option></select>
         <button class="primary" id="gen" ${g.busy ? "disabled" : ""}>${g.busy ? "描いています…" : "OpenAIで描く（1枚ごとに課金）"}</button>
         <select id="gq" style="width:auto" title="画質。low は安く、medium は細部がきれいです（1枚ごとの目安: low 約0.016ドル、medium 約0.06ドル。円で約2〜10円）"><option value="low">low（安い・約2円）</option><option value="medium">medium（標準・約10円）</option></select>
@@ -572,6 +586,9 @@ function buildPanel(s){
     body.querySelector("#gq").value = g.quality;
     body.querySelector("#gq").onchange = e => g.quality = e.target.value;
     body.querySelector("#gp").oninput = e => g.prompt = e.target.value;
+    body.querySelector("#cp-prompt").onclick = e => copyText(body.querySelector("#gp").value, e.target);
+    const cen = body.querySelector("#cp-en"); if(cen) cen.onclick = e => copyText(narEn, e.target);
+    body.querySelector("#cp-ja").onclick = e => copyText(s.text, e.target);
     const bs = body.querySelector("#gp-subj"), bb = body.querySelector("#gp-both");
     if(bs) bs.onclick = () => { g.prompt = mkPrompt(false); body.querySelector("#gp").value = g.prompt; };
     if(bb) bb.onclick = () => { g.prompt = mkPrompt(true); body.querySelector("#gp").value = g.prompt; };
