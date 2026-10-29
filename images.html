@@ -152,7 +152,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 
 // ── 設定（統合コンソール index.html と同じ localStorage のキーを使う）────────
 const CHANNELS = {
-  sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml", previewWf: "trend-auto-studio-preview.yml"},
+  sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml", previewWf: "trend-auto-studio-preview.yml", shortOnly: true},
   // 絶滅した生物たち（2026-10-28）。生成のワークフローは作成後に wf を差し替える。画像は公開画像（Commons）から選ぶのが既定
   virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", previewWf: "virus-preview.yml", artQuality: true, shortOnly: true, defaultTab: "commons", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
   zetsumetsu: {dir: "CMO/YouTube/zetsumetsu", wf: "zetsumetsu-produce.yml", defaultTab: "commons", label: "絶滅した生物たち", scriptRel: "../zetsumetsu/data/scripts/"},
