@@ -554,9 +554,14 @@ function buildPanel(s){
   }else if(tab === "openai"){
     const g = S.gens[s.id] || (S.gens[s.id] = {cands: [], busy: false, err: "", style: "photo", prompt: "", quality: ["low", "medium"].includes(oa.quality) ? oa.quality : "medium"});
     if(!g.quality) g.quality = "medium";
-    if(!g.prompt) g.prompt = sceneQuery(s) || "";
+    // 台本に text_en（ナレーションの英訳）があれば、主題＋ナレーションの英訳を、英語のプロンプトの初期値にする（2026-10-29 社長指示）
+    const subj = sceneQuery(s) || "", narEn = (s.raw && s.raw.text_en) || "";
+    const mkPrompt = withNar => (withNar && narEn) ? `${subj}. Scene narration (English): "${narEn}"` : subj;
+    if(!g.prompt) g.prompt = mkPrompt(true);
     body.innerHTML = `
       <div class="field"><label>描かせる内容（英語で、実在の物・場所を具体的に）</label><textarea id="gp">${esc(g.prompt)}</textarea></div>
+      ${narEn ? `<div class="hint" style="margin-bottom:6px">この場面のナレーションの英訳: ${esc(narEn)}</div>
+      <div class="row"><button id="gp-subj">主題だけにする</button><button id="gp-both">主題＋ナレーションの英訳にする</button></div>` : `<div class="hint" style="margin-bottom:6px">この台本には、ナレーションの英訳（text_en）がありません。</div>`}
       <div class="row"><select id="gs" style="width:auto"><option value="photo">実写風</option><option value="science">科学ビジュアル風（望遠鏡画像・復元）</option><option value="raw">そのまま（上の文だけ）</option></select>
         <button class="primary" id="gen" ${g.busy ? "disabled" : ""}>${g.busy ? "描いています…" : "OpenAIで描く（1枚ごとに課金）"}</button>
         <select id="gq" style="width:auto" title="画質。low は安く、medium は細部がきれいです（1枚ごとの目安: low 約0.016ドル、medium 約0.06ドル。円で約2〜10円）"><option value="low">low（安い・約2円）</option><option value="medium">medium（標準・約10円）</option></select>
@@ -567,6 +572,9 @@ function buildPanel(s){
     body.querySelector("#gq").value = g.quality;
     body.querySelector("#gq").onchange = e => g.quality = e.target.value;
     body.querySelector("#gp").oninput = e => g.prompt = e.target.value;
+    const bs = body.querySelector("#gp-subj"), bb = body.querySelector("#gp-both");
+    if(bs) bs.onclick = () => { g.prompt = mkPrompt(false); body.querySelector("#gp").value = g.prompt; };
+    if(bb) bb.onclick = () => { g.prompt = mkPrompt(true); body.querySelector("#gp").value = g.prompt; };
     body.querySelector("#gs").onchange = e => g.style = e.target.value;
     const cs = body.querySelector("#cs");
     g.cands.forEach(c => {
