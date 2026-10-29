@@ -322,6 +322,8 @@ async function loadAssets(){
   ]);
   S.assets = {}; S.clips = {}; S.prev = {};
   // 文字・図解・グラフになる場面の、動画での表示の確認画像（render_slide_previews.py）。無いチャンネル・台本は空のまま
+  S.manifest = {};
+  try{ const mj = await api(repoPath(`/contents/${GH_DIR}/assets/slide_previews/${S.stem}/_manifest.json${refQ()}`)); S.manifest = JSON.parse(dec(unb64(mj.content))); }catch{}
   for(const i of await listDir(`${GH_DIR}/assets/slide_previews/${S.stem}`)) if(/^scene_\d+\.jpg$/.test(i.name)) S.prev[i.name.replace(/\.jpg$/, "")] = {size: i.size, sha: i.sha, name: i.name, path: i.path || `${GH_DIR}/assets/slide_previews/${S.stem}/${i.name}`};
   for(const i of imgs) if(/\.(png|jpe?g|webp)$/i.test(i.name)) S.assets[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, name: i.name, path: i.path || `${GH_DIR}/assets/images/generated/${S.stem}/${i.name}`};
   for(const i of clips) if(/\.mp4$/i.test(i.name)) S.clips[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, name: i.name};
@@ -730,19 +732,19 @@ function slideFields(s){
   return out;
 }
 const curVal = (s, f) => (s.edits && s.edits[f.key] !== undefined) ? s.edits[f.key] : f.def;
-// 文字・色を保存したあと、確認画像（図・文字の表示を作る）を作り直すまでは、確認画像が古い。古いあいだは「目安」の表示にする（2026-10-29）
-const staleKey = () => "tas.stale." + S.stem;
-const staleMap = () => { try{ return JSON.parse(localStorage.getItem(staleKey()) || "{}"); }catch{ return {}; } };
+// 確認画像を作ったときの文字・色の指定（_manifest.json の sig）と、台本の今の指定が違えば、確認画像は古い。
+// 古いあいだは「目安」の表示にする（2026-10-29）。sig が無い古い確認画像は、文字・色を直した場面だけ古い扱いにする
+const canon = v => {
+  if(Array.isArray(v)) return "[" + v.map(canon).join(",") + "]";
+  if(v && typeof v === "object"){ const ks = Object.keys(v).sort(); return ks.length ? "{" + ks.map(k => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}" : "null"; }
+  return v === undefined ? "null" : JSON.stringify(v);
+};
+const sigOf = raw => canon({slide: raw.slide || null, slide_style: raw.slide_style || null, slide_text: raw.slide_text || null});
 function isStale(s){
-  const m = staleMap(), sha = m[s.id];
-  if(sha === undefined || !(S.prev && S.prev[s.id])) return false;
-  if(S.prev[s.id].sha !== sha){ delete m[s.id]; try{ localStorage.setItem(staleKey(), JSON.stringify(m)); }catch{} return false; }   // 作り直された
-  return true;
-}
-function markStale(s){
-  if(!(S.prev && S.prev[s.id])) return;
-  const m = staleMap(); m[s.id] = S.prev[s.id].sha;
-  try{ localStorage.setItem(staleKey(), JSON.stringify(m)); }catch{}
+  if(!(S.prev && S.prev[s.id])) return false;
+  const m = S.manifest && S.manifest[s.id];
+  if(m && m.sig) return canon(m.sig) !== sigOf(s.raw);
+  return !!(s.raw.slide_style || s.raw.slide_text);
 }
 const showsText = s => !s.staged && !s.stagedClip && (s.action === "text" || !needsReview(s) || (!S.assets[s.id] && !S.clips[s.id]));
 // カードの小さな表示（目安）。確認画像がまだ無い・編集中のときに、文字がちゃんと見えるようにする
@@ -1064,7 +1066,7 @@ async function saveAll(){
   $("#b-save").disabled = true; dockMsg(`保存しています…（${ch.length}場面）`);
   try{
     await commitMany(changes, `${S.stem}: 画像を入れ替え（${ch.length}場面・画像入れ替えコンソール）`);
-    ch.forEach(s => { if(s.styleDirty) markStale(s); if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; });
+    ch.forEach(s => { if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; });
     if(jsonChanged){ S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw); }
     await loadAssets(); render();
     dockMsg(`保存しました（${ch.length}場面）。続けて「④ 生成を開始」を押せます`, "ok");
