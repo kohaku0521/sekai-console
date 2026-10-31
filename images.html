@@ -93,6 +93,7 @@ a{color:#7fb0ff}
   <button id="b-open" title="このパソコン・スマホにある台本のJSONファイルを開きます。まだリポジトリに無い台本でも、画像を選べます。「③ 保存」でリポジトリに追加されます">📂 台本JSONを開く</button>
   <input type="file" id="f-open" style="display:none">
   <button id="b-enall" title="英訳のない場面を、OpenAIでまとめて英訳します（全部で数円以下）。このブラウザに保存します">全場面の英訳を作る</button>
+  <button id="b-motion" title="数字・比較・グラフ・年表・地図・論文などの『動く図解』を、ナレーションに合わせて、ふさわしい場面に自動で当てはめます（提案を見て、選んだものだけ台本に書きます）">🎬 動きを自動で当てはめる</button>
   <button id="b-bgm" title="BGMを、場面に合わせて切り替えます（場面ごとに曲を選べます）">BGMを変える</button>
   <button id="b-yomi" title="ナレーションの漢字の読み違いを直します。読み上げだけが変わり、字幕は表記のままです">読み仮名を直す</button>
   <button id="b-prev" style="display:none" title="文字・図解・グラフになる場面が、動画でどう見えるかの確認画像を作ります（音声・動画・課金は使いません。約3分）">図・文字の表示を作る</button>
@@ -124,7 +125,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/31 16:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 08:30</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -171,6 +172,19 @@ a{color:#7fb0ff}
   </div>
 </div>
 
+<div id="motion" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);overflow:auto">
+  <div style="max-width:820px;margin:14px auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 14px 90px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:15px">🎬 動きを自動で当てはめる</b><span class="spacer"></span><button id="m-close">閉じる</button></div>
+    <div class="hint" style="margin-bottom:10px">ナレーションを読んで、<b>数字が0から増える</b>（数字・比較・カード）、<b>下から伸びる</b>（縦棒）、<b>左から描かれる</b>（折れ線・年表）、<b>点がチカチカ</b>（地図）、<b>パン・ズーム</b>（論文）などの『動く図解』を、ふさわしい場面に提案します。<b>提案を見て、選んだものだけ</b>台本に書きます（元の台本は、履歴に残ります）。数字は、ナレーションに出てくるものだけを使います。</div>
+    <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px"><button class="primary" id="m-ai" title="OpenAI（gpt-4o-mini）が、全場面のナレーションを読んで提案します。1回で1円未満です。APIキーは、⚙ 接続設定にあるものを使います">AIで提案する（1円未満）</button><button id="m-rule" title="数字が1つ・2つだけの場面を、ルールで見つけます（無料・すぐ。AIより、見つかる数は少ないです）">ルールで提案する（無料）</button><span class="hint" id="m-stat"></span></div>
+    <div class="row" style="margin:0 0 8px"><button id="m-all">全部にチェック</button><button id="m-none">チェックを外す</button><span class="hint" id="m-count"></span></div>
+    <div id="m-list"></div>
+    <div style="position:sticky;bottom:0;background:var(--panel);padding-top:8px;border-top:1px solid var(--line);margin-top:8px">
+      <div class="msg" id="m-msg" style="margin-bottom:6px"></div>
+      <button class="primary" id="m-save" disabled>選んだ提案を台本に書く（保存）</button>
+    </div>
+  </div>
+</div>
 <div id="bgm" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);overflow:auto">
   <div style="max-width:760px;margin:14px auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 14px 90px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:15px">BGMを場面に合わせる</b><span class="spacer"></span><button id="g-close">閉じる</button></div>
@@ -1545,6 +1559,208 @@ $("#g-save").onclick = async () => {
     S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw);
     renderBgm(); gMsg(`保存しました（指名${n}場面）。次の生成から反映されます`, "ok");
   }catch(e){ gMsg(e.message, "err"); $("#g-save").disabled = false; }
+};
+
+// ── 動きを自動で当てはめる（2026-11-01 社長指示。src/anim_render.py の『動く図解』を、ナレーションに合わせて適材適所に当てはめる）──────────
+// 提案 = {scene: 場面ID, type: 図解の種類, data: その中身, why: 理由}。数字は、その場面のナレーションに出てくるものだけを使う。
+const M = {sug: [], busy: false};
+const MOTION_TYPES = {
+  big_number: "大きな数字（0から増える）", compare: "比較（左右から入り、数字が0から増える）", cards: "カード（順に出る）", summary: "まとめ（順に出る）",
+  column_chart: "縦棒（下から伸びる）", bar_chart: "横棒（左から伸びる）", line_chart: "折れ線（左から描かれる）", timeline: "年表（左から右へ）",
+  node_map: "ノード図（線が伸びる）", map_pin: "地図の点（チカチカ）", doc_pan: "論文（パン・ズーム）",
+};
+const mMsg = (t, cls = "") => { const e = $("#m-msg"); e.textContent = t || ""; e.className = "msg " + cls; };
+const mNorm = t => String(t == null ? "" : t).normalize("NFKC").replace(/,/g, "");
+const mNums = v => (mNorm(JSON.stringify(v)).match(/\d+(?:\.\d+)?/g) || []);
+// 提案の数字が、その場面のナレーションにあるか（0と100は、目盛りとして許す）
+function mGrounded(sg, text){
+  const t = mNorm(text);
+  const strip = JSON.parse(JSON.stringify(sg.data)); delete strip.source; delete strip.meta; delete strip.title;   // 出典・論文の題は、数字を調べない
+  if(sg.type === "map_pin") (strip.pins || []).forEach(p => { delete p.x; delete p.y; });
+  return mNums(strip).every(n => n === "0" || n === "100" || t.includes(n) || t.includes(String(parseFloat(n))));
+}
+const mStr = (v, max) => typeof v === "string" && v.trim() && v.length <= (max || 60);
+const mItems = (a, lo, hi, f) => Array.isArray(a) && a.length >= lo && a.length <= hi && a.every(f);
+function mValid(sg){
+  const d = sg.data || {};
+  switch(sg.type){
+    case "big_number": return mStr(d.number, 12) && (d.unit === undefined || typeof d.unit === "string") && mStr(d.label, 40);
+    case "compare": return ["left", "right"].every(k => d[k] && mStr(d[k].label, 12) && mStr(d[k].value, 10) && (d[k].note === undefined || typeof d[k].note === "string"));
+    case "cards": return mItems(d.cards, 2, 4, c => mStr(c.label, 20) && mStr(c.value, 30));
+    case "summary": return mItems(d.bullets, 2, 3, b => mStr(b, 50));
+    case "column_chart": case "bar_chart": return mItems(d.items, 2, 6, it => mStr(it.label, 14) && typeof it.value === "number" && (it.unit === undefined || typeof it.unit === "string"));
+    case "line_chart": return mItems(d.points, 2, 8, it => mStr(it.label, 14) && typeof it.value === "number");
+    case "timeline": return mItems(d.events, 2, 6, e => mStr(e.date, 16) && mStr(e.label, 16));
+    case "node_map": return mStr(d.center, 16) && mItems(d.nodes, 3, 8, n => mStr(n, 12));
+    case "map_pin": return mItems(d.pins, 1, 3, p => typeof p.x === "number" && typeof p.y === "number" && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1);
+    case "doc_pan": return mStr(d.title, 80) && mItems(d.lines, 3, 6, l => mStr(l, 90)) && Number.isInteger(d.highlight) && d.highlight >= 0 && d.highlight < d.lines.length;
+  }
+  return false;
+}
+function mSkip(sc){
+  const raw = sc.raw, v = vis(sc), lay = (raw.slide || {}).layout;
+  if(["hook", "opening", "cta"].includes(raw.type)) return "冒頭・あいさつ・締めは、そのまま";
+  if(kindOf(sc) === "clip") return "動画クリップの場面";
+  if(v.anim || (raw.slide || {}).anim || v.map_pin) return "すでに動きがある";
+  if(lay === "quote" || lay === "cta" || lay === "chapter") return "引用・章の扉・締め";
+  return "";
+}
+// ルールで見つける（数字が1つ・2つだけの、短い場面）
+const M_UNIT = "(?:%|パーセント|兆円|億円|万円|[億万兆]?(?:トン|人|頭|件|個|種|度|℃|日|年|か月|週間|メートル以上|メートル|キロ|倍|分|時間|円|秒))";
+function mRules(){
+  const out = [];
+  for(const sc of S.scenes){
+    if(mSkip(sc)) continue;
+    const t = mNorm(sc.text), sentences = (sc.text.match(/[。！？]/g) || []).length;
+    const ms = Array.from(t.matchAll(new RegExp("(\\d[\\d]*(?:\\.\\d+)?)" + M_UNIT, "g")));
+    if(ms.length === 2){
+      const m = t.match(new RegExp("([^\\s、。]{1,6})は、?約?(\\d+(?:\\.\\d+)?" + M_UNIT + ")。?、?\\s*([^\\s、。]{1,6})は、?約?(\\d+(?:\\.\\d+)?" + M_UNIT + ")"));
+      if(m) out.push({scene: sc.id, type: "compare", why: "2つの数字を、左右に並べる", data: {headline: m[1] + "と" + m[3], left: {label: m[1], value: m[2]}, right: {label: m[3], value: m[4]}}});
+    } else if(ms.length === 1 && sentences <= 2 && sc.text.length <= 70){
+      const m = ms[0], unit = m[0].slice(m[1].length);
+      const first = sc.text.split(/[。！？]/)[0].replace(/[、]/g, "").slice(0, 22);
+      out.push({scene: sc.id, type: "big_number", why: "数字が1つだけの短い場面。大きく見せる", data: {number: m[1], unit, label: first}});
+    }
+  }
+  return out;
+}
+const M_SYSTEM = `あなたは、YouTube解説動画の演出担当です。ナレーションの各場面を読み、「動く図解」をつけるとよい場面を選んで、JSONで返します。
+使える種類と、data の形（すべて日本語。短く）:
+- big_number: {"number":"88","unit":"日","label":"計画の期間（水星の1年）"}  数字が1つだけの場面
+- compare: {"headline":"水星の昼と夜","left":{"label":"昼","value":"430℃","note":"鉛が溶ける熱"},"right":{"label":"夜","value":"-180℃","note":"凍りつく闇"}}  2つの数字を並べる場面
+- cards: {"headline":"…","cards":[{"label":"1 温度","value":"…"}]}  2〜4枚。3つの理由・候補など
+- summary: {"headline":"…","bullets":["…","…","…"]}  2〜3行。まとめ
+- column_chart: {"headline":"…","note":"…","items":[{"label":"昼","value":430,"unit":"℃"},{"label":"夜","value":-180,"unit":"℃"}]}  2〜6本。数の大きさの比較（マイナス可）
+- bar_chart: column_chart と同じ形。項目名が長いとき
+- line_chart: {"headline":"…","note":"…","points":[{"label":"今","value":100,"unit":""}]}  2〜8点。時間で変わる数
+- timeline: {"headline":"…","events":[{"date":"2018年10月","label":"打ち上げ"}]}  2〜6件。日付つきの出来事の流れ
+- node_map: {"headline":"…","center":"基地","nodes":["水","空気","電気"]}  3〜8個。中心から広がる関係
+- map_pin: {"headline":"…","source":"…","pins":[{"x":0.5,"y":0.4,"label":"…","sub":"…"}]}  場所を指す場面（写真・生成画像の場面だけ）。x,yは画像の0〜1の位置の見当
+- doc_pan: {"label":"…","title":"論文や資料の題","meta":"掲載誌・年","lines":["ナレーションの内容を言い換えた文",…],"highlight":2,"source":"出典"}  論文・報告書に言及する場面だけ。lines は3〜5文で、highlight は強調する行の番号（0から）
+決まり:
+- 選ぶのは、全場面の2割まで。ふさわしくない場面は、選ばない。同じ種類を続けない。
+- type が hook・opening・cta の場面は選ばない。
+- 数字は、その場面のナレーションに出てくるものだけを使う。出てこない数字や固有名詞を作らない。（目盛りの0と100だけは可）
+- ナレーションの言い方を保つ。断定しすぎない。
+返す形: {"suggestions":[{"n":場面の番号,"type":"種類","data":{…},"why":"選んだ理由（20字ほど）"}]}`;
+async function mAsk(){
+  if(!oa.apiKey) throw new Error("OpenAI のAPIキーが未設定です（⚙ 接続設定）。『ルールで提案する』なら、キー無しで使えます");
+  const rows = S.scenes.map((sc, i) => ({n: i + 1, type: sc.raw.type, kind: kindOf(sc), skip: mSkip(sc) || undefined, text: sc.text}));
+  const r = await fetch("https://api.openai.com/v1/chat/completions", {method: "POST",
+    headers: {"Content-Type": "application/json", "Authorization": "Bearer " + oa.apiKey},
+    body: JSON.stringify({model: "gpt-4o-mini", temperature: 0.2, response_format: {type: "json_object"}, messages: [
+      {role: "system", content: M_SYSTEM}, {role: "user", content: JSON.stringify({scenes: rows})}]})}).catch(() => { throw new Error("OpenAIに接続できません（通信状態・ブラウザの拡張機能を確認してください）"); });
+  const j = await r.json().catch(() => null);
+  if(!r.ok) throw new Error(`OpenAI ${r.status}: ${(j && j.error && j.error.message || r.statusText).slice(0, 160)}`);
+  const out = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+  let parsed; try{ parsed = JSON.parse(out); }catch{ throw new Error("提案を読み取れませんでした。もう一度押してください"); }
+  return (parsed.suggestions || []).map(x => ({scene: (S.scenes[(x.n | 0) - 1] || {}).id, type: x.type, data: x.data, why: x.why || ""}));
+}
+function mVet(list){
+  const ok = [], dropped = [];
+  const used = new Set();
+  for(const sg of list){
+    const sc = S.scenes.find(x => x.id === sg.scene);
+    if(!sc){ dropped.push("場面が見つかりません"); continue; }
+    if(!MOTION_TYPES[sg.type]){ dropped.push(`#${sc.id.replace("scene_", "")}: 知らない種類`); continue; }
+    if(mSkip(sc)){ dropped.push(`#${sc.id.replace("scene_", "")}: ${mSkip(sc)}`); continue; }
+    if(sg.type === "map_pin" && !["photo", "generated"].includes(kindOf(sc))){ dropped.push(`#${sc.id.replace("scene_", "")}: 地図の点は、写真の場面だけ`); continue; }
+    if(!mValid(sg)){ dropped.push(`#${sc.id.replace("scene_", "")}: 形が合わない`); continue; }
+    if(!mGrounded(sg, sc.text)){ dropped.push(`#${sc.id.replace("scene_", "")}: ナレーションに無い数字`); continue; }
+    if(used.has(sc.id)) continue; used.add(sc.id);
+    ok.push({...sg, on: true});
+  }
+  return {ok, dropped};
+}
+function mSummary(sg){
+  const d = sg.data;
+  switch(sg.type){
+    case "big_number": return `${d.number}${d.unit || ""}　${d.label}`;
+    case "compare": return `${d.left.label} ${d.left.value}　⇔　${d.right.label} ${d.right.value}`;
+    case "cards": return d.cards.map(c => `${c.label}: ${c.value}`).join(" ／ ");
+    case "summary": return d.bullets.join(" ／ ");
+    case "column_chart": case "bar_chart": return d.items.map(i => `${i.label} ${i.value}${i.unit || ""}`).join(" ／ ");
+    case "line_chart": return d.points.map(i => `${i.label} ${i.value}`).join(" → ");
+    case "timeline": return d.events.map(e => `${e.date} ${e.label}`).join(" → ");
+    case "node_map": return `${d.center} → ${d.nodes.join("・")}`;
+    case "map_pin": return d.pins.map(p => p.label || "（点）").join("・") + "（画像の上に点）";
+    case "doc_pan": return `${d.title}（${(d.lines[d.highlight] || "").slice(0, 30)}…を強調）`;
+  }
+  return "";
+}
+function renderMotion(){
+  const box = $("#m-list"); box.innerHTML = "";
+  M.sug.forEach((sg, i) => {
+    const sc = S.scenes.find(x => x.id === sg.scene);
+    const el = document.createElement("label");
+    el.style.cssText = "display:block;border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px;cursor:pointer";
+    el.innerHTML = `<div style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" data-i="${i}" ${sg.on ? "checked" : ""} style="width:20px;height:20px;margin-top:3px">
+      <div style="flex:1;min-width:0"><div><b>${esc(sc.id.replace("scene_", "#"))}</b>　<span style="color:var(--accent)">${esc(MOTION_TYPES[sg.type])}</span>　<span class="hint">（いまは: ${esc(({photo: "写真", generated: "生成画像", slide: "文字スライド", data: "図解", clip: "動画クリップ"})[kindOf(sc)] || kindOf(sc))}）</span></div>
+      <div class="hint" style="margin:3px 0">${esc(sc.text.slice(0, 70))}${sc.text.length > 70 ? "…" : ""}</div>
+      <div style="font-size:14px;line-height:1.5">${esc(mSummary(sg))}</div>
+      ${sg.why ? `<div class="hint" style="margin-top:2px">理由: ${esc(sg.why)}</div>` : ""}</div></div>`;
+    box.appendChild(el);
+  });
+  box.querySelectorAll("input[data-i]").forEach(el => el.onchange = () => { M.sug[+el.dataset.i].on = el.checked; mRefresh(); });
+  mRefresh();
+}
+function mRefresh(){
+  const n = M.sug.filter(x => x.on).length;
+  $("#m-count").textContent = M.sug.length ? `${M.sug.length}件の提案のうち、${n}件を選んでいます` : "";
+  $("#m-save").disabled = !n || M.busy;
+}
+function mShow(res, label){
+  M.sug = res.ok; renderMotion();
+  $("#m-stat").textContent = "";
+  mMsg(res.ok.length ? `${label}: ${res.ok.length}件の提案があります。内容を見て、チェックを選んでください` + (res.dropped.length ? `（${res.dropped.length}件は、数字が合わないなどで外しました）` : "") : `${label}: ふさわしい場面は見つかりませんでした` + (res.dropped.length ? `（${res.dropped.slice(0, 3).join("、")}）` : ""), res.ok.length ? "ok" : "");
+}
+function mApply(json, sg){
+  const raw = json.narrative_structure.find(r => r.id === sg.scene), d = JSON.parse(JSON.stringify(sg.data));
+  const subj = (vis({raw}).subject) || sg.type;
+  if(sg.type === "map_pin"){   // 写真の上に点を重ねる（画像はそのまま）
+    raw.visual = {...raw.visual, map_pin: d}; return;
+  }
+  delete raw.se; delete raw.emphasis;   // 文字スライド・図解の上には、強調テロップを重ねない
+  if(["big_number", "compare", "cards", "summary"].includes(sg.type)){
+    const light = ["cards", "summary"].includes(sg.type);
+    raw.visual = {kind: "slide", subject: subj};
+    raw.slide = {layout: sg.type, anim: true, theme: light ? "light" : "dark", ...d};
+  }else{
+    delete raw.slide;
+    raw.visual = {kind: "data", subject: subj, image_prompt_en: sg.type.replace("_", " ") + " chart", template: sg.type, anim: true, template_data: {theme: "dark", ...d}};
+  }
+}
+function openMotion(){
+  if(!S.json){ setMsg("先に台本を読み込んでください", "err"); return; }
+  M.sug = []; renderMotion(); mMsg(""); $("#m-stat").textContent = "";
+  $("#motion").style.display = ""; document.body.style.overflow = "hidden";
+}
+$("#b-motion").onclick = openMotion;
+$("#m-close").onclick = () => { $("#motion").style.display = "none"; document.body.style.overflow = ""; };
+$("#m-all").onclick = () => { M.sug.forEach(x => x.on = true); renderMotion(); };
+$("#m-none").onclick = () => { M.sug.forEach(x => x.on = false); renderMotion(); };
+$("#m-rule").onclick = () => { mShow(mVet(mRules()), "ルール"); };
+$("#m-ai").onclick = async () => {
+  M.busy = true; $("#m-ai").disabled = true; $("#m-stat").textContent = "AIが全場面を読んでいます…（約20秒）"; mMsg("");
+  try{ mShow(mVet(await mAsk()), "AI"); }
+  catch(e){ mMsg(e.message, "err"); $("#m-stat").textContent = ""; }
+  M.busy = false; $("#m-ai").disabled = false; mRefresh();
+};
+$("#m-save").onclick = async () => {
+  if(!ghReady()){ mMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  const picks = M.sug.filter(x => x.on); if(!picks.length) return;
+  if(!confirm(`${picks.length}場面に、動く図解を書き込みます（台本を保存します）。\n写真・生成画像の場面は、図解に置き換わります（地図の点だけは、写真の上に重なります）。元の台本は、履歴から戻せます。よろしいですか？`)) return;
+  const json = JSON.parse(JSON.stringify(S.json));
+  picks.forEach(sg => mApply(json, sg));
+  M.busy = true; $("#m-save").disabled = true; mMsg("保存しています…");
+  try{
+    await commitMany([{path: `${GH_DIR}/data/scripts/${S.name}`, bytes: enc(JSON.stringify(json, null, 2) + "\n")}],
+      `${S.stem}: 動く図解を自動で当てはめる（${picks.length}場面・画像入れ替えコンソール）`);
+    S.json = json; json.narrative_structure.forEach((raw, i) => { if(S.scenes[i]) S.scenes[i].raw = raw; });
+    M.sug = []; renderMotion(); render();
+    mMsg(`保存しました（${picks.length}場面）。次の生成から、動きが入ります`, "ok");
+  }catch(e){ mMsg(e.message, "err"); }
+  M.busy = false; mRefresh();
 };
 
 window.addEventListener("beforeunload", e => { if(changedScenes().length || S.local){ e.preventDefault(); e.returnValue = ""; } });
