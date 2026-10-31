@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 11:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 14:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -766,10 +766,13 @@ function render(){
   ].map(([k, v, c]) => `<div class="stat ${c}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
   const F = [["review", "画像を使う場面"], ["slides", "図・文字の場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["locked", "🔒ロック中"], ["all", "すべて"]];
   $("#filters").innerHTML = F.map(([k, l]) => `<button data-f="${k}" class="${S.filter === k ? "on" : ""}">${l}</button>`).join("");
-  $("#filters").insertAdjacentHTML("beforeend", `<span class="spacer"></span><button id="b-lockall" title="いま絞り込んで表示している場面を、すべてロックします">🔒 表示中をすべてロック</button><button id="b-unlockall" title="いま絞り込んで表示している場面の、ロックを外します">🔓 表示中のロックを外す</button>`);
+  $("#filters").insertAdjacentHTML("beforeend", `<span class="spacer"></span><button id="b-mpick" class="primary" title="場面カードの🎬にチェックを入れた場面に、ふさわしい動く図解を提案します（確認してから保存）">🎬 チェックした場面に動きをつける</button><button id="b-mpick-clear" title="🎬のチェックを、すべて外します">チェックを外す</button><button id="b-lockall" title="いま絞り込んで表示している場面を、すべてロックします">🔒 表示中をすべてロック</button><button id="b-unlockall" title="いま絞り込んで表示している場面の、ロックを外します">🔓 表示中のロックを外す</button>`);
   $("#filters").querySelectorAll("button[data-f]").forEach(b => b.onclick = () => { S.filter = b.dataset.f; S.page = 0; S.open = null; render(); });
   const list = S.scenes.filter(inRange).filter(s => S.filter === "all" ? true : S.filter === "slides" ? !needsReview(s) : S.filter === "changed" ? isChg(s) : S.filter === "locked" ? s.locked
     : S.filter === "noimg" ? (needsReview(s) && !S.assets[s.id] && !S.clips[s.id] && !s.staged) : needsReview(s));
+  $("#b-mpick").onclick = () => { if(typeof runPicked === "function") runPicked(); };
+  $("#b-mpick-clear").onclick = () => { M.pick.clear(); render(); };
+  mPickBtn();
   $("#b-lockall").onclick = () => { list.forEach(x => setLock(x, true)); render(); dockMsg(`${list.length}場面をロックしました。「③ 保存」で確定します`, "ok"); };
   $("#b-unlockall").onclick = () => { list.forEach(x => setLock(x, false)); render(); dockMsg(`${list.length}場面のロックを外しました。「③ 保存」で確定します`, "ok"); };
   // 一度にたくさんの画像を読み込むと重いので、15場面ごとのタブに分けて、いまのタブの分だけ表示する
@@ -800,13 +803,14 @@ function render(){
         <span class="badge ${isChg(s) ? "ch" : ""}">${s.locked ? "🔒 " : ""}${esc(s.id.replace("scene_", ""))} · ${esc(kindOf(s))}${approx ? (isStale(s) ? " · この文字で表示（目安・確認画像は未更新）" : " · この文字で表示（目安）") : cur.label && (cur.url || cur.asset || s.stagedClip) ? " · " + esc(cur.label) : ""}</span></div>
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
-        <div class="row" style="margin:0"><button class="lockbtn" data-lock="${esc(s.id)}" title="${s.locked ? "ロック中。押すと、ロックを外します" : "押すと、この場面をロックします（一括の変更も、手での変更も、受け付けなくなります）"}">${s.locked ? "🔒" : "🔓"}</button><button data-open="${esc(s.id)}" ${s.locked ? "disabled" : ""}>${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}${s.locked ? ' <span class="hint">ロック中</span>' : ""}
+        <div class="row" style="margin:0"><button class="lockbtn" data-lock="${esc(s.id)}" title="${s.locked ? "ロック中。押すと、ロックを外します" : "押すと、この場面をロックします（一括の変更も、手での変更も、受け付けなくなります）"}">${s.locked ? "🔒" : "🔓"}</button><label class="mpick" title="チェックを入れて、上の「🎬 チェックした場面に動きをつける」を押すと、この場面にふさわしい動きを提案します" style="display:inline-flex;align-items:center;gap:4px;margin-right:6px;cursor:pointer"><input type="checkbox" data-mpick="${esc(s.id)}" ${M.pick.has(s.id) ? "checked" : ""} ${s.locked ? "disabled" : ""} style="width:18px;height:18px">🎬</label><button data-open="${esc(s.id)}" ${s.locked ? "disabled" : ""}>${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}${s.locked ? ' <span class="hint">ロック中</span>' : ""}
         ${isChg(s) ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
         ${enOf(s) ? `<button data-copyen="${esc(s.id)}" title="この場面のナレーションの英訳をコピーします">英訳をコピー</button>` : `<button data-makeen="${esc(s.id)}" title="OpenAIで、この場面のナレーションを英訳します（1円未満）">英訳を作る</button>`}
         <button data-copyja="${esc(s.id)}" title="この場面のナレーション（日本語）をコピーします">本文をコピー</button></div></div>`;
     grid.appendChild(el);
     if(S.open === s.id) el.appendChild(buildPanel(s));
   }
+  grid.querySelectorAll("[data-mpick]").forEach(b => b.onchange = () => { if(b.checked) M.pick.add(b.dataset.mpick); else M.pick.delete(b.dataset.mpick); mPickBtn(); });
   grid.querySelectorAll("[data-lock]").forEach(b => b.onclick = () => toggleLock(S.scenes.find(x => x.id === b.dataset.lock)));
   grid.querySelectorAll("[data-open]").forEach(b => b.onclick = () => { const sc0 = S.scenes.find(x => x.id === b.dataset.open); if(sc0 && sc0.locked){ dockMsg(LOCKED_MSG, "err"); return; } S.open = S.open === b.dataset.open ? null : b.dataset.open; render(); const o = document.querySelector(".card.open"); if(o) o.scrollIntoView({block: "nearest"}); });
   grid.querySelectorAll("[data-copyen]").forEach(b => b.onclick = () => copyText(enOf(S.scenes.find(x => x.id === b.dataset.copyen)), b));
@@ -1496,14 +1500,33 @@ $("#y-save").onclick = async () => {
 const G = {tracks: [], vals: {}, shown: 25, def: "", loaded: false, audio: null};
 const gMsg = (t, cls = "") => { const e = $("#g-msg"); e.textContent = t || ""; e.className = "msg " + cls; };
 const ordinalOf = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ""); return m ? Math.floor(Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000) + 719163 : 0; };
+// 曲の置き場: 本体は assets/audio/bgm（冒頭の自動の曲は、ここだけから選ばれる）。2026-11-01 社長「ポストの向こう側のBGMも引っ張ってきて」で、
+// assets/audio/bgm_candidates/<雰囲気>/（ポストの向こう側の曲。_excluded は除く）も、場面の指名で選べる（src/audio_mix.py bgm_library）
+const BGM_EXTRA = "assets/audio/bgm_candidates";
+const BGM_FILE = i => i.type === "file" && /\.(mp3|wav|m4a|ogg)$/i.test(i.name) && !/^bed_\d+\./i.test(i.name);
+const BGM_MOOD = {"1_シリアス": "シリアス（事件・重大事）", "2_中立": "中立（説明・経緯）", "3_ほのぼの": "ほのぼの（日常・良いニュース）", "4_笑い": "笑い（皮肉・ツッコミ）", "5_感動": "感動（結び・救い）", "6_怖い": "怖い（不安・不穏）"};
 async function loadTracks(){
-  const items = await listDir(`${GH_DIR}/assets/audio/bgm`);
-  G.tracks = items.filter(i => i.type === "file" && /\.(mp3|wav|m4a|ogg)$/i.test(i.name) && !/^bed_\d+\./i.test(i.name))
-    .map(i => ({name: i.name, stem: i.name.replace(/\.[^.]+$/, ""), sha: i.sha, size: i.size}))
-    .sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-  G.def = G.tracks.length ? G.tracks[ordinalOf(S.json.date) % G.tracks.length].stem : "";
+  const mk = (i, group) => ({name: i.name, stem: i.name.replace(/\.[^.]+$/, ""), sha: i.sha, size: i.size, group});
+  const byName = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+  const main = (await listDir(`${GH_DIR}/assets/audio/bgm`)).filter(BGM_FILE).map(i => mk(i, "")).sort(byName);
+  const seen = new Set(main.map(t => t.stem.toLowerCase())), extra = [];
+  for(const d of (await listDir(`${GH_DIR}/${BGM_EXTRA}`)).filter(i => i.type === "dir" && !i.name.startsWith("_")).sort(byName)){
+    for(const i of (await listDir(`${GH_DIR}/${BGM_EXTRA}/${d.name}`)).filter(BGM_FILE).sort(byName)){
+      const tr = mk(i, d.name); if(!seen.has(tr.stem.toLowerCase())){ seen.add(tr.stem.toLowerCase()); extra.push(tr); }   // 同じ曲が bgm にもあれば、そちらだけ
+    }
+  }
+  G.tracks = [...main, ...extra]; G.nMain = main.length;
+  G.def = main.length ? main[ordinalOf(S.json.date) % main.length].stem : "";                  // 冒頭の自動の曲は、本体の曲だけ
   G.loaded = true;
 }
+const gGroupLabel = g => g ? "ポストの向こう側の曲／" + (BGM_MOOD[g] || g) : "セカイ秒読みの曲";
+const gOptions = (sel, blank) => {
+  const groups = [...new Set(G.tracks.map(t => t.group))];
+  return (blank === undefined ? `<option value="">（指定しない）</option>` : blank) + groups.map(g => `<optgroup label="${esc(gGroupLabel(g))}">` + G.tracks.filter(t => t.group === g).map(t =>
+    `<option value="${esc(t.stem)}"${gCanon(sel) === t.stem ? " selected" : ""}>${esc(t.stem)}${gWarn(t) ? "　⚠政治の回は不可" : ""}</option>`).join("") + "</optgroup>").join("");
+};
+// OpenTracks の曲は、政治・宗教・思想に関わる回では使えない規約（台本の bgm_political が true の回）
+const gWarn = t => !!(S.json && S.json.bgm_political && /_OpenTracks/.test(t.stem));
 const gStem = v => String(v || "").replace(/\.[^.]+$/, "");
 const gIsTrack = v => G.tracks.some(t => t.stem.toLowerCase() === gStem(v).toLowerCase());
 const gCanon = v => { const t = G.tracks.find(x => x.stem.toLowerCase() === gStem(v).toLowerCase()); return t ? t.stem : ""; };
@@ -1519,17 +1542,17 @@ async function openBgm(){
   $("#bgm").style.display = ""; document.body.style.overflow = "hidden"; gMsg("");
   try{ await loadTracks(); }catch(e){ gMsg(e.message, "err"); return; }
   G.vals = {}; S.scenes.forEach(s => { if(s.raw.bgm) G.vals[s.id] = s.raw.bgm; }); G.shown = 25;
-  const opts = `<option value="">（指定しない）</option>` + G.tracks.map(t => `<option value="${esc(t.stem)}">${esc(t.stem)}</option>`).join("");
+  const opts = gOptions("");
   const scOpts = S.scenes.map(s => `<option value="${esc(s.id)}">${esc(s.id.replace("scene_", "#"))}</option>`).join("");
   $("#g-from").innerHTML = scOpts; $("#g-to").innerHTML = scOpts; $("#g-tr").innerHTML = opts.replace("（指定しない）", "曲を選ぶ");
-  $("#g-info").textContent = G.tracks.length ? `曲 ${G.tracks.length}本。この動画の冒頭は、自動で「${G.def}」になります。` : "このチャンネルには、BGMの曲（assets/audio/bgm）がありません。";
+  $("#g-info").textContent = G.tracks.length ? `曲 ${G.tracks.length}本（セカイ秒読みの曲 ${G.nMain}本＋ポストの向こう側の曲 ${G.tracks.length - G.nMain}本）。この動画の冒頭は、自動で「${G.def}」になります。` : "このチャンネルには、BGMの曲（assets/audio/bgm）がありません。";
   renderBgm();
 }
 function renderBgm(){
   const tb = $("#g-tracks"); tb.innerHTML = "";
   G.tracks.forEach(t => {
     const row = document.createElement("div"); row.style.cssText = "display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap";
-    row.innerHTML = `<button data-play="${esc(t.stem)}">▶ 試聴</button><span style="flex:1 1 200px;word-break:break-all">${esc(t.stem)}${t.stem === G.def ? ' <span class="hint">（この動画の自動の曲）</span>' : ""}</span>`;
+    row.innerHTML = `<button data-play="${esc(t.stem)}">${t.stem === G.loadingStem ? "読み込み中…（押すとやめる）" : t.stem === G.playing ? "■ 止める" : "▶ 試聴"}</button><span style="flex:1 1 200px;word-break:break-all">${esc(t.stem)}${t.stem === G.def ? ' <span class="hint">（この動画の自動の曲）</span>' : ""}${t.group ? ` <span class="hint">（ポストの向こう側／${esc(BGM_MOOD[t.group] || t.group)}）</span>` : ""}${gWarn(t) ? ' <span class="hint" style="color:var(--warn)">⚠政治・宗教の回は不可</span>' : ""}</span>`;
     tb.appendChild(row);
   });
   tb.querySelectorAll("[data-play]").forEach(b => b.onclick = () => playTrack(b));
@@ -1540,7 +1563,7 @@ function renderBgm(){
     const v = G.vals[s.id] || "", old = v && !gIsTrack(v);
     const el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px";
     el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc(s.id.replace("scene_", "#"))}</b>　${esc(s.text.slice(0, 40))}${s.text.length > 40 ? "…" : ""}</div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${s.locked ? "<span>🔒</span>" : ""}<select data-b="${esc(s.id)}" ${s.locked ? "disabled" : ""} style="flex:1 1 200px;width:auto"><option value="">（指定しない）</option>${old ? `<option value="${esc(v)}" selected>旧指定: ${esc(v)}（使われません）</option>` : ""}${opts.map(o => `<option value="${esc(o)}"${gCanon(v) === o ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${s.locked ? "<span>🔒</span>" : ""}<select data-b="${esc(s.id)}" ${s.locked ? "disabled" : ""} style="flex:1 1 200px;width:auto"><option value="">（指定しない）</option>${old ? `<option value="${esc(v)}" selected>旧指定: ${esc(v)}（使われません）</option>` : ""}${gOptions(v, "")}</select>
       <span class="hint">♪ ${esc(eff[s.id] || "（なし）")}${v && gIsTrack(v) ? "　← ここから切り替え" : ""}</span></div>`;
     sc.appendChild(el);
   });
@@ -1550,24 +1573,39 @@ function renderBgm(){
   $("#g-save").disabled = !gDirty();
   gMsg(gDirty() ? "変更があります。保存を押してください" : "");
 }
+// 試聴: 音は1つだけ。ボタンの表示は G.playing（再生中・読み込み中の曲）から毎回つくるので、画面が描き直されても、止めるボタンは効く
+function stopAudio(){
+  G.token = (G.token || 0) + 1;                       // 読み込み中だった試聴も、無かったことにする（あとから鳴り出さない）
+  if(G.audio){ try{ G.audio.pause(); G.audio.src = ""; }catch{} G.audio = null; }
+  if(G.url){ try{ URL.revokeObjectURL(G.url); }catch{} G.url = null; }
+  G.playing = ""; G.loadingStem = "";
+  gPlayLabels();
+}
+function gPlayLabels(){
+  document.querySelectorAll("[data-play]").forEach(b => { b.textContent = b.dataset.play === G.loadingStem ? "読み込み中…（押すとやめる）" : b.dataset.play === G.playing ? "■ 止める" : "▶ 試聴"; });
+}
 async function playTrack(btn){
-  const t = G.tracks.find(x => x.stem === btn.dataset.play); if(!t) return;
-  if(G.audio){ G.audio.pause(); G.audio = null; }
-  document.querySelectorAll("[data-play]").forEach(b => b.textContent = "▶ 試聴");
-  btn.textContent = "読み込み中…";
+  const stem = btn.dataset.play, t = G.tracks.find(x => x.stem === stem); if(!t) return;
+  if(G.playing === stem || G.loadingStem === stem){ stopAudio(); return; }      // 同じ曲のボタンは、止める
+  stopAudio();
+  const my = G.token; G.loadingStem = stem; gPlayLabels();
   try{
     const blob = await api(repoPath(`/git/blobs/${t.sha}`));
+    if(my !== G.token) return;                         // 読み込み中に、止める・別の曲を押した
     const bin = atob(blob.content.replace(/\n/g, "")), u8 = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
     const mime = /\.wav$/i.test(t.name) ? "audio/wav" : /\.m4a$/i.test(t.name) ? "audio/mp4" : /\.ogg$/i.test(t.name) ? "audio/ogg" : "audio/mpeg";
-    G.audio = new Audio(URL.createObjectURL(new Blob([u8], {type: mime})));
-    G.audio.onended = () => { btn.textContent = "▶ 試聴"; };
-    await G.audio.play(); btn.textContent = "■ 止める";
-    btn.onclick = () => { if(G.audio){ G.audio.pause(); G.audio = null; } btn.textContent = "▶ 試聴"; btn.onclick = () => playTrack(btn); };
-  }catch(e){ btn.textContent = "▶ 試聴"; gMsg(e.message, "err"); }
+    G.url = URL.createObjectURL(new Blob([u8], {type: mime}));
+    const a = new Audio(G.url); G.audio = a;
+    a.onended = () => { if(G.audio === a) stopAudio(); };
+    await a.play();
+    if(my !== G.token){ a.pause(); return; }
+    G.loadingStem = ""; G.playing = stem; gPlayLabels();
+  }catch(e){ if(my === G.token){ G.loadingStem = ""; gPlayLabels(); gMsg(e.message, "err"); } }
 }
 $("#b-bgm").onclick = openBgm;
 $("#g-more").onclick = () => { G.shown += 25; renderBgm(); };
 $("#g-close").onclick = () => {
+  stopAudio();
   if(G.loaded && S.json && gDirty() && !confirm("保存していない変更があります。閉じますか？")) return;
   if(G.audio){ G.audio.pause(); G.audio = null; }
   $("#bgm").style.display = "none"; document.body.style.overflow = "";
@@ -1677,11 +1715,11 @@ $("#c-run").onclick = async () => {
 
 // ── 動きを自動で当てはめる（2026-11-01 社長指示。src/anim_render.py の『動く図解』を、ナレーションに合わせて適材適所に当てはめる）──────────
 // 提案 = {scene: 場面ID, type: 図解の種類, data: その中身, why: 理由}。数字は、その場面のナレーションに出てくるものだけを使う。
-const M = {sug: [], busy: false};
+const M = {sug: [], busy: false, pick: new Set()};
 const MOTION_TYPES = {
   big_number: "大きな数字（0から増える）", compare: "比較（左右から入り、数字が0から増える）", cards: "カード（順に出る）", summary: "まとめ（順に出る）",
   column_chart: "縦棒（下から伸びる）", bar_chart: "横棒（左から伸びる）", line_chart: "折れ線（左から描かれる）", timeline: "年表（左から右へ）",
-  node_map: "ノード図（線が伸びる）", map_pin: "地図の点（チカチカ）", doc_pan: "論文（パン・ズーム）",
+  node_map: "ノード図（線が伸びる）", solar_system: "太陽系の並び（惑星が順に出て、1つを指す）", size_compare: "大きさ比べ（天体の円が育つ）", particle_field: "粒子と磁場（粒子が流れる）", crater_section: "クレーターの断面（光が届かない底に氷）", map_pin: "地図の点（チカチカ）", doc_pan: "論文（パン・ズーム）",
 };
 const mMsg = (t, cls = "") => { const e = $("#m-msg"); e.textContent = t || ""; e.className = "msg " + cls; };
 const mNorm = t => String(t == null ? "" : t).normalize("NFKC").replace(/,/g, "");
@@ -1693,6 +1731,8 @@ function mGrounded(sg, text){
   if(sg.type === "map_pin") (strip.pins || []).forEach(p => { delete p.x; delete p.y; });
   return mNums(strip).every(n => n === "0" || n === "100" || t.includes(n) || t.includes(String(parseFloat(n))));
 }
+const M_PLANETS = ["水星", "金星", "地球", "火星", "木星", "土星", "天王星", "海王星"];
+const M_BODIES = ["太陽", ...M_PLANETS.slice(0, 3), "月", ...M_PLANETS.slice(3), "冥王星"];
 const mStr = (v, max) => typeof v === "string" && v.trim() && v.length <= (max || 60);
 const mItems = (a, lo, hi, f) => Array.isArray(a) && a.length >= lo && a.length <= hi && a.every(f);
 function mValid(sg){
@@ -1706,37 +1746,110 @@ function mValid(sg){
     case "line_chart": return mItems(d.points, 2, 8, it => mStr(it.label, 14) && typeof it.value === "number");
     case "timeline": return mItems(d.events, 2, 6, e => mStr(e.date, 16) && mStr(e.label, 16));
     case "node_map": return mStr(d.center, 16) && mItems(d.nodes, 3, 8, n => mStr(n, 12));
+    case "solar_system": return M_PLANETS.includes(d.highlight) && (d.headline === undefined || mStr(d.headline, 30)) && (d.note === undefined || mStr(d.note, 30));
+    case "size_compare": return mItems(d.items, 2, 4, it => mStr(it.label, 8) && (M_BODIES.includes(it.label) || (typeof it.diameter === "number" && it.diameter > 0))) && (d.headline === undefined || mStr(d.headline, 30)) && (d.note === undefined || mStr(d.note, 30));
+    case "particle_field": return mItems(d.items, 1, 3, it => M_BODIES.includes(it.label) && ["strong", "weak"].includes(it.field) && (it.note === undefined || mStr(it.note, 40))) && (d.headline === undefined || mStr(d.headline, 30));
+    case "crater_section": return ["headline", "sun", "shadow", "ice"].every(k => d[k] === undefined || mStr(d[k], 30));
     case "map_pin": return mItems(d.pins, 1, 3, p => typeof p.x === "number" && typeof p.y === "number" && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1);
     case "doc_pan": return mStr(d.title, 80) && mItems(d.lines, 3, 6, l => mStr(l, 90)) && Number.isInteger(d.highlight) && d.highlight >= 0 && d.highlight < d.lines.length;
   }
   return false;
 }
-function mSkip(sc){
+function mSkip(sc, force){
   const raw = sc.raw, v = vis(sc), lay = (raw.slide || {}).layout;
   if(sc.locked) return "🔒ロック中";
   if(["hook", "opening", "cta"].includes(raw.type)) return "冒頭・あいさつ・締めは、そのまま";
   if(kindOf(sc) === "clip") return "動画クリップの場面";
+  if(force) return "";    // 社長がチェックした場面は、すでに動きがあっても、選び直せる
   if(v.anim || (raw.slide || {}).anim || v.map_pin) return "すでに動きがある";
   if(lay === "quote" || lay === "cta" || lay === "chapter") return "引用・章の扉・締め";
   return "";
 }
 // ルールで見つける（数字が1つ・2つだけの、短い場面）
 const M_UNIT = "(?:%|パーセント|兆円|億円|万円|[億万兆]?(?:トン|人|頭|件|個|種|度|℃|日|年|か月|週間|メートル以上|メートル|キロ|倍|分|時間|円|秒))";
-function mRules(){
+const M_NUMRE = new RegExp("(\\d[\\d]*(?:\\.\\d+)?)" + M_UNIT, "g");
+const M_LABELED = new RegExp("(?<!\\d)([^\\s、。0-9][^\\s、。]{0,9}?)(?:は|が|も)、?約?(マイナス)?(\\d+(?:\\.\\d+)?)(" + M_UNIT + ")(?![がはもの])", "g");   // 「昼が約88日」「公転は約88日」
+const M_SOLAR = /太陽(?:に|から)(?:いちばん|一番)?(?:近い|遠い)|何番目|番目の惑星|惑星の(?:並び|順)|太陽系で(?:いちばん|一番)(?:大きい|小さい|重い)|太陽系の(?:第|\d)/;
+const M_SIZE = /(?:大きさ|サイズ|直径)は[、]?([^\s、。]{1,4}?)(?:より|の)|([^\s、。]{1,4}?)(?:より|と比べて?)[、]?(?:ひとまわり|一回り|だいぶ|はるかに|少し)?(?:大きい|小さい)/;
+// 数字が出てくる場面を数える（単位つき）
+// 「1年」「1日」は、数としては数えない（「あなたの1年」「1日が」のような言い回し）。年号（1000年以上）も、量ではないので数えない
+const mQty = m => !(m[1] === "1" && /^(?:年|日)/.test(m[0].slice(1))) && !(/^年/.test(m[0].slice(m[1].length)) && +m[1] >= 1000);
+const mMatches = (text, re) => { const n = mNorm(text); return Array.from(n.matchAll(re)).filter(m => mQty(m) && n[m.index - 1] !== "月"); };   // 「11月21日」の21日は、量ではない
+const mNumCount = text => mMatches(text, M_NUMRE).length;
+// 数字の見出し: 数字の手前の言葉（なければ最初の文）
+function mLead(text, numtext){
+  const sen = text.split(/[。！？]/).find(x => mNorm(x).includes(numtext)) || text.split(/[。！？]/)[0], n = mNorm(sen);
+  const pre = sen.slice(0, Math.max(n.indexOf(numtext), 0)).replace(/(?:約|は|が|も|、)+$/, "").replace(/[、]/g, "");
+  return (pre.length >= 3 ? pre : sen.replace(/[、]/g, "")).slice(0, 22);
+}
+function mRules(only){
   const out = [];
-  for(const sc of S.scenes){
-    if(mSkip(sc)) continue;
+  S.scenes.forEach((sc, idx) => {
+    if(only ? !only.has(sc.id) || mSkip(sc, true) : mSkip(sc)) return;
     const t = mNorm(sc.text), sentences = (sc.text.match(/[。！？]/g) || []).length;
-    const ms = Array.from(t.matchAll(new RegExp("(\\d[\\d]*(?:\\.\\d+)?)" + M_UNIT, "g")));
-    if(ms.length === 2){
-      const m = t.match(new RegExp("([^\\s、。]{1,6})は、?約?(\\d+(?:\\.\\d+)?" + M_UNIT + ")。?、?\\s*([^\\s、。]{1,6})は、?約?(\\d+(?:\\.\\d+)?" + M_UNIT + ")"));
-      if(m) out.push({scene: sc.id, type: "compare", why: "2つの数字を、左右に並べる", data: {headline: m[1] + "と" + m[3], left: {label: m[1], value: m[2]}, right: {label: m[3], value: m[4]}}});
-    } else if(ms.length === 1 && sentences <= 2 && sc.text.length <= 70){
-      const m = ms[0], unit = m[0].slice(m[1].length);
-      const first = sc.text.split(/[。！？]/)[0].replace(/[、]/g, "").slice(0, 22);
-      out.push({scene: sc.id, type: "big_number", why: "数字が1つだけの短い場面。大きく見せる", data: {number: m[1], unit, label: first}});
+    // 0) 太陽の粒子と磁場 / 極のクレーターの断面
+    if(/磁場|太陽風|粒子/.test(t) && /弱く|強く|受けやすい|そらす|届/.test(t) && /粒子|太陽風/.test(t)){
+      let subj = M_PLANETS.find(n => t.includes(n) && n !== "地球");
+      for(let k = idx - 1; !subj && k >= Math.max(0, idx - 4); k--) subj = M_PLANETS.find(n => mNorm(S.scenes[k].text).includes(n) && n !== "地球");
+      if(subj && !/\d/.test(t)){
+        out.push({scene: sc.id, type: "particle_field", why: "太陽の粒子と磁場の強さを、流れで見せる", data: {headline: "太陽から来る粒子", items: [{label: "地球", field: "strong", note: "磁場が強い：粒子をそらす"}, {label: subj, field: "weak", note: "磁場が弱い：粒子を受けやすい"}]}}); return;
+      }
     }
-  }
+    if(/クレーター/.test(t) && /氷|影|当たらず|光が届/.test(t) && !/\d/.test(t)){
+      out.push({scene: sc.id, type: "crater_section", why: "クレーターの断面で、影の底の氷を見せる", data: {headline: "極のクレーターの断面"}}); return;
+    }
+    // 1) 惑星の位置・並び
+    const pl = M_PLANETS.find(n => t.includes(n));
+    if(pl && M_SOLAR.test(t) && !/\d/.test(t.replace(/38|1年|1日/g, ""))){
+      out.push({scene: sc.id, type: "solar_system", why: "惑星の並びの中での位置を見せる", data: {headline: "太陽系の惑星の並び", highlight: pl}}); return;
+    }
+    // 2) 天体の大きさ比べ（比べる相手の天体名が、ナレーションにある。主役は、直前の場面までに出た惑星）
+    if(M_SIZE.test(t)){
+      const other = M_BODIES.filter(n => n !== "太陽" && t.includes(n))[0];
+      let subj = M_PLANETS.find(n => t.includes(n) && n !== other);
+      for(let k = idx - 1; !subj && k >= Math.max(0, idx - 3); k--) subj = M_PLANETS.find(n => mNorm(S.scenes[k].text).includes(n) && n !== other);
+      if(other && subj && !/\d/.test(t)){
+        out.push({scene: sc.id, type: "size_compare", why: "大きさを、実際の比で見せる", data: {headline: `${subj}と${other}の大きさ`, items: [{label: other}, {label: subj}]}}); return;
+      }
+    }
+    // 3) 数字が出る場面
+    const ms = mMatches(t, M_NUMRE);
+    if(!ms.length) return;
+    const lab = Array.from(t.matchAll(M_LABELED)).filter(m => mQty([m[3] + m[4], m[3]])).map(m => ({label: m[1], num: (m[2] ? "-" : "") + m[3], unit: m[4]}));
+    const seen = new Set(), items = lab.filter(x => !seen.has(x.label) && seen.add(x.label));
+    if(items.length === 2 && ms.length === 2){
+      const [a, b] = items;
+      out.push({scene: sc.id, type: "compare", why: "2つの数字を、左右に並べる", data: {headline: a.label + "と" + b.label, left: {label: a.label, value: a.num + a.unit}, right: {label: b.label, value: b.num + b.unit}}}); return;
+    }
+    if(items.length >= 3 && items.length <= 6 && ms.length === items.length && new Set(items.map(x => x.unit)).size === 1){
+      out.push({scene: sc.id, type: items.some(x => parseFloat(x.num) < 0) ? "column_chart" : "bar_chart", why: "3つ以上の数字を、棒で比べる", data: {headline: sc.text.split(/[。！？]/)[0].slice(0, 16), items: items.map(x => ({label: x.label, value: parseFloat(x.num), unit: x.unit}))}}); return;
+    }
+    // 文ごとに「ラベル＋数字」を拾う（「…まで、約176日」のようにラベルが文の頭にない文も）
+    const per = [];
+    for(const sen of t.split(/[。！？]/)){
+      const m = mMatches(sen, M_NUMRE);
+      if(m.length !== 1) continue;
+      const before = sen.slice(0, m[0].index).replace(/約$/, "").replace(/(?:は|が|も)?[、]?$/, "");
+      let label = (before.split(/[、]/).pop() || "").replace(/^(つまり|この組み合わせで|そのため|だから)/, "");
+      if(label.length > 8){ const k = Math.max(label.lastIndexOf("に"), label.lastIndexOf("を"), label.lastIndexOf("が")); label = (k >= 0 && label.length - k - 1 >= 2 ? label.slice(k + 1) : label.slice(-8)).slice(-8); }
+      if(label) per.push({label, num: m[0][1], unit: m[0][0].slice(m[0][1].length)});
+    }
+    if(per.length >= 3 && per.length <= 6 && new Set(per.map(x => x.unit)).size === 1){
+      out.push({scene: sc.id, type: "bar_chart", why: "3つの数字を、棒で比べる", data: {headline: "", items: per.map(x => ({label: x.label, value: parseFloat(x.num), unit: x.unit}))}}); return;
+    }
+    if(items.length === 2 && items[0].unit === items[1].unit){     // 数字が他にもある場面（「1日が2年分」など）は、ラベルのついた2つだけを並べる
+      const [a, b] = items;
+      out.push({scene: sc.id, type: "compare", why: "2つの数字を、左右に並べる", data: {headline: a.label + "と" + b.label, left: {label: a.label, value: a.num + a.unit}, right: {label: b.label, value: b.num + b.unit}}}); return;
+    }
+    if(items.length === 1 && ms.length === 1 && sentences <= 4){
+      const x = items[0];
+      out.push({scene: sc.id, type: "big_number", why: "数字の場面。大きく見せる", data: {number: x.num, unit: x.unit, label: mLead(sc.text, x.num + x.unit)}}); return;
+    }
+    if(!items.length && ms.length === 1 && sentences <= 2 && sc.text.length <= 70){
+      const m = ms[0], unit = m[0].slice(m[1].length);
+      out.push({scene: sc.id, type: "big_number", why: "数字が1つだけの短い場面。大きく見せる", data: {number: m[1], unit, label: mLead(sc.text, m[0])}});
+    }
+  });
   return out;
 }
 const M_SYSTEM = `あなたは、YouTube解説動画の演出担当です。ナレーションの各場面を読み、「動く図解」をつけるとよい場面を選んで、JSONで返します。
@@ -1750,36 +1863,45 @@ const M_SYSTEM = `あなたは、YouTube解説動画の演出担当です。ナ�
 - line_chart: {"headline":"…","note":"…","points":[{"label":"今","value":100,"unit":""}]}  2〜8点。時間で変わる数
 - timeline: {"headline":"…","events":[{"date":"2018年10月","label":"打ち上げ"}]}  2〜6件。日付つきの出来事の流れ
 - node_map: {"headline":"…","center":"基地","nodes":["水","空気","電気"]}  3〜8個。中心から広がる関係
+- solar_system: {"headline":"太陽系の惑星の並び","highlight":"水星","note":"太陽にいちばん近い"}  太陽から順に惑星を並べて、1つの惑星の位置を指す場面。highlight は 水星・金星・地球・火星・木星・土星・天王星・海王星 のどれか。note は省略可（数字は書かない）
+- size_compare: {"headline":"水星と月の大きさ","note":"月より、ひとまわり大きい","items":[{"label":"月"},{"label":"水星"}]}  天体の大きさ比べ。2〜4個。label は 太陽・水星・金星・地球・月・火星・木星・土星・天王星・海王星・冥王星 のどれか（直径は自動で入る。数字は書かない）
+- particle_field: {"headline":"太陽から来る粒子","items":[{"label":"地球","field":"strong","note":"磁場が強い：粒子をそらす"},{"label":"水星","field":"weak","note":"磁場が弱い：粒子を受けやすい"}]}  太陽の粒子（太陽風）と磁場・大気の強弱を比べる場面。1〜3天体。field は strong（粒子をそらす）か weak（粒子が表面に届く）。数字は書かない
+- crater_section: {"headline":"北極のクレーターの断面"}  極のクレーターで、光が届かず氷がある場面（断面図。数字は書かない）
 - map_pin: {"headline":"…","source":"…","pins":[{"x":0.5,"y":0.4,"label":"…","sub":"…"}]}  場所を指す場面（写真・生成画像の場面だけ）。x,yは画像の0〜1の位置の見当
 - doc_pan: {"label":"…","title":"論文や資料の題","meta":"掲載誌・年","lines":["ナレーションの内容を言い換えた文",…],"highlight":2,"source":"出典"}  論文・報告書に言及する場面だけ。lines は3〜5文で、highlight は強調する行の番号（0から）
 決まり:
 - **動く図解を優先する。場面にすでに画像が設定されていても（image が true でも）、動く図解のほうがふさわしければ、選ぶ。** 画像の有無は、選ぶ理由にも、外す理由にもしない。数字・比較・時間の流れ・場所・論文・列挙の場面は、画像より動く図解を選ぶ。
-- 上の11種類を、できるだけ一通り使う（ふさわしい場面があれば、各種類を1回は使う）。選ぶのは、全場面の3割まで。ふさわしくない場面は、選ばない。同じ種類を続けない。
+- **ナレーションに数字（日数・温度・割合・距離・年数・個数など）が出る場面は、原則すべて選ぶ。** 場面ごとに numbers（数字の一覧）を付けてある。numbers が空でない場面は、数字の数に合わせて選ぶ: 1つ→big_number、2つ→compare、3つ以上→bar_chart か column_chart、時間で変わる数→line_chart、年月日の流れ→timeline。数字が出るのに選ばないときは、選ばない理由が「すでに動きがある」「冒頭・締め」のどちらかだけ。
+- 惑星の並び・位置を言う場面は solar_system、天体の大きさを比べる場面は size_compare を選ぶ（主役の天体は、直前の場面から読み取る）。
+- 上の15種類を、できるだけ一通り使う（ふさわしい場面があれば、各種類を1回は使う）。選ぶ数に上限は付けない（ふさわしい場面は全部選ぶ。ただし数字も比較も場所も出ない場面は選ばない）。同じ種類は、3場面続けて使わない（2場面続くのはよい）。
 - type が hook・opening・cta の場面は選ばない。
 - 数字は、その場面のナレーションに出てくるものだけを使う。出てこない数字や固有名詞を作らない。（目盛りの0と100だけは可）
 - ナレーションの言い方を保つ。断定しすぎない。
 返す形: {"suggestions":[{"n":場面の番号,"type":"種類","data":{…},"why":"選んだ理由（20字ほど）"}]}`;
-async function mAsk(){
+const M_PICK_NOTE = `
+【今回は、社長が場面を指定しています】pick が true の場面だけに、提案を返す（pick が false の場面は、前後の文脈として読むだけ。提案しない）。
+pick が true の場面には、**必ず1つずつ、いちばんふさわしい種類を選ぶ**（数に上限は無い。すでに動きがある場面も、選び直してよい）。数字が無い場面でも、構造・位置・大きさ・流れ・比較・列挙などから、ふさわしい種類を探す（node_map・cards・summary・timeline・solar_system・size_compare・particle_field・crater_section など）。どうしても当てはまる種類が無い場合だけ、その場面は返さない。`;
+async function mAsk(picks){
   if(!oa.apiKey) throw new Error("OpenAI のAPIキーが未設定です（⚙ 接続設定）。『ルールで提案する』なら、キー無しで使えます");
-  const rows = S.scenes.map((sc, i) => ({n: i + 1, type: sc.raw.type, kind: kindOf(sc), image: !!(S.assets[sc.id] || S.clips[sc.id] || sc.staged || sc.stagedClip), skip: mSkip(sc) || undefined, text: sc.text}));
+  const rows = S.scenes.map((sc, i) => ({n: i + 1, type: sc.raw.type, kind: kindOf(sc), image: !!(S.assets[sc.id] || S.clips[sc.id] || sc.staged || sc.stagedClip), pick: picks ? picks.has(sc.id) : undefined, skip: mSkip(sc, !!picks) || undefined, numbers: mMatches(sc.text, M_NUMRE).map(m => m[0]), text: sc.text}));
   const r = await fetch("https://api.openai.com/v1/chat/completions", {method: "POST",
     headers: {"Content-Type": "application/json", "Authorization": "Bearer " + oa.apiKey},
     body: JSON.stringify({model: "gpt-4o-mini", temperature: 0.2, response_format: {type: "json_object"}, messages: [
-      {role: "system", content: M_SYSTEM}, {role: "user", content: JSON.stringify({scenes: rows})}]})}).catch(() => { throw new Error("OpenAIに接続できません（通信状態・ブラウザの拡張機能を確認してください）"); });
+      {role: "system", content: M_SYSTEM + (picks ? M_PICK_NOTE : "")}, {role: "user", content: JSON.stringify({scenes: rows})}]})}).catch(() => { throw new Error("OpenAIに接続できません（通信状態・ブラウザの拡張機能を確認してください）"); });
   const j = await r.json().catch(() => null);
   if(!r.ok) throw new Error(`OpenAI ${r.status}: ${(j && j.error && j.error.message || r.statusText).slice(0, 160)}`);
   const out = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
   let parsed; try{ parsed = JSON.parse(out); }catch{ throw new Error("提案を読み取れませんでした。もう一度押してください"); }
-  return (parsed.suggestions || []).map(x => ({scene: (S.scenes[(x.n | 0) - 1] || {}).id, type: x.type, data: x.data, why: x.why || ""}));
+  return (parsed.suggestions || []).map(x => ({scene: (S.scenes[(x.n | 0) - 1] || {}).id, type: x.type, data: x.data, why: x.why || ""})).filter(x => !picks || picks.has(x.scene));
 }
-function mVet(list){
+function mVet(list, force){
   const ok = [], dropped = [];
   const used = new Set();
   for(const sg of list){
     const sc = S.scenes.find(x => x.id === sg.scene);
     if(!sc){ dropped.push("場面が見つかりません"); continue; }
     if(!MOTION_TYPES[sg.type]){ dropped.push(`#${sc.id.replace("scene_", "")}: 知らない種類`); continue; }
-    if(mSkip(sc)){ dropped.push(`#${sc.id.replace("scene_", "")}: ${mSkip(sc)}`); continue; }
+    if(mSkip(sc, force)){ dropped.push(`#${sc.id.replace("scene_", "")}: ${mSkip(sc, force)}`); continue; }
     if(sg.type === "map_pin" && !["photo", "generated"].includes(kindOf(sc))){ dropped.push(`#${sc.id.replace("scene_", "")}: 地図の点は、写真の場面だけ`); continue; }
     if(!mValid(sg)){ dropped.push(`#${sc.id.replace("scene_", "")}: 形が合わない`); continue; }
     if(!mGrounded(sg, sc.text)){ dropped.push(`#${sc.id.replace("scene_", "")}: ナレーションに無い数字`); continue; }
@@ -1799,6 +1921,10 @@ function mSummary(sg){
     case "line_chart": return d.points.map(i => `${i.label} ${i.value}`).join(" → ");
     case "timeline": return d.events.map(e => `${e.date} ${e.label}`).join(" → ");
     case "node_map": return `${d.center} → ${d.nodes.join("・")}`;
+    case "solar_system": return `太陽から順に惑星を並べ、${d.highlight}を指す${d.note ? "（" + d.note + "）" : ""}`;
+    case "size_compare": return d.items.map(i => i.label).join(" と ") + "の大きさを、実際の比で並べる" + (d.note ? "（" + d.note + "）" : "");
+    case "particle_field": return d.items.map(i => `${i.label}（磁場が${i.field === "strong" ? "強い" : "弱い"}）`).join(" ／ ") + "に、太陽の粒子が流れる";
+    case "crater_section": return "極のクレーターの断面。光は縁をかすめ、影の底に氷が光る";
     case "map_pin": return d.pins.map(p => p.label || "（点）").join("・") + "（画像の上に点）";
     case "doc_pan": return `${d.title}（${(d.lines[d.highlight] || "").slice(0, 30)}…を強調）`;
   }
@@ -1852,13 +1978,36 @@ function openMotion(){
   $("#motion").style.display = ""; document.body.style.overflow = "hidden";
 }
 $("#b-motion").onclick = openMotion;
+function mPickBtn(){ const b = $("#b-mpick"); if(b) b.textContent = `🎬 チェックした場面に動きをつける（${M.pick.size}）`; }
+async function runPicked(){
+  const ids = new Set(S.scenes.filter(s => M.pick.has(s.id) && !s.locked).map(s => s.id));
+  if(!ids.size){ setMsg("場面カードの🎬にチェックを入れてから、押してください", "err"); return; }
+  openMotion(); M.busy = true; $("#m-ai").disabled = true; $("#m-stat").textContent = `チェックした${ids.size}場面を、AIが読んでいます…`;
+  try{
+    let ai = {ok: [], dropped: []};
+    try{ ai = mVet(await mAsk(ids), true); }catch(e){ mMsg(e.message, "err"); }                    // AIが使えなくても、ルールで探す
+    const have = new Set(ai.ok.map(x => x.scene));
+    const fill = mVet(mRules(new Set([...ids].filter(id => !have.has(id)))), true);
+    const ok = [...ai.ok, ...fill.ok].sort((a, b) => S.scenes.findIndex(x => x.id === a.scene) - S.scenes.findIndex(x => x.id === b.scene));
+    const none = [...ids].filter(id => !ok.some(x => x.scene === id)).map(id => "#" + id.replace("scene_", ""));
+    mShow({ok, dropped: [...ai.dropped, ...fill.dropped]}, `チェックした${ids.size}場面`);
+    if(none.length) mMsg($("#m-msg").textContent + `　ふさわしい動きが見つからなかった場面: ${none.join("、")}`, ok.length ? "ok" : "");
+  }catch(e){ mMsg(e.message, "err"); }
+  M.busy = false; $("#m-ai").disabled = false; mRefresh();
+}
 $("#m-close").onclick = () => { $("#motion").style.display = "none"; document.body.style.overflow = ""; };
 $("#m-all").onclick = () => { M.sug.forEach(x => x.on = true); renderMotion(); };
 $("#m-none").onclick = () => { M.sug.forEach(x => x.on = false); renderMotion(); };
 $("#m-rule").onclick = () => { mShow(mVet(mRules()), "ルール"); };
 $("#m-ai").onclick = async () => {
   M.busy = true; $("#m-ai").disabled = true; $("#m-stat").textContent = "AIが全場面を読んでいます…（約20秒）"; mMsg("");
-  try{ mShow(mVet(await mAsk()), "AI"); }
+  try{
+    const ai = mVet(await mAsk());
+    const have = new Set(ai.ok.map(x => x.scene));                       // AIが選ばなかった場面でも、数字・惑星の並び・大きさ比べがあれば、ルールで補う
+    const fill = mVet(mRules().filter(x => !have.has(x.scene)));
+    const merged = {ok: [...ai.ok, ...fill.ok].sort((a, b) => S.scenes.findIndex(x => x.id === a.scene) - S.scenes.findIndex(x => x.id === b.scene)), dropped: [...ai.dropped, ...fill.dropped]};
+    mShow(merged, fill.ok.length ? `AI＋ルール（AIが見逃した${fill.ok.length}場面をルールで補いました）` : "AI");
+  }
   catch(e){ mMsg(e.message, "err"); $("#m-stat").textContent = ""; }
   M.busy = false; $("#m-ai").disabled = false; mRefresh();
 };
