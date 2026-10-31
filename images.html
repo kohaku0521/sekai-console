@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 10:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 11:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -1753,14 +1753,15 @@ const M_SYSTEM = `あなたは、YouTube解説動画の演出担当です。ナ�
 - map_pin: {"headline":"…","source":"…","pins":[{"x":0.5,"y":0.4,"label":"…","sub":"…"}]}  場所を指す場面（写真・生成画像の場面だけ）。x,yは画像の0〜1の位置の見当
 - doc_pan: {"label":"…","title":"論文や資料の題","meta":"掲載誌・年","lines":["ナレーションの内容を言い換えた文",…],"highlight":2,"source":"出典"}  論文・報告書に言及する場面だけ。lines は3〜5文で、highlight は強調する行の番号（0から）
 決まり:
-- 選ぶのは、全場面の2割まで。ふさわしくない場面は、選ばない。同じ種類を続けない。
+- **動く図解を優先する。場面にすでに画像が設定されていても（image が true でも）、動く図解のほうがふさわしければ、選ぶ。** 画像の有無は、選ぶ理由にも、外す理由にもしない。数字・比較・時間の流れ・場所・論文・列挙の場面は、画像より動く図解を選ぶ。
+- 上の11種類を、できるだけ一通り使う（ふさわしい場面があれば、各種類を1回は使う）。選ぶのは、全場面の3割まで。ふさわしくない場面は、選ばない。同じ種類を続けない。
 - type が hook・opening・cta の場面は選ばない。
 - 数字は、その場面のナレーションに出てくるものだけを使う。出てこない数字や固有名詞を作らない。（目盛りの0と100だけは可）
 - ナレーションの言い方を保つ。断定しすぎない。
 返す形: {"suggestions":[{"n":場面の番号,"type":"種類","data":{…},"why":"選んだ理由（20字ほど）"}]}`;
 async function mAsk(){
   if(!oa.apiKey) throw new Error("OpenAI のAPIキーが未設定です（⚙ 接続設定）。『ルールで提案する』なら、キー無しで使えます");
-  const rows = S.scenes.map((sc, i) => ({n: i + 1, type: sc.raw.type, kind: kindOf(sc), skip: mSkip(sc) || undefined, text: sc.text}));
+  const rows = S.scenes.map((sc, i) => ({n: i + 1, type: sc.raw.type, kind: kindOf(sc), image: !!(S.assets[sc.id] || S.clips[sc.id] || sc.staged || sc.stagedClip), skip: mSkip(sc) || undefined, text: sc.text}));
   const r = await fetch("https://api.openai.com/v1/chat/completions", {method: "POST",
     headers: {"Content-Type": "application/json", "Authorization": "Bearer " + oa.apiKey},
     body: JSON.stringify({model: "gpt-4o-mini", temperature: 0.2, response_format: {type: "json_object"}, messages: [
@@ -1810,7 +1811,7 @@ function renderMotion(){
     const el = document.createElement("label");
     el.style.cssText = "display:block;border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px;cursor:pointer";
     el.innerHTML = `<div style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" data-i="${i}" ${sg.on ? "checked" : ""} style="width:20px;height:20px;margin-top:3px">
-      <div style="flex:1;min-width:0"><div><b>${esc(sc.id.replace("scene_", "#"))}</b>　<span style="color:var(--accent)">${esc(MOTION_TYPES[sg.type])}</span>　<span class="hint">（いまは: ${esc(({photo: "写真", generated: "生成画像", slide: "文字スライド", data: "図解", clip: "動画クリップ"})[kindOf(sc)] || kindOf(sc))}）</span></div>
+      <div style="flex:1;min-width:0"><div><b>${esc(sc.id.replace("scene_", "#"))}</b>　<span style="color:var(--accent)">${esc(MOTION_TYPES[sg.type])}</span>　<span class="hint">（いまは: ${esc(({photo: "写真", generated: "生成画像", slide: "文字スライド", data: "図解", clip: "動画クリップ"})[kindOf(sc)] || kindOf(sc))}${S.assets[sc.id] || S.clips[sc.id] ? "・画像あり" : ""}）</span>${(S.assets[sc.id] || S.clips[sc.id]) && sg.type !== "map_pin" ? ' <span class="hint" style="color:var(--warn)">画像より動く図解を優先</span>' : ""}</div>
       <div class="hint" style="margin:3px 0">${esc(sc.text.slice(0, 70))}${sc.text.length > 70 ? "…" : ""}</div>
       <div style="font-size:14px;line-height:1.5">${esc(mSummary(sg))}</div>
       ${sg.why ? `<div class="hint" style="margin-top:2px">理由: ${esc(sg.why)}</div>` : ""}</div></div>`;
@@ -1864,7 +1865,7 @@ $("#m-ai").onclick = async () => {
 $("#m-save").onclick = async () => {
   if(!ghReady()){ mMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
   const picks = M.sug.filter(x => x.on && !(S.scenes.find(y => y.id === x.scene) || {}).locked); if(!picks.length) return;
-  if(!confirm(`${picks.length}場面に、動く図解を書き込みます（台本を保存します）。\n写真・生成画像の場面は、図解に置き換わります（地図の点だけは、写真の上に重なります）。元の台本は、履歴から戻せます。よろしいですか？`)) return;
+  if(!confirm(`${picks.length}場面に、動く図解を書き込みます（台本を保存します）。\n画像が設定済みの場面も、動く図解を優先して置き換わります（設定済みの画像ファイルは消さず、残ります。地図の点だけは、画像の上に重なります）。元の台本は、履歴から戻せます。よろしいですか？`)) return;
   const json = JSON.parse(JSON.stringify(S.json));
   picks.forEach(sg => mApply(json, sg));
   M.busy = true; $("#m-save").disabled = true; mMsg("保存しています…");
