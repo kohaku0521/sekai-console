@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 17:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 18:30</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -436,7 +436,7 @@ async function loadAssets(){
   const pvItems = await listDir(`${GH_DIR}/assets/slide_previews/${S.stem}`);
   for(const i of pvItems) if(/^scene_\d+\.mp4$/.test(i.name)) S.pvMotion[i.name.replace(/\.mp4$/, "")] = {size: i.size, sha: i.sha, name: i.name};   // 動く図解の、動きの確認用の動画
   for(const i of pvItems) if(/^scene_\d+\.jpg$/.test(i.name)) S.prev[i.name.replace(/\.jpg$/, "")] = {size: i.size, sha: i.sha, name: i.name, path: i.path || `${GH_DIR}/assets/slide_previews/${S.stem}/${i.name}`};
-  for(const i of imgs) if(/\.(png|jpe?g|webp)$/i.test(i.name)) S.assets[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, name: i.name, path: i.path || `${GH_DIR}/assets/images/generated/${S.stem}/${i.name}`};
+  for(const i of imgs) if(/\.(png|jpe?g|webp)$/i.test(i.name)) S.assets[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, sha: i.sha, name: i.name, path: i.path || `${GH_DIR}/assets/images/generated/${S.stem}/${i.name}`};
   for(const i of clips) if(/\.mp4$/i.test(i.name)) S.clips[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, name: i.name};
 }
 
@@ -737,6 +737,9 @@ function motionOf(s){
   if(v.kind === "slide" && sl.anim && sl.layout) return {type: sl.layout, data: sl};
   return null;
 }
+// 動く図解（図・グラフ・スライド）の場面でも、画像を背景に敷ける（2026-11-01 社長指示）。台本の visual.bg に入り、場面の画像ファイルを、図の後ろに暗くして敷く
+const bgOk = s => !!motionOf(s) && ["data", "slide"].includes(kindOf(s));
+const hasBg = s => bgOk(s) && s.action !== "nobg" && (!!s.staged || (!!vis(s).bg && !!S.assets[s.id]));
 const motionLabel = s => { const m = motionOf(s); return m ? (MOTION_TYPES[m.type] || m.type) : ""; };
 function currentOf(s){
   if(s.stagedClip) return {url: null, label: "動画クリップに変更"};
@@ -815,17 +818,18 @@ function render(){
     const el = document.createElement("div");
     el.className = "card" + (isChg(s) ? " changed" : "") + (S.open === s.id ? " open" : "") + (s.locked ? " locked" : "");
     el.innerHTML = `
-      <div class="thumb">${motionOf(s) && !s.stagedClip && !s.staged ? motionThumb(s) : s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
+      <div class="thumb">${motionOf(s) && !s.stagedClip && (!s.staged || bgOk(s)) ? motionThumb(s) : s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
         <span class="badge ${isChg(s) ? "ch" : ""}" title="場面ID: ${esc(s.id)}">${s.locked ? "🔒 " : ""}${esc(numOf(s.id))} · ${esc(kindOf(s))}${motionOf(s) && !s.stagedClip && !s.staged ? " · 🎬動く図解" : approx ? (isStale(s) ? " · この文字で表示（目安・確認画像は未更新）" : " · この文字で表示（目安）") : cur.label && (cur.url || cur.asset || s.stagedClip) ? " · " + esc(cur.label) : ""}</span></div>
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
-        <div class="row" style="margin:0"><button class="lockbtn" data-lock="${esc(s.id)}" title="${s.locked ? "ロック中。押すと、ロックを外します" : "押すと、この場面をロックします（一括の変更も、手での変更も、受け付けなくなります）"}">${s.locked ? "🔒" : "🔓"}</button><label class="mpick" title="チェックを入れて、上の「🎬 チェックした場面に動きをつける」を押すと、この場面にふさわしい動きを提案します" style="display:inline-flex;align-items:center;gap:4px;margin-right:6px;cursor:pointer"><input type="checkbox" data-mpick="${esc(s.id)}" ${M.pick.has(s.id) ? "checked" : ""} ${s.locked ? "disabled" : ""} style="width:18px;height:18px">🎬</label><button data-open="${esc(s.id)}" ${s.locked ? "disabled" : ""}>${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}${s.locked ? ' <span class="hint">ロック中</span>' : ""}
+        <div class="row" style="margin:0"><button class="lockbtn" data-lock="${esc(s.id)}" title="${s.locked ? "ロック中。押すと、ロックを外します" : "押すと、この場面をロックします（一括の変更も、手での変更も、受け付けなくなります）"}">${s.locked ? "🔒" : "🔓"}</button><label class="mpick" title="チェックを入れて、上の「🎬 チェックした場面に動きをつける」を押すと、この場面にふさわしい動きを提案します" style="display:inline-flex;align-items:center;gap:4px;margin-right:6px;cursor:pointer"><input type="checkbox" data-mpick="${esc(s.id)}" ${M.pick.has(s.id) ? "checked" : ""} ${s.locked ? "disabled" : ""} style="width:18px;height:18px">🎬</label>${motionOf(s) && CH.previewWf ? `<button data-pvone="${esc(s.id)}" title="この場面の動きのプレビューだけ、作り直します（約2〜3分・課金なし）。台本を保存してから押してください">▶ 動きを作る</button>` : ""}<button data-open="${esc(s.id)}" ${s.locked ? "disabled" : ""}>${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : bgOk(s) ? "背景の画像・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}${s.locked ? ' <span class="hint">ロック中</span>' : ""}
         ${isChg(s) ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
         ${enOf(s) ? `<button data-copyen="${esc(s.id)}" title="この場面のナレーションの英訳をコピーします">英訳をコピー</button>` : `<button data-makeen="${esc(s.id)}" title="OpenAIで、この場面のナレーションを英訳します（1円未満）">英訳を作る</button>`}
         <button data-copyja="${esc(s.id)}" title="この場面のナレーション（日本語）をコピーします">本文をコピー</button></div></div>`;
     grid.appendChild(el);
     if(S.open === s.id) el.appendChild(buildPanel(s));
   }
+  grid.querySelectorAll("[data-pvone]").forEach(b => b.onclick = () => startPreviewOne(b.dataset.pvone, b));
   grid.querySelectorAll("[data-mpick]").forEach(b => b.onchange = () => { if(b.checked) M.pick.add(b.dataset.mpick); else M.pick.delete(b.dataset.mpick); mPickBtn(); });
   grid.querySelectorAll("[data-lock]").forEach(b => b.onclick = () => toggleLock(S.scenes.find(x => x.id === b.dataset.lock)));
   grid.querySelectorAll("[data-open]").forEach(b => b.onclick = () => { const sc0 = S.scenes.find(x => x.id === b.dataset.open); if(sc0 && sc0.locked){ dockMsg(LOCKED_MSG, "err"); return; } S.open = S.open === b.dataset.open ? null : b.dataset.open; render(); const o = document.querySelector(".card.open"); if(o) o.scrollIntoView({block: "nearest"}); });
@@ -900,7 +904,9 @@ const stable = v => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !
 function motionPv(s){
   const pv = S.pvMotion && S.pvMotion[s.id], mf = S.manifest && S.manifest[s.id], m = motionOf(s);
   if(!pv || !m) return {state: "none"};
-  return {state: mf && mf.motion && stable(mf.motion) === stable({type: m.type, data: m.data}) ? "fresh" : "stale", pv};
+  const cur = {type: m.type, data: m.data, bg: hasBg(s) ? (vis(s).bg || true) : null, bg_sha: hasBg(s) ? ((S.assets[s.id] && S.assets[s.id].sha) || null) : null};
+  const was = mf && mf.motion ? {bg: null, bg_sha: null, ...mf.motion} : null;
+  return {state: was && stable(was) === stable(cur) ? "fresh" : "stale", pv};
 }
 const pvBlobs = new Map();
 let pvLoading = 0; const pvQueue = [];
@@ -920,15 +926,18 @@ function pumpPv(){
 }
 function motionThumb(s){
   const m = motionOf(s), st = motionPv(s);
-  if(st.state === "fresh"){
+  // 背景の画像（選んだばかり／保存済み）。動きのプレビューが古いときの、目安の表示に敷く
+  const bgImg = !hasBg(s) ? "" : s.staged ? `<img src="${esc(s.staged.url)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.5">`
+    : `<img data-asset="${esc(S.assets[s.id].path)}" data-size="${S.assets[s.id].size}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.5;visibility:hidden">`;
+  if(st.state === "fresh" && !s.staged){
     return `<video data-pv="1" data-sha="${esc(st.pv.sha)}" muted loop playsinline controls preload="none" style="width:100%;height:100%;object-fit:contain;background:#05070d"></video><span class="ph">動きを読み込み中…</span>`;
   }
   let sum = ""; try{ sum = mSummary({type: m.type, data: m.data}) || ""; }catch{}
-  return `<div style="position:absolute;inset:0;background:linear-gradient(160deg,#070c18,#1a2a4a);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:6px;overflow:hidden">
-    <div style="font-size:13px;color:#ffb347;font-weight:800">🎬 動く図解</div>
-    <div style="font-size:16px;font-weight:800;color:#fff">${esc(MOTION_TYPES[m.type] || m.type)}</div>
-    <div style="font-size:12px;color:#bcd0ea;line-height:1.5">${esc(sum.slice(0, 90))}</div>
-    <div style="font-size:11px;color:#9aa3b2">${st.state === "stale" ? "台本を直したので、動きのプレビューは古くなっています。ヘッダーの「▶ 図・動きの確認を作る」で作り直せます" : "動きの確認は、ヘッダーの「▶ 図・動きの確認を作る」で作れます（約10分・課金なし）"}</div></div>`;
+  return `<div style="position:absolute;inset:0;background:linear-gradient(160deg,#070c18,#1a2a4a);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:6px;overflow:hidden">${bgImg}
+    <div style="position:relative;font-size:13px;color:#ffb347;font-weight:800">🎬 動く図解${bgImg ? "（背景の画像あり）" : ""}</div>
+    <div style="position:relative;font-size:16px;font-weight:800;color:#fff">${esc(MOTION_TYPES[m.type] || m.type)}</div>
+    <div style="position:relative;font-size:12px;color:#bcd0ea;line-height:1.5">${esc(sum.slice(0, 90))}</div>
+    <div style="position:relative;font-size:11px;color:#9aa3b2">${st.state === "stale" ? "台本を直したので、動きのプレビューは古くなっています。ヘッダーの「▶ 図・動きの確認を作る」で作り直せます" : "動きの確認は、ヘッダーの「▶ 図・動きの確認を作る」で作れます（約10分・課金なし）"}</div></div>`;
 }
 function approxHtml(s){
   const fs = slideFields(s), st = s.style || {}, light = ((s.raw && s.raw.slide) || {}).theme === "light";
@@ -1028,12 +1037,12 @@ function renderStyleTab(s, body){
 function buildPanel(s){
   // 星・天体・宇宙機の場面は、NASA画像のタブから開く（2026-10-28 社長指示「星の画像はなるべくNASA画像を」）
   const ASTRO = /\b(stars?|planets?|galax(y|ies)|nebula|supernova|moon|sun|mars|jupiter|saturn|venus|mercury|neptune|uranus|pluto|comet|asteroid|meteor|telescope|spacecraft|rocket|satellite|orbit|solar|milky|exoplanet|cosmos|universe|eclipse|aurora)\b/i;
-  const tab = !needsReview(s) ? "style" : (S.tabs[s.id] || CH.defaultTab || (ASTRO.test(sceneQuery(s)) ? "nasa" : "pixabay"));
+  const tab = (!needsReview(s) && !bgOk(s)) ? "style" : (S.tabs[s.id] || CH.defaultTab || (ASTRO.test(sceneQuery(s)) ? "nasa" : "pixabay"));
   const p = document.createElement("div"); p.className = "panel";
   const q0 = (S.results[s.id] && S.results[s.id].q) || sceneQuery(s);
   p.innerHTML = `
     <div class="tabs">
-      ${(needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["clip", "動画クリップ（Pixabay）"], ["wsclip", "AI動画クリップ（WaveSpeed）"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]] : [["style", "文字の色"]])
+      ${(bgOk(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["upload", "アップロード"], ["nobg", "背景なし"], ["style", "文字の色"]] : needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["clip", "動画クリップ（Pixabay）"], ["wsclip", "AI動画クリップ（WaveSpeed）"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]] : [["style", "文字の色"]])
         .map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
     </div>
     <div id="tabbody"></div>`;
@@ -1185,6 +1194,10 @@ function buildPanel(s){
     window.__upPaste = e => { const f = [...(e.clipboardData && e.clipboardData.files || [])].find(x => /^image\//.test(x.type)); if(f){ e.preventDefault(); take(f); } };
   }else if(tab === "style"){
     renderStyleTab(s, body);
+  }else if(tab === "nobg"){
+    body.innerHTML = `<div class="msg">この動く図解は、背景の画像を使いません。${hasBg(s) ? "いまの背景の画像は、保存のときに外れます。" : "（いまも、背景は付いていません）"}</div>
+      <div class="row"><button id="mk" class="primary" ${hasBg(s) || vis(s).bg ? "" : "disabled"}>背景の画像を外す</button></div>`;
+    body.querySelector("#mk").onclick = () => { if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = "nobg"; render(); };
   }else{
     body.innerHTML = `
       <div class="msg">この場面は、画像を使わず、文字・図で表示します（今ある画像は、保存のときに外れます）。</div>
@@ -1241,7 +1254,12 @@ async function saveAll(){
       if(S.clips[s.id]){ changes.push({path: `${clipBase}/${S.clips[s.id].name}`, bytes: null}); }
       if(raw.visual && raw.visual.kind === "clip"){ raw.visual.kind = "photo"; jsonChanged = true; }   // 動画クリップの場面を写真に替えたとき
       if(raw.visual && raw.visual.real){ delete raw.visual.real; jsonChanged = true; }   // 手で選んだ画像を、NASA自動取得で上書きさせない
+      if(bgOk(s)){ raw.visual = raw.visual || {}; if(!raw.visual.bg) raw.visual.bg = {dim: 0.62}; jsonChanged = true; }   // 動く図解の背景に敷く
       picks.push({scene: s.id, ...s.staged.source});
+    }else if(s.action === "nobg"){   // 動く図解の背景の画像を外す
+      if(S.assets[s.id]) changes.push({path: `${base}/${S.assets[s.id].name}`, bytes: null});
+      if(raw.visual) delete raw.visual.bg;
+      jsonChanged = true;
     }else if(s.action === "text"){
       if(S.assets[s.id]) changes.push({path: `${base}/${S.assets[s.id].name}`, bytes: null});
       if(S.clips[s.id]) changes.push({path: `${clipBase}/${S.clips[s.id].name}`, bytes: null});
@@ -1387,6 +1405,27 @@ async function watchPreview(){
   }
 }
 let previewPoll = 0;
+// 1場面だけ、動きのプレビューを作り直す。終わるまで20秒おきに見に行き、できたらカードで再生する（最長8分）
+async function startPreviewOne(id, btn){
+  if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  const sc = S.scenes.find(x => x.id === id); if(!sc) return;
+  if(isChg(sc) && !confirm("この場面に、保存していない変更があります。動きのプレビューは、保存した台本で作ります。先に「③ 保存」しましたか？\n（このまま作ると、保存前の内容は反映されません）")) return;
+  const before = (S.pvMotion[id] || {}).sha || "", stem = S.stem;
+  try{
+    await api(repoPath(`/actions/workflows/${CH.previewWf}/dispatches`), {method: "POST", body: JSON.stringify({ref: gh.branch, inputs: {script: `${CH.scriptRel || "data/scripts/"}${S.name}`, scenes: id}})});
+  }catch(e){ dockMsg(e.message, "err"); return; }
+  const old = btn.textContent; btn.disabled = true; btn.textContent = "作っています…（約2〜3分）";
+  dockMsg(`${numOf(id)}の動きのプレビューを作り始めました（約2〜3分）。できると、カードに出ます`, "ok");
+  for(let i = 0; i < 24; i++){
+    await new Promise(res => setTimeout(res, 20000));
+    if(stem !== S.stem) return;
+    try{
+      await loadAssets();
+      if(((S.pvMotion[id] || {}).sha || "") !== before){ render(); dockMsg(`${numOf(id)}の動きのプレビューができました。カードで再生できます`, "ok"); return; }
+    }catch{}
+  }
+  btn.disabled = false; btn.textContent = old; dockMsg("まだ終わっていません。少し待って、「読み込み」を押してください", "err");
+}
 $("#b-prev").onclick = async () => {
   if(!S.json) return;
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
