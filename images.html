@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 15:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 15:30</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -296,7 +296,7 @@ const S = {
   en: {}, up: {},
   scripts: [], name: "", stem: "", json: null, scenes: [], local: false,   // local: 端末のファイルから開いた、まだリポジトリに無い台本
   assets: {}, clips: {},          // 場面ID → {url,size}
-  filter: "review", open: null, page: 0,
+  filter: "all", open: null, page: 0,   // 開いたときは必ず、全場面を表示する（2026-11-01 社長指示）。絞り込みは、ボタンで選んだときだけ
   range: "", ranges: [],          // 表示範囲: ""=全場面 / "0"=ショート1…（台本の shorts[] の from〜to の場面だけ）
   tabs: {}, results: {}, gens: {},   // 場面ごとの、タブ・検索結果・OpenAIの候補
 };
@@ -368,7 +368,7 @@ async function listDir(path){
   }catch(e){ if(/404/.test(e.message)) return []; throw e; }
 }
 async function loadScript(name){
-  setMsg("読み込んでいます…");
+  setMsg("読み込んでいます…"); S.filter = "all"; S.range = ""; S.page = 0;
   const f = await api(repoPath(`/contents/${GH_DIR}/data/scripts/${encodeURIComponent(name)}${refQ()}`));
   const json = JSON.parse(dec(unb64(f.content)));
   const ns = json.narrative_structure;
@@ -408,7 +408,7 @@ function buildRanges(){
     const a = idx(x.from), b = idx(x.to);
     return (a < 0 || b < a) ? null : {i, a, b, hook: String(x.hook || x.title || "").replace(/\n/g, " "), title: x.title || ""};
   }).filter(Boolean);
-  S.range = "";
+  S.range = ""; S.filter = "all"; S.page = 0;   // 開いたときは必ず全場面
   const sel = $("#range");
   sel.innerHTML = `<option value="">全場面（${S.scenes.length}）</option>` + S.ranges.map(r =>
     `<option value="${r.i}">ショート${r.i + 1}：${esc(r.hook)}（${r.b - r.a + 1}場面）</option>`).join("");
@@ -772,7 +772,7 @@ function render(){
     ["場面", S.range === "" ? S.scenes.length : `${S.scenes.filter(inRange).length} / ${S.scenes.length}`, ""], ["画像を使う場面", need.length, ""],
     ["画像が無い（文字で表示）", noImg.length, noImg.length ? "warn" : "ok"], ["変更あり", ch.length, ch.length ? "warn" : ""],
   ].map(([k, v, c]) => `<div class="stat ${c}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
-  const F = [["review", "画像を使う場面"], ["motion", "🎬 動く図解"], ["slides", "図・文字の場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["locked", "🔒ロック中"], ["all", "すべて"]];
+  const F = [["all", "すべて"], ["review", "画像を使う場面"], ["motion", "🎬 動く図解"], ["slides", "図・文字の場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["locked", "🔒ロック中"]];
   $("#filters").innerHTML = F.map(([k, l]) => `<button data-f="${k}" class="${S.filter === k ? "on" : ""}">${l}</button>`).join("");
   $("#filters").insertAdjacentHTML("beforeend", `<span class="spacer"></span><button id="b-mpick" class="primary" title="場面カードの🎬にチェックを入れた場面に、ふさわしい動く図解を提案します（確認してから保存）">🎬 チェックした場面に動きをつける</button><button id="b-mpick-clear" title="🎬のチェックを、すべて外します">チェックを外す</button><button id="b-lockall" title="いま絞り込んで表示している場面を、すべてロックします">🔒 表示中をすべてロック</button><button id="b-unlockall" title="いま絞り込んで表示している場面の、ロックを外します">🔓 表示中のロックを外す</button>`);
   $("#filters").querySelectorAll("button[data-f]").forEach(b => b.onclick = () => { S.filter = b.dataset.f; S.page = 0; S.open = null; render(); });
