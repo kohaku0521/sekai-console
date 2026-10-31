@@ -124,7 +124,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/31 14:10</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/31 16:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -155,6 +155,7 @@ a{color:#7fb0ff}
   <div style="max-width:760px;margin:14px auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 14px 90px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:15px">読み仮名を直す</b><span class="spacer"></span><button id="y-close">閉じる</button></div>
     <div class="hint" style="margin-bottom:10px">読み上げだけが変わります（字幕は表記のまま）。<b>ひらがな</b>で書くと、そのとおりに読みます（例: 大気 → たいき）。保存した台本の、<b>次の生成から</b>反映されます（すでに作った動画は変わりません）。</div>
+    <div id="y-ai" class="row" style="margin:0 0 10px;flex-wrap:wrap;gap:8px;align-items:center"><button id="y-aibtn" title="AIの声が、各場面の文をどう読むかを、ひらがなで調べます（音は作りません・課金なし・約3〜5分）">🔊 AIの読みを確認する（無料・約3〜5分）</button><span class="hint" id="y-aistat"></span></div>
     <div style="font-weight:700;margin:8px 0 4px">① 言葉の辞書（この台本の全場面に効く）</div>
     <div id="y-dict"></div>
     <div class="row"><button id="y-add">＋ 言葉を足す</button></div>
@@ -195,7 +196,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 
 // ── 設定（統合コンソール index.html と同じ localStorage のキーを使う）────────
 const CHANNELS = {
-  sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml", previewWf: "trend-auto-studio-preview.yml"},
+  sekai: {dir: "CMO/YouTube/trend-auto-studio", wf: "trend-auto-studio-produce-long.yml", previewWf: "trend-auto-studio-preview.yml", readingsWf: "trend-auto-studio-readings.yml"},
   // 絶滅した生物たち（2026-10-28）。生成のワークフローは作成後に wf を差し替える。画像は公開画像（Commons）から選ぶのが既定
   virus: {dir: "CMO/YouTube/virus", wf: "virus-produce.yml", previewWf: "virus-preview.yml", artQuality: true, defaultTab: "commons", label: "ウイルス（仮）", scriptRel: "../virus/data/scripts/"},
   zetsumetsu: {dir: "CMO/YouTube/zetsumetsu", wf: "zetsumetsu-produce.yml", defaultTab: "commons", label: "絶滅した生物たち", scriptRel: "../zetsumetsu/data/scripts/"},
@@ -1299,7 +1300,36 @@ function splitLong(part){
   return splitLong(part.slice(0, cut)).concat(splitLong(part.slice(cut)));
 }
 const splitSent = t => String(t || "").split(/(?<=[。！？])/).map(x => x.trim()).filter(Boolean).flatMap(splitLong);   // src/narration.py split_sentences と同じ
-const Y = {dict: [], texts: {}, shown: 20, q: ""};
+const Y = {dict: [], texts: {}, shown: 20, q: "", ai: null, aiSha: ""};   // ai: AIの読み（assets/tts_readings/<台本名>.json）
+// 読み上げ文に辞書を当てる（src/narration.py apply_readings と同じ。長い表記を先に）
+const yApply = (t, map) => { for(const [k, v] of Object.entries(map).sort((a, b) => b[0].length - a[0].length)) if(k) t = t.split(k).join(v); return t; };
+async function loadAiYomi(){
+  Y.ai = null;
+  if(!CH.readingsWf || !ghReady()) return;
+  try{
+    const f = await api(repoPath(`/contents/${GH_DIR}/assets/tts_readings/${S.stem}.json${refQ()}`));
+    Y.aiSha = f.sha; Y.ai = JSON.parse(dec(unb64(f.content)));
+  }catch(e){ Y.aiSha = ""; }
+}
+function aiStatLine(){
+  const el = $("#y-aistat"); if(!el) return;
+  $("#y-ai").style.display = CH.readingsWf ? "" : "none";
+  el.textContent = Y.ai ? `調べた日時: ${String(Y.ai.generated_at || "").replace("T", " ").slice(0, 16)}。辞書や読み上げ文を直したら、もう一度押すと、直した読みが出ます` : "まだ調べていません。押すと、各場面の下に『AIの読み』が出ます";
+}
+async function startAiYomi(){
+  if(!ghReady()){ yMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  if(yDirty() && !confirm("直した内容は、保存するまで反映されません。『AIの読み』は、保存した台本で調べます。先に保存しましたか？\n（このまま調べると、保存前の読みが出ます）")) return;
+  const before = Y.aiSha, stem = S.stem;
+  await api(repoPath(`/actions/workflows/${CH.readingsWf}/dispatches`), {method: "POST", body: JSON.stringify({ref: gh.branch, inputs: {script: `${CH.scriptRel || "data/scripts/"}${S.name}`}})});
+  $("#y-aibtn").disabled = true; yMsg("AIの読みを調べています（約3〜5分）。終わると、自動で出ます", "ok");
+  for(let i = 0; i < 24; i++){
+    await new Promise(res => setTimeout(res, 20000));
+    if(stem !== S.stem) return;
+    await loadAiYomi();
+    if(Y.aiSha && Y.aiSha !== before){ renderYomi(); yMsg("AIの読みが出ました。各場面の下の、🔊 の行を見てください", "ok"); $("#y-aibtn").disabled = false; return; }
+  }
+  $("#y-aibtn").disabled = false; yMsg("まだ終わっていません。少し待って、もう一度、パネルを開き直してください", "err");
+}
 const yMsg = (t, cls = "") => { const e = $("#y-msg"); e.textContent = t || ""; e.className = "msg " + cls; };
 function openYomi(){
   if(!S.json){ setMsg("先に台本を読み込んでください", "err"); return; }
@@ -1308,6 +1338,7 @@ function openYomi(){
   Y.shown = 20; Y.q = ""; $("#y-q").value = ""; yMsg("");
   $("#yomi").style.display = ""; document.body.style.overflow = "hidden";
   renderYomi();
+  loadAiYomi().then(renderYomi).catch(() => {});
 }
 const yDictObj = () => { const o = {}; Y.dict.forEach(e => { const k = e.k.trim(); if(k && e.v.trim()) o[k] = e.v.trim(); }); return o; };
 function yProblems(){
@@ -1320,7 +1351,16 @@ function yDirty(){
   if(d0 !== d1) return true;
   return S.scenes.some(s => ((Y.texts[s.id] && Y.texts[s.id] !== s.text) ? Y.texts[s.id] : "") !== (s.raw.tts_text || ""));
 }
+function aiYomiHtml(s){
+  const rows = Y.ai && Y.ai.scenes && Y.ai.scenes[s.id];
+  if(!rows) return Y.ai ? `<div class="hint" style="margin:2px 0 4px">🔊 AIの読み: （この場面は、調べた時点に無かった。もう一度、確認を押してください）</div>` : "";
+  const map = yDictObj();
+  const now = splitSent(Y.texts[s.id] !== undefined ? Y.texts[s.id] : s.text).map(x => yApply(x, map));
+  const stale = rows.length !== now.length || rows.some((r, i) => r.spoken !== now[i]);
+  return `<div style="margin:2px 0 6px;padding:6px 8px;border-radius:6px;background:rgba(61,121,213,.12);font-size:15px;line-height:1.7">${rows.map(r => `<div>🔊 ${esc(r.yomi)}</div>`).join("")}${stale ? `<div class="hint" style="color:var(--warn)">※ 直したあとの読みではありません。保存して、もう一度「AIの読みを確認する」を押してください</div>` : ""}</div>`;
+}
 function renderYomi(){
+  aiStatLine();
   const d = $("#y-dict");
   d.innerHTML = Y.dict.length ? "" : `<div class="hint">まだ登録がありません。「＋ 言葉を足す」で、読み違える言葉と、正しい読みを入れてください。</div>`;
   Y.dict.forEach((e, i) => {
@@ -1342,6 +1382,7 @@ function renderYomi(){
     const cur = Y.texts[s.id] !== undefined ? Y.texts[s.id] : s.text;
     const el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px";
     el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc(s.id.replace("scene_", "#"))}</b>　${esc(s.text)}</div>
+      ${aiYomiHtml(s)}
       <textarea data-t="${esc(s.id)}" rows="2" style="min-height:48px">${esc(cur)}</textarea>
       <div class="row" style="margin:4px 0 0"><span class="hint" data-st="${esc(s.id)}"></span><button data-rs="${esc(s.id)}">元に戻す</button></div>`;
     sc.appendChild(el);
@@ -1365,6 +1406,7 @@ function yRefreshState(){
   yMsg(bad.length ? `文の数が本文と違う場面が${bad.length}件あります（赤字）。直すと保存できます` : dirty ? "変更があります。保存を押してください" : "", bad.length ? "err" : "");
 }
 $("#b-yomi").onclick = openYomi;
+$("#y-aibtn").onclick = async () => { try{ await startAiYomi(); }catch(e){ yMsg(e.message, "err"); $("#y-aibtn").disabled = false; } };
 $("#y-close").onclick = () => {
   if(S.json && yDirty() && !confirm("保存していない変更があります。閉じますか？")) return;
   $("#yomi").style.display = "none"; document.body.style.overflow = "";
