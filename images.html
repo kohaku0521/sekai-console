@@ -91,6 +91,7 @@ a{color:#7fb0ff}
   <select id="range" style="max-width:300px" title="表示する場面の範囲。台本の「shorts」（切り抜きショート）の場面だけに絞れます"></select>
   <button id="b-reload">読み込み</button>
   <button id="b-enall" title="英訳のない場面を、OpenAIでまとめて英訳します（全部で数円以下）。このブラウザに保存します">全場面の英訳を作る</button>
+  <button id="b-bgm" title="BGMを、場面に合わせて切り替えます（場面ごとに曲を選べます）">BGMを変える</button>
   <button id="b-yomi" title="ナレーションの漢字の読み違いを直します。読み上げだけが変わり、字幕は表記のままです">読み仮名を直す</button>
   <button id="b-prev" style="display:none" title="文字・図解・グラフになる場面が、動画でどう見えるかの確認画像を作ります（音声・動画・課金は使いません。約3分）">図・文字の表示を作る</button>
   <span class="spacer"></span>
@@ -121,7 +122,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/31 10:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/31 12:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -162,6 +163,26 @@ a{color:#7fb0ff}
     <div style="position:sticky;bottom:0;background:var(--panel);padding:10px 0 0;margin-top:10px;border-top:1px solid var(--line)">
       <div class="msg" id="y-msg" style="margin-bottom:6px"></div>
       <button class="primary" id="y-save" disabled>保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="bgm" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);overflow:auto">
+  <div style="max-width:760px;margin:14px auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 14px 90px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:15px">BGMを場面に合わせる</b><span class="spacer"></span><button id="g-close">閉じる</button></div>
+    <div class="hint" style="margin-bottom:10px">場面ごとに曲を選ぶと、<b>その場面から</b>その曲に切り替わります。選ばない場面は、前の場面の曲が続きます（冒頭は、日付から自動で選ばれる曲）。曲の切り替わりは約3秒かけて自然につなぎます。<b>約6秒より短い切り替えは前の曲に吸収</b>されます。保存した台本の<b>次の生成から</b>反映されます。</div>
+    <div class="msg" id="g-info" style="margin-bottom:6px"></div>
+    <div style="font-weight:700;margin:8px 0 4px">① 曲の一覧（▶で試聴）</div>
+    <div id="g-tracks"></div>
+    <div style="font-weight:700;margin:14px 0 4px">② 範囲をまとめて決める</div>
+    <div class="row" style="flex-wrap:wrap;gap:6px"><select id="g-from" style="width:auto"></select><span>から</span><select id="g-to" style="width:auto"></select><span>まで</span><select id="g-tr" style="width:auto;max-width:220px"></select><button id="g-apply">この範囲に適用</button></div>
+    <div class="hint" style="margin-top:4px">範囲の終わりの次の場面で、元の曲に戻します。</div>
+    <div style="font-weight:700;margin:14px 0 4px">③ 場面ごと</div>
+    <div id="g-scenes"></div>
+    <div class="row"><button id="g-more" style="display:none">さらに表示</button></div>
+    <div style="position:sticky;bottom:0;background:var(--panel);padding:10px 0 0;margin-top:10px;border-top:1px solid var(--line)">
+      <div class="msg" id="g-msg" style="margin-bottom:6px"></div>
+      <button class="primary" id="g-save" disabled>保存</button>
     </div>
   </div>
 </div>
@@ -1326,6 +1347,116 @@ $("#y-save").onclick = async () => {
     yRefreshState();
     yMsg(`保存しました（辞書${Object.keys(dict).length}件・場面${n}件）。次の生成から反映されます`, "ok");
   }catch(e){ yMsg(e.message, "err"); $("#y-save").disabled = false; }
+};
+
+// ── BGMを場面に合わせる（2026-10-31 社長「BGMもシーンに合わせて変更できるようにして」）──────────────────
+// 台本の場面の bgm（曲の名前＝assets/audio/bgm のファイル名の拡張子なし）。その場面から切り替わり、指定の無い場面は前の曲が続く。
+// 冒頭は日付から自動の曲（src/audio_mix.py pick_rotated_bgm と同じ数え方）。切り替えは src/audio_mix.py explicit_bgm_runs
+const G = {tracks: [], vals: {}, shown: 25, def: "", loaded: false, audio: null};
+const gMsg = (t, cls = "") => { const e = $("#g-msg"); e.textContent = t || ""; e.className = "msg " + cls; };
+const ordinalOf = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ""); return m ? Math.floor(Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000) + 719163 : 0; };
+async function loadTracks(){
+  const items = await listDir(`${GH_DIR}/assets/audio/bgm`);
+  G.tracks = items.filter(i => i.type === "file" && /\.(mp3|wav|m4a|ogg)$/i.test(i.name) && !/^bed_\d+\./i.test(i.name))
+    .map(i => ({name: i.name, stem: i.name.replace(/\.[^.]+$/, ""), sha: i.sha, size: i.size}))
+    .sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  G.def = G.tracks.length ? G.tracks[ordinalOf(S.json.date) % G.tracks.length].stem : "";
+  G.loaded = true;
+}
+const gStem = v => String(v || "").replace(/\.[^.]+$/, "");
+const gIsTrack = v => G.tracks.some(t => t.stem.toLowerCase() === gStem(v).toLowerCase());
+const gCanon = v => { const t = G.tracks.find(x => x.stem.toLowerCase() === gStem(v).toLowerCase()); return t ? t.stem : ""; };
+// いま流れる曲（場面ごと）。指名が無い場面は前の曲、冒頭は自動の曲
+function gEffective(){
+  const out = {}; let cur = G.def;
+  S.scenes.forEach(s => { const v = G.vals[s.id]; if(v && gIsTrack(v)) cur = gCanon(v); out[s.id] = cur; });
+  return out;
+}
+const gDirty = () => S.scenes.some(s => (G.vals[s.id] || "") !== (s.raw.bgm || ""));
+async function openBgm(){
+  if(!S.json){ setMsg("先に台本を読み込んでください", "err"); return; }
+  $("#bgm").style.display = ""; document.body.style.overflow = "hidden"; gMsg("");
+  try{ await loadTracks(); }catch(e){ gMsg(e.message, "err"); return; }
+  G.vals = {}; S.scenes.forEach(s => { if(s.raw.bgm) G.vals[s.id] = s.raw.bgm; }); G.shown = 25;
+  const opts = `<option value="">（指定しない）</option>` + G.tracks.map(t => `<option value="${esc(t.stem)}">${esc(t.stem)}</option>`).join("");
+  const scOpts = S.scenes.map(s => `<option value="${esc(s.id)}">${esc(s.id.replace("scene_", "#"))}</option>`).join("");
+  $("#g-from").innerHTML = scOpts; $("#g-to").innerHTML = scOpts; $("#g-tr").innerHTML = opts.replace("（指定しない）", "曲を選ぶ");
+  $("#g-info").textContent = G.tracks.length ? `曲 ${G.tracks.length}本。この動画の冒頭は、自動で「${G.def}」になります。` : "このチャンネルには、BGMの曲（assets/audio/bgm）がありません。";
+  renderBgm();
+}
+function renderBgm(){
+  const tb = $("#g-tracks"); tb.innerHTML = "";
+  G.tracks.forEach(t => {
+    const row = document.createElement("div"); row.style.cssText = "display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap";
+    row.innerHTML = `<button data-play="${esc(t.stem)}">▶ 試聴</button><span style="flex:1 1 200px;word-break:break-all">${esc(t.stem)}${t.stem === G.def ? ' <span class="hint">（この動画の自動の曲）</span>' : ""}</span>`;
+    tb.appendChild(row);
+  });
+  tb.querySelectorAll("[data-play]").forEach(b => b.onclick = () => playTrack(b));
+  const eff = gEffective();
+  const sc = $("#g-scenes"); sc.innerHTML = "";
+  const opts = G.tracks.map(t => t.stem);
+  S.scenes.slice(0, G.shown).forEach(s => {
+    const v = G.vals[s.id] || "", old = v && !gIsTrack(v);
+    const el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px";
+    el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc(s.id.replace("scene_", "#"))}</b>　${esc(s.text.slice(0, 40))}${s.text.length > 40 ? "…" : ""}</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><select data-b="${esc(s.id)}" style="flex:1 1 200px;width:auto"><option value="">（指定しない）</option>${old ? `<option value="${esc(v)}" selected>旧指定: ${esc(v)}（使われません）</option>` : ""}${opts.map(o => `<option value="${esc(o)}"${gCanon(v) === o ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>
+      <span class="hint">♪ ${esc(eff[s.id] || "（なし）")}${v && gIsTrack(v) ? "　← ここから切り替え" : ""}</span></div>`;
+    sc.appendChild(el);
+  });
+  sc.querySelectorAll("[data-b]").forEach(el => el.onchange = () => { if(el.value) G.vals[el.dataset.b] = el.value; else delete G.vals[el.dataset.b]; renderBgm(); });
+  $("#g-more").style.display = S.scenes.length > G.shown ? "" : "none";
+  $("#g-more").textContent = `さらに表示（残り${S.scenes.length - G.shown}場面）`;
+  $("#g-save").disabled = !gDirty();
+  gMsg(gDirty() ? "変更があります。保存を押してください" : "");
+}
+async function playTrack(btn){
+  const t = G.tracks.find(x => x.stem === btn.dataset.play); if(!t) return;
+  if(G.audio){ G.audio.pause(); G.audio = null; }
+  document.querySelectorAll("[data-play]").forEach(b => b.textContent = "▶ 試聴");
+  btn.textContent = "読み込み中…";
+  try{
+    const blob = await api(repoPath(`/git/blobs/${t.sha}`));
+    const bin = atob(blob.content.replace(/\n/g, "")), u8 = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    const mime = /\.wav$/i.test(t.name) ? "audio/wav" : /\.m4a$/i.test(t.name) ? "audio/mp4" : /\.ogg$/i.test(t.name) ? "audio/ogg" : "audio/mpeg";
+    G.audio = new Audio(URL.createObjectURL(new Blob([u8], {type: mime})));
+    G.audio.onended = () => { btn.textContent = "▶ 試聴"; };
+    await G.audio.play(); btn.textContent = "■ 止める";
+    btn.onclick = () => { if(G.audio){ G.audio.pause(); G.audio = null; } btn.textContent = "▶ 試聴"; btn.onclick = () => playTrack(btn); };
+  }catch(e){ btn.textContent = "▶ 試聴"; gMsg(e.message, "err"); }
+}
+$("#b-bgm").onclick = openBgm;
+$("#g-more").onclick = () => { G.shown += 25; renderBgm(); };
+$("#g-close").onclick = () => {
+  if(G.loaded && S.json && gDirty() && !confirm("保存していない変更があります。閉じますか？")) return;
+  if(G.audio){ G.audio.pause(); G.audio = null; }
+  $("#bgm").style.display = "none"; document.body.style.overflow = "";
+};
+$("#g-apply").onclick = () => {
+  const tr = $("#g-tr").value; if(!tr){ gMsg("曲を選んでください", "err"); return; }
+  const a = S.scenes.findIndex(x => x.id === $("#g-from").value), b = S.scenes.findIndex(x => x.id === $("#g-to").value);
+  if(a < 0 || b < a){ gMsg("範囲の始まりが終わりより後です", "err"); return; }
+  const eff = gEffective();
+  const before = a > 0 ? eff[S.scenes[a - 1].id] : G.def;     // 範囲の直前に流れていた曲（終わりの次の場面で、ここへ戻す）
+  G.vals[S.scenes[a].id] = tr;
+  if(b + 1 < S.scenes.length) G.vals[S.scenes[b + 1].id] = before;
+  // 範囲の中の、ほかの指名は消す（範囲は1曲で通す）
+  for(let i = a + 1; i <= b; i++) delete G.vals[S.scenes[i].id];
+  renderBgm();
+};
+$("#g-save").onclick = async () => {
+  if(!ghReady()){ gMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  const json = JSON.parse(JSON.stringify(S.json)); let n = 0;
+  json.narrative_structure.forEach((raw, i) => {
+    const v = G.vals[S.scenes[i].id];
+    if(v){ raw.bgm = v; n++; } else delete raw.bgm;
+  });
+  $("#g-save").disabled = true; gMsg("保存しています…");
+  try{
+    await commitMany([{path: `${GH_DIR}/data/scripts/${S.name}`, bytes: enc(JSON.stringify(json, null, 2) + "\n")}],
+      `${S.stem}: BGMを場面に合わせる（指名${n}場面・画像入れ替えコンソール）`);
+    S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw);
+    renderBgm(); gMsg(`保存しました（指名${n}場面）。次の生成から反映されます`, "ok");
+  }catch(e){ gMsg(e.message, "err"); $("#g-save").disabled = false; }
 };
 
 window.addEventListener("beforeunload", e => { if(changedScenes().length){ e.preventDefault(); e.returnValue = ""; } });
