@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 20:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 21:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -1900,6 +1900,18 @@ function mRules(only){
         const nums = [...found.keys()].sort((a, b) => a - b);
         if(nums.length >= 3 && nums.length <= 8 && found.has(cur) && ![...found.values()].some(v => /\d/.test(v))){
           out.push({scene: sc.id, type: "step_track", why: `${unit}の何番目かを、進みで見せる`, data: {headline: `${unit}の進み具合`, unit, current: nums.indexOf(cur) + 1, steps: nums.map(k => ({label: found.get(k)}))}}); return;
+        }
+      }
+    }
+    // 0.3) 「1つめは、…です。」「2つめは、…です。」…と、理由・ポイントを順に挙げる場面（ほかの「Nつめは」の場面から、全体の並びを集める）
+    {
+      const mm = t.match(/^(\d)つめは、([^。]{1,14}?)です。/);
+      if(mm){
+        const found = new Map();
+        S.scenes.forEach(x => { const m = mNorm(x.text).match(/^(\d)つめは、([^。]{1,14}?)です。/); if(m && !found.has(+m[1])) found.set(+m[1], m[2].trim()); });
+        const nums = [...found.keys()].sort((a, b) => a - b), cur = +mm[1];
+        if(nums.length >= 3 && nums.length <= 8 && nums.every((k, i) => k === i + 1) && ![...found.values()].some(v => /\d/.test(v))){
+          out.push({scene: sc.id, type: "step_track", why: "「Nつめは」の何番目かを、進みで見せる", data: {headline: "ポイントの進み具合", unit: "ポイント", current: cur, steps: nums.map(k => ({label: found.get(k)}))}}); return;
         }
       }
     }
