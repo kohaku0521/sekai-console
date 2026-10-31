@@ -99,7 +99,7 @@ a{color:#7fb0ff}
   <button id="b-motion" title="数字・比較・グラフ・年表・地図・論文などの『動く図解』を、ナレーションに合わせて、ふさわしい場面に自動で当てはめます（提案を見て、選んだものだけ台本に書きます）">🎬 動きを自動で当てはめる</button>
   <button id="b-bgm" title="BGMを、場面に合わせて切り替えます（場面ごとに曲を選べます）">BGMを変える</button>
   <button id="b-yomi" title="ナレーションの漢字の読み違いを直します。読み上げだけが変わり、字幕は表記のままです">読み仮名を直す</button>
-  <button id="b-prev" style="display:none" title="文字・図解・グラフになる場面が、動画でどう見えるかの確認画像を作ります（音声・動画・課金は使いません。約3分）">図・文字の表示を作る</button>
+  <button id="b-prev" style="display:none" title="文字・図解・グラフになる場面が、動画でどう見えるかの確認画像と、動く図解の動きの確認用の動画を作ります（音声・動画づくり・課金は使いません。約10分）">▶ 図・動きの確認を作る</button>
   <span class="spacer"></span>
   <a href="index.html" style="font-size:12px">統合コンソール</a>
   <button id="b-settings">⚙ 接続設定</button>
@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 15:30</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 17:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -303,6 +303,8 @@ const S = {
 const PHOTO_KINDS = new Set(["photo", "generated", "clip"]);
 const vis = s => (s.raw && s.raw.visual) || {};
 const kindOf = s => vis(s).kind || "slide";
+// 画面に出す場面の番号は、並んでいる順の番号（1〜）。場面ID（scene_96 など）は、画像のファイルと結びついているので変えず、番号だけをそろえる（2026-11-01 社長指摘「シーンの番号がおかしい」）
+const numOf = id => String(Math.max(S.scenes.findIndex(x => x.id === id), 0) + 1).padStart(2, "0");
 // クリップボードにコピー（スマホ・古いブラウザでも動くように、失敗したら選択コピーに切り替える）
 async function copyText(text, btn){
   const done = ok => { if(!btn) return; const old = btn.dataset.l || (btn.dataset.l = btn.textContent); btn.textContent = ok ? "✓ コピーしました" : "コピーできません"; setTimeout(() => btn.textContent = old, 1400); };
@@ -427,11 +429,13 @@ async function loadAssets(){
     listDir(`${GH_DIR}/assets/images/generated/${S.stem}`),
     listDir(`${GH_DIR}/assets/video_clips/${S.stem}`),
   ]);
-  S.assets = {}; S.clips = {}; S.prev = {};
+  S.assets = {}; S.clips = {}; S.prev = {}; S.pvMotion = {};
   // 文字・図解・グラフになる場面の、動画での表示の確認画像（render_slide_previews.py）。無いチャンネル・台本は空のまま
   S.manifest = {};
   try{ const mj = await api(repoPath(`/contents/${GH_DIR}/assets/slide_previews/${S.stem}/_manifest.json${refQ()}`)); S.manifest = JSON.parse(dec(unb64(mj.content))); }catch{}
-  for(const i of await listDir(`${GH_DIR}/assets/slide_previews/${S.stem}`)) if(/^scene_\d+\.jpg$/.test(i.name)) S.prev[i.name.replace(/\.jpg$/, "")] = {size: i.size, sha: i.sha, name: i.name, path: i.path || `${GH_DIR}/assets/slide_previews/${S.stem}/${i.name}`};
+  const pvItems = await listDir(`${GH_DIR}/assets/slide_previews/${S.stem}`);
+  for(const i of pvItems) if(/^scene_\d+\.mp4$/.test(i.name)) S.pvMotion[i.name.replace(/\.mp4$/, "")] = {size: i.size, sha: i.sha, name: i.name};   // 動く図解の、動きの確認用の動画
+  for(const i of pvItems) if(/^scene_\d+\.jpg$/.test(i.name)) S.prev[i.name.replace(/\.jpg$/, "")] = {size: i.size, sha: i.sha, name: i.name, path: i.path || `${GH_DIR}/assets/slide_previews/${S.stem}/${i.name}`};
   for(const i of imgs) if(/\.(png|jpe?g|webp)$/i.test(i.name)) S.assets[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, name: i.name, path: i.path || `${GH_DIR}/assets/images/generated/${S.stem}/${i.name}`};
   for(const i of clips) if(/\.mp4$/i.test(i.name)) S.clips[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, name: i.name};
 }
@@ -718,7 +722,11 @@ function observeImages(){
     if(e.isIntersecting){ io.unobserve(e.target); loadQueue.push(e.target); pumpQueue(); }
   }), {rootMargin: "400px"});
   document.querySelectorAll("img[data-asset]").forEach(i => io.observe(i));
+  if(pvIo) pvIo.disconnect();
+  pvIo = new IntersectionObserver(es => es.forEach(e => { if(e.isIntersecting){ pvIo.unobserve(e.target); pvQueue.push(e.target); pumpPv(); } }), {rootMargin: "300px"});
+  document.querySelectorAll("video[data-pv]").forEach(v => pvIo.observe(v));
 }
+let pvIo = null;
 
 // ── 画面 ─────────────────────────────────────────────────────────────────
 function needsReview(s){ return PHOTO_KINDS.has(kindOf(s)); }
@@ -790,7 +798,7 @@ function render(){
   const pg = $("#pages");
   pg.innerHTML = pageCount <= 1 ? "" : Array.from({length: pageCount}, (_, i) => {
     const chunk = list.slice(i * PER, (i + 1) * PER);
-    const a = chunk[0].id.replace("scene_", ""), b = chunk[chunk.length - 1].id.replace("scene_", "");
+    const a = numOf(chunk[0].id), b = numOf(chunk[chunk.length - 1].id);
     const mark = chunk.some(isChg) ? " ●" : "";
     return `<button data-p="${i}" class="${i === S.page ? "on" : ""}${mark ? " has" : ""}">${a}〜${b}${mark}</button>`;
   }).join("");
@@ -808,7 +816,7 @@ function render(){
     el.className = "card" + (isChg(s) ? " changed" : "") + (S.open === s.id ? " open" : "") + (s.locked ? " locked" : "");
     el.innerHTML = `
       <div class="thumb">${motionOf(s) && !s.stagedClip && !s.staged ? motionThumb(s) : s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
-        <span class="badge ${isChg(s) ? "ch" : ""}">${s.locked ? "🔒 " : ""}${esc(s.id.replace("scene_", ""))} · ${esc(kindOf(s))}${motionOf(s) && !s.stagedClip && !s.staged ? " · 🎬動く図解" : approx ? (isStale(s) ? " · この文字で表示（目安・確認画像は未更新）" : " · この文字で表示（目安）") : cur.label && (cur.url || cur.asset || s.stagedClip) ? " · " + esc(cur.label) : ""}</span></div>
+        <span class="badge ${isChg(s) ? "ch" : ""}" title="場面ID: ${esc(s.id)}">${s.locked ? "🔒 " : ""}${esc(numOf(s.id))} · ${esc(kindOf(s))}${motionOf(s) && !s.stagedClip && !s.staged ? " · 🎬動く図解" : approx ? (isStale(s) ? " · この文字で表示（目安・確認画像は未更新）" : " · この文字で表示（目安）") : cur.label && (cur.url || cur.asset || s.stagedClip) ? " · " + esc(cur.label) : ""}</span></div>
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
         <div class="row" style="margin:0"><button class="lockbtn" data-lock="${esc(s.id)}" title="${s.locked ? "ロック中。押すと、ロックを外します" : "押すと、この場面をロックします（一括の変更も、手での変更も、受け付けなくなります）"}">${s.locked ? "🔒" : "🔓"}</button><label class="mpick" title="チェックを入れて、上の「🎬 チェックした場面に動きをつける」を押すと、この場面にふさわしい動きを提案します" style="display:inline-flex;align-items:center;gap:4px;margin-right:6px;cursor:pointer"><input type="checkbox" data-mpick="${esc(s.id)}" ${M.pick.has(s.id) ? "checked" : ""} ${s.locked ? "disabled" : ""} style="width:18px;height:18px">🎬</label><button data-open="${esc(s.id)}" ${s.locked ? "disabled" : ""}>${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}${s.locked ? ' <span class="hint">ロック中</span>' : ""}
@@ -887,13 +895,40 @@ function isStale(s){
 }
 const showsText = s => !s.staged && !s.stagedClip && (s.action === "text" || !needsReview(s) || (!S.assets[s.id] && !S.clips[s.id]));
 // カードの小さな表示（目安）。確認画像がまだ無い・編集中のときに、文字がちゃんと見えるようにする
+const stable = v => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x)) ? Object.fromEntries(Object.keys(x).sort().map(k2 => [k2, x[k2]])) : x);
+// 動きのプレビュー（動画）: 作ったときの動きの中身と、今の台本が同じときだけ「最新」。違えば「古い」
+function motionPv(s){
+  const pv = S.pvMotion && S.pvMotion[s.id], mf = S.manifest && S.manifest[s.id], m = motionOf(s);
+  if(!pv || !m) return {state: "none"};
+  return {state: mf && mf.motion && stable(mf.motion) === stable({type: m.type, data: m.data}) ? "fresh" : "stale", pv};
+}
+const pvBlobs = new Map();
+let pvLoading = 0; const pvQueue = [];
+function pumpPv(){
+  while(pvLoading < 2 && pvQueue.length){
+    const v = pvQueue.shift(); pvLoading++;
+    (async () => {
+      const key = v.dataset.sha;
+      if(!pvBlobs.has(key)){
+        const blob = await api(repoPath(`/git/blobs/${key}`));
+        const bin = atob(blob.content.replace(/\n/g, "")), u8 = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        pvBlobs.set(key, URL.createObjectURL(new Blob([u8], {type: "video/mp4"})));
+      }
+      v.src = pvBlobs.get(key); const ph = v.parentElement.querySelector(".ph"); if(ph) ph.remove(); v.play().catch(() => {});
+    })().catch(() => { const ph = v.parentElement.querySelector(".ph"); if(ph) ph.textContent = "読み込めません（もう一度、表示してください）"; }).finally(() => { pvLoading--; pumpPv(); });
+  }
+}
 function motionThumb(s){
-  const m = motionOf(s); let sum = ""; try{ sum = mSummary({type: m.type, data: m.data}) || ""; }catch{}
+  const m = motionOf(s), st = motionPv(s);
+  if(st.state === "fresh"){
+    return `<video data-pv="1" data-sha="${esc(st.pv.sha)}" muted loop playsinline controls preload="none" style="width:100%;height:100%;object-fit:contain;background:#05070d"></video><span class="ph">動きを読み込み中…</span>`;
+  }
+  let sum = ""; try{ sum = mSummary({type: m.type, data: m.data}) || ""; }catch{}
   return `<div style="position:absolute;inset:0;background:linear-gradient(160deg,#070c18,#1a2a4a);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:6px;overflow:hidden">
     <div style="font-size:13px;color:#ffb347;font-weight:800">🎬 動く図解</div>
     <div style="font-size:16px;font-weight:800;color:#fff">${esc(MOTION_TYPES[m.type] || m.type)}</div>
     <div style="font-size:12px;color:#bcd0ea;line-height:1.5">${esc(sum.slice(0, 90))}</div>
-    <div style="font-size:11px;color:#9aa3b2">画像は使いません（動画づくりのとき、動く図解を描きます）</div></div>`;
+    <div style="font-size:11px;color:#9aa3b2">${st.state === "stale" ? "台本を直したので、動きのプレビューは古くなっています。ヘッダーの「▶ 図・動きの確認を作る」で作り直せます" : "動きの確認は、ヘッダーの「▶ 図・動きの確認を作る」で作れます（約10分・課金なし）"}</div></div>`;
 }
 function approxHtml(s){
   const fs = slideFields(s), st = s.style || {}, light = ((s.raw && s.raw.slide) || {}).theme === "light";
@@ -945,7 +980,7 @@ function renderStyleTab(s, body){
     <div class="field"><label>文字の内容と配置（Enterで改行、スペースで位置を調整）</label>
       ${fields.map((f, i) => `<div style="margin-bottom:8px"><div class="hint">${esc(f.label)}</div><textarea data-ed="${i}" rows="${Math.min(5, Math.max(2, (curVal(s, f).match(/\n/g) || []).length + 2))}" style="white-space:pre;font-size:16px">${esc(curVal(s, f))}</textarea></div>`).join("")}
       <div class="row"><button id="ed-reset">文字を標準に戻す</button><button id="ed-sp" title="カーソルの位置に、全角スペースを入れます">全角スペースを入れる</button></div>
-      ${CH.previewWf ? `<div class="row"><button class="primary" id="ed-apply">反映（保存して、確認画像を作り直す）</button></div><div class="hint">直した文字・色・改行を保存し、動画と同じ表示の確認画像を作り直します（約3分・課金なし）。終わると自動でカードに出ます。</div>` : ""}</div>
+      ${CH.previewWf ? `<div class="row"><button class="primary" id="ed-apply">反映（保存して、確認画像を作り直す）</button></div><div class="hint">直した文字・色・改行を保存し、動画と同じ表示の確認画像を作り直します（約10分・課金なし）。終わると自動でカードに出ます。</div>` : ""}</div>
     <div class="sty-prev" style="${st.color ? "color:" + st.color : ""}">${lines.slice(0, 3).map((l, i) => `<div class="${i ? "s" : ""}" style="${i && st.sub_color ? "color:" + st.sub_color : ""}">${paintLine(l, st.spans)}</div>`).join("")}<div class="hint" style="margin-top:8px;font-weight:400">↑ 目安です。実際の表示は、保存→「図・文字の表示を作る」で確認できます</div></div>
     <div class="field"><label>見出し・本文の色（この場面ぜんぶ）</label>
       <div>${chips("main", `<span class="chip" data-g="main" data-c="">標準</span><input type="color" id="c-main" value="${st.color || "#ffffff"}" style="width:44px;height:36px;vertical-align:middle">`)}</div></div>
@@ -1154,7 +1189,7 @@ function buildPanel(s){
     body.innerHTML = `
       <div class="msg">この場面は、画像を使わず、文字・図で表示します（今ある画像は、保存のときに外れます）。</div>
       ${S.prev && S.prev[s.id] ? `<div class="hint" style="margin:6px 0">動画では、次のように表示されます（確認画像）。</div><div class="thumb" style="max-width:560px"><img data-asset="${esc(S.prev[s.id].path)}" data-size="${S.prev[s.id].size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span></div>`
-        : `<div class="hint" style="margin:6px 0">表示の確認画像がまだありません。${CH.previewWf ? "ヘッダーの「図・文字の表示を作る」を押すと作れます。" : ""}</div>`}
+        : `<div class="hint" style="margin:6px 0">表示の確認画像がまだありません。${CH.previewWf ? "ヘッダーの「▶ 図・動きの確認を作る」を押すと作れます。" : ""}</div>`}
       <div class="row"><button id="mk" class="primary">文字・図にする</button></div>`;
     body.querySelector("#mk").onclick = () => { if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = "text"; render(); };
   }
@@ -1339,14 +1374,15 @@ async function startPreview(){
   watchPreview();   // 待たずに、裏で見に行く
 }
 async function watchPreview(){
-  const stem = S.stem, before = Object.fromEntries(Object.entries(S.prev || {}).map(([k, v]) => [k, v.sha]));
+  const stem = S.stem, shaOf = () => Object.fromEntries([...Object.entries(S.prev || {}), ...Object.entries(S.pvMotion || {}).map(([k, v]) => ["mv_" + k, v])].map(([k, v]) => [k, v.sha])), before = shaOf();
   const tid = ++previewPoll;
-  for(let i = 0; i < 16; i++){
+  for(let i = 0; i < 40; i++){
     await new Promise(res => setTimeout(res, 30000));
     if(tid !== previewPoll || stem !== S.stem) return;
     try{
       await loadAssets();
-      if(Object.entries(S.prev || {}).some(([k, v]) => before[k] !== v.sha)){ render(); dockMsg("確認画像が作り直されました。カードに本物の表示が出ています", "ok"); return; }
+      const now = shaOf();
+      if(Object.keys(now).length !== Object.keys(before).length || Object.entries(now).some(([k, v]) => before[k] !== v)){ render(); dockMsg("確認が作り直されました。カードに本物の表示と、動きが出ています", "ok"); return; }
     }catch{}
   }
 }
@@ -1354,8 +1390,8 @@ let previewPoll = 0;
 $("#b-prev").onclick = async () => {
   if(!S.json) return;
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
-  if(!confirm("文字・図解・グラフになる場面の、動画での表示を、確認画像にして作ります（音声・動画・課金は使いません。約3分）。\n終わると、自動で画面に出ます。よろしいですか？")) return;
-  try{ await startPreview(); dockMsg("表示の確認画像を作り始めました（約3分）。終わると自動で画面に出ます", "ok"); }
+  if(!confirm("文字・図解・グラフになる場面の、動画での表示を確認画像にし、動く図解の場面は、動きの確認用の動画も作ります（音声・動画づくり・課金は使いません。約10分）。\n終わると、自動で画面に出ます。よろしいですか？")) return;
+  try{ await startPreview(); dockMsg("図・動きの確認を作り始めました（約10分）。終わると自動で画面に出ます", "ok"); }
   catch(e){ dockMsg(e.message, "err"); }
 };
 $("#b-run").onclick = runProduce;
@@ -1455,7 +1491,7 @@ function renderYomi(){
   list.slice(0, Y.shown).forEach(s => {
     const cur = Y.texts[s.id] !== undefined ? Y.texts[s.id] : s.text;
     const el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px";
-    el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc(s.id.replace("scene_", "#"))}</b>　${esc(s.text)}</div>
+    el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc(("#" + numOf(s.id)))}</b>　${esc(s.text)}</div>
       ${aiYomiHtml(s)}
       ${s.locked ? '<div class="hint" style="color:var(--warn)">🔒 ロック中の場面は、読み上げ文を変えられません（辞書は、全場面に効きます）</div>' : ""}
       <textarea data-t="${esc(s.id)}" rows="2" style="min-height:48px" ${s.locked ? "disabled" : ""}>${esc(cur)}</textarea>
@@ -1559,7 +1595,7 @@ async function openBgm(){
   try{ await loadTracks(); }catch(e){ gMsg(e.message, "err"); return; }
   G.vals = {}; S.scenes.forEach(s => { if(s.raw.bgm) G.vals[s.id] = s.raw.bgm; }); G.shown = 25;
   const opts = gOptions("");
-  const scOpts = S.scenes.map(s => `<option value="${esc(s.id)}">${esc(s.id.replace("scene_", "#"))}</option>`).join("");
+  const scOpts = S.scenes.map(s => `<option value="${esc(s.id)}">${esc(("#" + numOf(s.id)))}</option>`).join("");
   $("#g-from").innerHTML = scOpts; $("#g-to").innerHTML = scOpts; $("#g-tr").innerHTML = opts.replace("（指定しない）", "曲を選ぶ");
   $("#g-info").textContent = G.tracks.length ? `曲 ${G.tracks.length}本（セカイ秒読みの曲 ${G.nMain}本＋ポストの向こう側の曲 ${G.tracks.length - G.nMain}本）。この動画の冒頭は、自動で「${G.def}」になります。` : "このチャンネルには、BGMの曲（assets/audio/bgm）がありません。";
   renderBgm();
@@ -1578,7 +1614,7 @@ function renderBgm(){
   S.scenes.slice(0, G.shown).forEach(s => {
     const v = G.vals[s.id] || "", old = v && !gIsTrack(v);
     const el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px";
-    el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc(s.id.replace("scene_", "#"))}</b>　${esc(s.text.slice(0, 40))}${s.text.length > 40 ? "…" : ""}</div>
+    el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc(("#" + numOf(s.id)))}</b>　${esc(s.text.slice(0, 40))}${s.text.length > 40 ? "…" : ""}</div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${s.locked ? "<span>🔒</span>" : ""}<select data-b="${esc(s.id)}" ${s.locked ? "disabled" : ""} style="flex:1 1 200px;width:auto"><option value="">（指定しない）</option>${old ? `<option value="${esc(v)}" selected>旧指定: ${esc(v)}（使われません）</option>` : ""}${gOptions(v, "")}</select>
       <span class="hint">♪ ${esc(eff[s.id] || "（なし）")}${v && gIsTrack(v) ? "　← ここから切り替え" : ""}</span></div>`;
     sc.appendChild(el);
@@ -1916,11 +1952,11 @@ function mVet(list, force){
   for(const sg of list){
     const sc = S.scenes.find(x => x.id === sg.scene);
     if(!sc){ dropped.push("場面が見つかりません"); continue; }
-    if(!MOTION_TYPES[sg.type]){ dropped.push(`#${sc.id.replace("scene_", "")}: 知らない種類`); continue; }
-    if(mSkip(sc, force)){ dropped.push(`#${sc.id.replace("scene_", "")}: ${mSkip(sc, force)}`); continue; }
-    if(sg.type === "map_pin" && !["photo", "generated"].includes(kindOf(sc))){ dropped.push(`#${sc.id.replace("scene_", "")}: 地図の点は、写真の場面だけ`); continue; }
-    if(!mValid(sg)){ dropped.push(`#${sc.id.replace("scene_", "")}: 形が合わない`); continue; }
-    if(!mGrounded(sg, sc.text)){ dropped.push(`#${sc.id.replace("scene_", "")}: ナレーションに無い数字`); continue; }
+    if(!MOTION_TYPES[sg.type]){ dropped.push(`#${numOf(sc.id)}: 知らない種類`); continue; }
+    if(mSkip(sc, force)){ dropped.push(`#${numOf(sc.id)}: ${mSkip(sc, force)}`); continue; }
+    if(sg.type === "map_pin" && !["photo", "generated"].includes(kindOf(sc))){ dropped.push(`#${numOf(sc.id)}: 地図の点は、写真の場面だけ`); continue; }
+    if(!mValid(sg)){ dropped.push(`#${numOf(sc.id)}: 形が合わない`); continue; }
+    if(!mGrounded(sg, sc.text)){ dropped.push(`#${numOf(sc.id)}: ナレーションに無い数字`); continue; }
     if(used.has(sc.id)) continue; used.add(sc.id);
     ok.push({...sg, on: true});
   }
@@ -1953,7 +1989,7 @@ function renderMotion(){
     const el = document.createElement("label");
     el.style.cssText = "display:block;border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px;cursor:pointer";
     el.innerHTML = `<div style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" data-i="${i}" ${sg.on ? "checked" : ""} style="width:20px;height:20px;margin-top:3px">
-      <div style="flex:1;min-width:0"><div><b>${esc(sc.id.replace("scene_", "#"))}</b>　<span style="color:var(--accent)">${esc(MOTION_TYPES[sg.type])}</span>　<span class="hint">（いまは: ${esc(({photo: "写真", generated: "生成画像", slide: "文字スライド", data: "図解", clip: "動画クリップ"})[kindOf(sc)] || kindOf(sc))}${S.assets[sc.id] || S.clips[sc.id] ? "・画像あり" : ""}）</span>${(S.assets[sc.id] || S.clips[sc.id]) && sg.type !== "map_pin" ? ' <span class="hint" style="color:var(--warn)">画像より動く図解を優先</span>' : ""}</div>
+      <div style="flex:1;min-width:0"><div><b>${esc(("#" + numOf(sc.id)))}</b>　<span style="color:var(--accent)">${esc(MOTION_TYPES[sg.type])}</span>　<span class="hint">（いまは: ${esc(({photo: "写真", generated: "生成画像", slide: "文字スライド", data: "図解", clip: "動画クリップ"})[kindOf(sc)] || kindOf(sc))}${S.assets[sc.id] || S.clips[sc.id] ? "・画像あり" : ""}）</span>${(S.assets[sc.id] || S.clips[sc.id]) && sg.type !== "map_pin" ? ' <span class="hint" style="color:var(--warn)">画像より動く図解を優先</span>' : ""}</div>
       <div class="hint" style="margin:3px 0">${esc(sc.text.slice(0, 70))}${sc.text.length > 70 ? "…" : ""}</div>
       <div style="font-size:14px;line-height:1.5">${esc(mSummary(sg))}</div>
       ${sg.why ? `<div class="hint" style="margin-top:2px">理由: ${esc(sg.why)}</div>` : ""}</div></div>`;
@@ -2005,7 +2041,7 @@ async function runPicked(){
     const have = new Set(ai.ok.map(x => x.scene));
     const fill = mVet(mRules(new Set([...ids].filter(id => !have.has(id)))), true);
     const ok = [...ai.ok, ...fill.ok].sort((a, b) => S.scenes.findIndex(x => x.id === a.scene) - S.scenes.findIndex(x => x.id === b.scene));
-    const none = [...ids].filter(id => !ok.some(x => x.scene === id)).map(id => "#" + id.replace("scene_", ""));
+    const none = [...ids].filter(id => !ok.some(x => x.scene === id)).map(id => "#" + numOf(id));
     mShow({ok, dropped: [...ai.dropped, ...fill.dropped]}, `チェックした${ids.size}場面`);
     if(none.length) mMsg($("#m-msg").textContent + `　ふさわしい動きが見つからなかった場面: ${none.join("、")}`, ok.length ? "ok" : "");
   }catch(e){ mMsg(e.message, "err"); }
