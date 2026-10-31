@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 19:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 19:30</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -1810,7 +1810,7 @@ const M = {sug: [], busy: false, pick: new Set()};
 const MOTION_TYPES = {
   big_number: "大きな数字（0から増える）", compare: "比較（左右から入り、数字が0から増える）", cards: "カード（順に出る）", summary: "まとめ（順に出る）",
   column_chart: "縦棒（下から伸びる）", bar_chart: "横棒（左から伸びる）", line_chart: "折れ線（左から描かれる）", timeline: "年表（左から右へ）",
-  node_map: "ノード図（線が伸びる）", solar_system: "太陽系の並び（惑星が順に出て、1つを指す）", size_compare: "大きさ比べ（天体の円が育つ）", particle_field: "粒子と磁場（粒子が流れる）", crater_section: "クレーターの断面（光が届かない底に氷）", map_pin: "地図の点（チカチカ）", doc_pan: "論文（パン・ズーム）",
+  node_map: "ノード図（線が伸びる）", solar_system: "太陽系の並び（惑星が順に出て、1つを指す）", size_compare: "大きさ比べ（天体の円が育つ）", particle_field: "粒子と磁場（粒子が流れる）", crater_section: "クレーターの断面（光が届かない底に氷）", step_track: "進行ステップ（進むたびにチカチカ）", map_pin: "地図の点（チカチカ）", doc_pan: "論文（パン・ズーム）",
 };
 const mMsg = (t, cls = "") => { const e = $("#m-msg"); e.textContent = t || ""; e.className = "msg " + cls; };
 const mNorm = t => String(t == null ? "" : t).normalize("NFKC").replace(/,/g, "");
@@ -1840,6 +1840,7 @@ function mValid(sg){
     case "solar_system": return M_PLANETS.includes(d.highlight) && (d.headline === undefined || mStr(d.headline, 30)) && (d.note === undefined || mStr(d.note, 30));
     case "size_compare": return mItems(d.items, 2, 4, it => mStr(it.label, 8) && (M_BODIES.includes(it.label) || (typeof it.diameter === "number" && it.diameter > 0))) && (d.headline === undefined || mStr(d.headline, 30)) && (d.note === undefined || mStr(d.note, 30));
     case "particle_field": return mItems(d.items, 1, 3, it => M_BODIES.includes(it.label) && ["strong", "weak"].includes(it.field) && (it.note === undefined || mStr(it.note, 40))) && (d.headline === undefined || mStr(d.headline, 30));
+    case "step_track": return mItems(d.steps, 3, 8, st => mStr(st.label, 12)) && Number.isInteger(d.current) && d.current >= 1 && d.current <= d.steps.length && (d.unit === undefined || mStr(d.unit, 8)) && (d.headline === undefined || mStr(d.headline, 30));
     case "crater_section": return ["headline", "sun", "shadow", "ice"].every(k => d[k] === undefined || mStr(d[k], 30));
     case "map_pin": return mItems(d.pins, 1, 3, p => typeof p.x === "number" && typeof p.y === "number" && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1);
     case "doc_pan": return mStr(d.title, 80) && mItems(d.lines, 3, 6, l => mStr(l, 90)) && Number.isInteger(d.highlight) && d.highlight >= 0 && d.highlight < d.lines.length;
@@ -1850,7 +1851,7 @@ function mSkip(sc, force){
   const raw = sc.raw, v = vis(sc), lay = (raw.slide || {}).layout;
   if(sc.locked) return "🔒ロック中";
   if(["hook", "opening", "cta"].includes(raw.type)) return "冒頭・あいさつ・締めは、そのまま";
-  if(kindOf(sc) === "clip") return "動画クリップの場面";
+  if(kindOf(sc) === "clip" && (S.clips[sc.id] || sc.stagedClip)) return "動画クリップの場面";   // 動画クリップを選んでいない（画像なし）の場面は、動く図解にできる
   if(force) return "";    // 社長がチェックした場面は、すでに動きがあっても、選び直せる
   if(v.anim || (raw.slide || {}).anim || v.map_pin) return "すでに動きがある";
   if(lay === "quote" || lay === "cta" || lay === "chapter") return "引用・章の扉・締め";
@@ -1889,6 +1890,18 @@ function mRules(only){
     if(/クレーター/.test(t) && /氷|影|当たらず|光が届/.test(t) && !/\d/.test(t)){
       out.push({scene: sc.id, type: "crater_section", why: "クレーターの断面で、影の底の氷を見せる", data: {headline: "極のクレーターの断面"}}); return;
     }
+    // 0.2) 「ミッション2は…」など、順に進む計画の、いまの段階（章の名前から、全体の並びを集める）
+    {
+      const mm = t.match(/^(ミッション|ステップ|フェーズ|段階)(\d+)は/);
+      if(mm){
+        const unit = mm[1], cur = +mm[2], re = new RegExp("^" + unit + "(\\d+)[\\s　]*(.+)$"), found = new Map();
+        S.scenes.forEach(x => { const m = String(x.chapter || "").match(re); if(m && !found.has(+m[1])) found.set(+m[1], m[2].trim()); });
+        const nums = [...found.keys()].sort((a, b) => a - b);
+        if(nums.length >= 3 && nums.length <= 8 && found.has(cur) && ![...found.values()].some(v => /\d/.test(v))){
+          out.push({scene: sc.id, type: "step_track", why: `${unit}の何番目かを、進みで見せる`, data: {headline: `${unit}の進み具合`, unit, current: nums.indexOf(cur) + 1, steps: nums.map(k => ({label: found.get(k)}))}}); return;
+        }
+      }
+    }
     // 0.5) 「AとBとCの3つ」「A、B、Cの3つ」など、数を言って並べる場面は、カード（順に出る）
     {
       const m = t.match(/([^\s、。]{1,10})は、?((?:[^\s、。]{1,10}、){1,3}[^\s、。]{1,10})の([2-4])つ/);
@@ -1896,6 +1909,14 @@ function mRules(only){
         const items = m[2].split("、");
         if(items.length === +m[3] && !/\d/.test(m[2])){
           out.push({scene: sc.id, type: "cards", why: `${m[3]}つの項目を、順に出す`, data: {headline: `${m[1]}は${m[3]}つ`, cards: items.map(x => ({label: x}))}}); return;
+        }
+      }
+      // 「候補は3つです。赤道、中緯度、そして、極です。」（数を言ってから、次の文で並べる）
+      const m2 = t.match(/([^\s、。]{1,10})は、?([2-4])つ(?:です|あります)。([^。]{3,40}?)(?:です|があります)。?/);
+      if(m2){
+        const items = m2[3].split(/、(?:そして、|また、)?/).map(x => x.trim()).filter(Boolean);
+        if(items.length === +m2[2] && items.every(x => x.length <= 12 && !/\d/.test(x))){
+          out.push({scene: sc.id, type: "cards", why: `${m2[2]}つの候補を、順に出す`, data: {headline: `${m2[1]}は${m2[2]}つ`, cards: items.map(x => ({label: x}))}}); return;
         }
       }
     }
@@ -1967,6 +1988,7 @@ const M_SYSTEM = `あなたは、YouTube解説動画の演出担当です。ナ�
 - solar_system: {"headline":"太陽系の惑星の並び","highlight":"水星","note":"太陽にいちばん近い"}  太陽から順に惑星を並べて、1つの惑星の位置を指す場面。highlight は 水星・金星・地球・火星・木星・土星・天王星・海王星 のどれか。note は省略可（数字は書かない）
 - size_compare: {"headline":"水星と月の大きさ","note":"月より、ひとまわり大きい","items":[{"label":"月"},{"label":"水星"}]}  天体の大きさ比べ。2〜4個。label は 太陽・水星・金星・地球・月・火星・木星・土星・天王星・海王星・冥王星 のどれか（直径は自動で入る。数字は書かない）
 - particle_field: {"headline":"太陽から来る粒子","items":[{"label":"地球","field":"strong","note":"磁場が強い：粒子をそらす"},{"label":"水星","field":"weak","note":"磁場が弱い：粒子を受けやすい"}]}  太陽の粒子（太陽風）と磁場・大気の強弱を比べる場面。1〜3天体。field は strong（粒子をそらす）か weak（粒子が表面に届く）。数字は書かない
+- step_track: {"headline":"移住計画のミッション","unit":"ミッション","current":2,"steps":[{"label":"たどり着く"},{"label":"住む場所"},{"label":"家をつくる"}]}  「ミッション1」「ミッション2」…のように、順に進む計画の、いまの段階を見せる場面（年表の動き。進んだ点が灯り、いまの点がチカチカする）。steps は3〜8個で、全場面で同じ並び。current は、いま何番目か（1から）。label に数字は書かない（番号は自動）。章ごとの chapter_label に「ミッション2 住む場所」のような名前があれば、それを使う
 - crater_section: {"headline":"北極のクレーターの断面"}  極のクレーターで、光が届かず氷がある場面（断面図。数字は書かない）
 - map_pin: {"headline":"…","source":"…","pins":[{"x":0.5,"y":0.4,"label":"…","sub":"…"}]}  場所を指す場面（写真・生成画像の場面だけ）。x,yは画像の0〜1の位置の見当
 - doc_pan: {"label":"…","title":"論文や資料の題","meta":"掲載誌・年","lines":["ナレーションの内容を言い換えた文",…],"highlight":2,"source":"出典"}  論文・報告書に言及する場面だけ。lines は3〜5文で、highlight は強調する行の番号（0から）
@@ -1975,7 +1997,7 @@ const M_SYSTEM = `あなたは、YouTube解説動画の演出担当です。ナ�
 - **動く図解を優先する。場面にすでに画像が設定されていても（image が true でも）、動く図解のほうがふさわしければ、選ぶ。** 画像の有無は、選ぶ理由にも、外す理由にもしない。数字・比較・時間の流れ・場所・論文・列挙の場面は、画像より動く図解を選ぶ。
 - **ナレーションに数字（日数・温度・割合・距離・年数・個数など）が出る場面は、原則すべて選ぶ。** 場面ごとに numbers（数字の一覧）を付けてある。numbers が空でない場面は、数字の数に合わせて選ぶ: 1つ→big_number、2つ→compare、3つ以上→bar_chart か column_chart、時間で変わる数→line_chart、年月日の流れ→timeline。数字が出るのに選ばないときは、選ばない理由が「すでに動きがある」「冒頭・締め」のどちらかだけ。
 - 惑星の並び・位置を言う場面は solar_system、天体の大きさを比べる場面は size_compare を選ぶ（主役の天体は、直前の場面から読み取る）。
-- 上の15種類を、できるだけ一通り使う（ふさわしい場面があれば、各種類を1回は使う）。選ぶ数に上限は付けない（ふさわしい場面は全部選ぶ。ただし数字も比較も場所も出ない場面は選ばない）。同じ種類は、3場面続けて使わない（2場面続くのはよい）。
+- 上の16種類を、できるだけ一通り使う（ふさわしい場面があれば、各種類を1回は使う）。選ぶ数に上限は付けない（ふさわしい場面は全部選ぶ。ただし数字も比較も場所も出ない場面は選ばない）。同じ種類は、3場面続けて使わない（2場面続くのはよい）。
 - type が hook・opening・cta の場面は選ばない。
 - 数字は、その場面のナレーションに出てくるものだけを使う。出てこない数字や固有名詞を作らない。（目盛りの0と100だけは可）
 - ナレーションの言い方を保つ。断定しすぎない。
@@ -2026,6 +2048,7 @@ function mSummary(sg){
     case "solar_system": return `太陽から順に惑星を並べ、${d.highlight}を指す${d.note ? "（" + d.note + "）" : ""}`;
     case "size_compare": return d.items.map(i => i.label).join(" と ") + "の大きさを、実際の比で並べる" + (d.note ? "（" + d.note + "）" : "");
     case "particle_field": return d.items.map(i => `${i.label}（磁場が${i.field === "strong" ? "強い" : "弱い"}）`).join(" ／ ") + "に、太陽の粒子が流れる";
+    case "step_track": return `${d.unit || "ミッション"}${d.current}／${d.steps.length}：${d.steps.map(x => x.label).join(" → ")}`;
     case "crater_section": return "極のクレーターの断面。光は縁をかすめ、影の底に氷が光る";
     case "map_pin": return d.pins.map(p => p.label || "（点）").join("・") + "（画像の上に点）";
     case "doc_pan": return `${d.title}（${(d.lines[d.highlight] || "").slice(0, 30)}…を強調）`;
