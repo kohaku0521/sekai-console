@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 19:30</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 20:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -266,27 +266,28 @@ const enc = s => new TextEncoder().encode(s);
 
 // 複数ファイルの追加・上書き・削除を、1コミットにまとめる（Git Data API）
 async function commitMany(changes, message){
-  for(let attempt = 0; attempt < 2; attempt++){
+  // 保存の最中に、ほかのコミット（動きのプレビューを作る Actions・別の保存）が先に入ると、更新が拒否される（422）。
+  // 画像のアップロード（blob）は1回だけ行い、最新の状態に作り直して、最大5回までやり直す
+  const blobs = new Map();
+  for(const c of changes){
+    if(c.bytes && !blobs.has(c)){
+      const blob = await api(repoPath(`/git/blobs`), {method: "POST", body: JSON.stringify({content: b64(c.bytes), encoding: "base64"})});
+      blobs.set(c, blob.sha);
+    }
+  }
+  for(let attempt = 0; attempt < 5; attempt++){
     const ref = await api(repoPath(`/git/ref/heads/${encodeURIComponent(gh.branch)}`));
     const base = ref.object.sha;
     const baseCommit = await api(repoPath(`/git/commits/${base}`));
-    const tree = [];
-    for(const c of changes){
-      if(c.bytes){
-        const blob = await api(repoPath(`/git/blobs`), {method: "POST", body: JSON.stringify({content: b64(c.bytes), encoding: "base64"})});
-        tree.push({path: c.path, mode: "100644", type: "blob", sha: blob.sha});
-      }else{
-        tree.push({path: c.path, mode: "100644", type: "blob", sha: null});   // 削除
-      }
-    }
+    const tree = changes.map(c => ({path: c.path, mode: "100644", type: "blob", sha: c.bytes ? blobs.get(c) : null}));   // sha: null は削除
     const nt = await api(repoPath(`/git/trees`), {method: "POST", body: JSON.stringify({base_tree: baseCommit.tree.sha, tree})});
     const nc = await api(repoPath(`/git/commits`), {method: "POST", body: JSON.stringify({message, tree: nt.sha, parents: [base]})});
     try{
       await api(repoPath(`/git/refs/heads/${encodeURIComponent(gh.branch)}`), {method: "PATCH", body: JSON.stringify({sha: nc.sha})});
       return nc;
     }catch(e){
-      if(attempt === 0 && /422|fast.?forward/i.test(e.message)) continue;   // 他のコミットが先に入った。1回だけやり直す
-      throw e;
+      if(attempt < 4 && /422|fast.?forward/i.test(e.message)){ await new Promise(res => setTimeout(res, 700 * (attempt + 1))); continue; }   // 他のコミットが先に入った。少し待って、最新の状態からやり直す
+      throw new Error(/422|fast.?forward/i.test(e.message) ? "保存の途中で、ほかの保存が何度も入りました（動きのプレビューを作っている最中など）。少し待ってから、もう一度「③ 保存」を押してください" : e.message);
     }
   }
 }
