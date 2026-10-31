@@ -91,6 +91,7 @@ a{color:#7fb0ff}
   <select id="range" style="max-width:300px" title="表示する場面の範囲。台本の「shorts」（切り抜きショート）の場面だけに絞れます"></select>
   <button id="b-reload">読み込み</button>
   <button id="b-enall" title="英訳のない場面を、OpenAIでまとめて英訳します（全部で数円以下）。このブラウザに保存します">全場面の英訳を作る</button>
+  <button id="b-yomi" title="ナレーションの漢字の読み違いを直します。読み上げだけが変わり、字幕は表記のままです">読み仮名を直す</button>
   <button id="b-prev" style="display:none" title="文字・図解・グラフになる場面が、動画でどう見えるかの確認画像を作ります（音声・動画・課金は使いません。約3分）">図・文字の表示を作る</button>
   <span class="spacer"></span>
   <a href="index.html" style="font-size:12px">統合コンソール</a>
@@ -120,7 +121,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/29 21:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/31 10:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -146,6 +147,24 @@ a{color:#7fb0ff}
   <div class="row"><button id="s-save" class="primary">保存</button><button id="s-close">閉じる</button></div>
 </div></div>
 
+
+<div id="yomi" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);overflow:auto">
+  <div style="max-width:760px;margin:14px auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 14px 90px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:15px">読み仮名を直す</b><span class="spacer"></span><button id="y-close">閉じる</button></div>
+    <div class="hint" style="margin-bottom:10px">読み上げだけが変わります（字幕は表記のまま）。<b>ひらがな</b>で書くと、そのとおりに読みます（例: 大気 → たいき）。保存した台本の、<b>次の生成から</b>反映されます（すでに作った動画は変わりません）。</div>
+    <div style="font-weight:700;margin:8px 0 4px">① 言葉の辞書（この台本の全場面に効く）</div>
+    <div id="y-dict"></div>
+    <div class="row"><button id="y-add">＋ 言葉を足す</button></div>
+    <div style="font-weight:700;margin:14px 0 4px">② 場面ごとの読み上げ文（その場面だけ直す）</div>
+    <div class="row"><input type="text" id="y-q" placeholder="場面の文字で絞る（例: 気圧）"></div>
+    <div id="y-scenes"></div>
+    <div class="row"><button id="y-more" style="display:none">さらに表示</button></div>
+    <div style="position:sticky;bottom:0;background:var(--panel);padding:10px 0 0;margin-top:10px;border-top:1px solid var(--line)">
+      <div class="msg" id="y-msg" style="margin-bottom:6px"></div>
+      <button class="primary" id="y-save" disabled>保存</button>
+    </div>
+  </div>
+</div>
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
@@ -1203,6 +1222,112 @@ $("#b-prev").onclick = async () => {
   catch(e){ dockMsg(e.message, "err"); }
 };
 $("#b-run").onclick = runProduce;
+// ── 読み仮名の直し（2026-10-31 社長「漢字の読み仮名の間違いが多いので、コンソールで直せるように」）──────────
+// 台本に、全場面に効く辞書 tts_readings（{表記: 読み}）と、場面ごとの読み上げ文 tts_text を書く。
+// 読み上げ（TTS）だけが変わり、字幕は表記のまま（src/narration.py。次の生成から反映）。
+const SENT_MAX = 46;
+function splitLong(part){
+  if(part.length <= SENT_MAX) return [part];
+  const pos = []; for(let i = 0; i < part.length; i++) if(part[i] === "、") pos.push(i + 1);
+  if(!pos.length) return [part];
+  const mid = part.length / 2; let cut = pos[0];
+  for(const p of pos) if(Math.abs(p - mid) < Math.abs(cut - mid)) cut = p;
+  return splitLong(part.slice(0, cut)).concat(splitLong(part.slice(cut)));
+}
+const splitSent = t => String(t || "").split(/(?<=[。！？])/).map(x => x.trim()).filter(Boolean).flatMap(splitLong);   // src/narration.py split_sentences と同じ
+const Y = {dict: [], texts: {}, shown: 20, q: ""};
+const yMsg = (t, cls = "") => { const e = $("#y-msg"); e.textContent = t || ""; e.className = "msg " + cls; };
+function openYomi(){
+  if(!S.json){ setMsg("先に台本を読み込んでください", "err"); return; }
+  Y.dict = Object.entries(S.json.tts_readings || {}).map(([k, v]) => ({k, v}));
+  Y.texts = {}; S.scenes.forEach(s => { if(s.raw.tts_text) Y.texts[s.id] = s.raw.tts_text; });
+  Y.shown = 20; Y.q = ""; $("#y-q").value = ""; yMsg("");
+  $("#yomi").style.display = ""; document.body.style.overflow = "hidden";
+  renderYomi();
+}
+const yDictObj = () => { const o = {}; Y.dict.forEach(e => { const k = e.k.trim(); if(k && e.v.trim()) o[k] = e.v.trim(); }); return o; };
+function yProblems(){
+  const bad = [];
+  S.scenes.forEach(s => { const t = Y.texts[s.id]; if(t && t !== s.text && splitSent(t).length !== splitSent(s.text).length) bad.push(s); });
+  return bad;
+}
+function yDirty(){
+  const d0 = JSON.stringify(S.json.tts_readings || {}), d1 = JSON.stringify(yDictObj());
+  if(d0 !== d1) return true;
+  return S.scenes.some(s => ((Y.texts[s.id] && Y.texts[s.id] !== s.text) ? Y.texts[s.id] : "") !== (s.raw.tts_text || ""));
+}
+function renderYomi(){
+  const d = $("#y-dict");
+  d.innerHTML = Y.dict.length ? "" : `<div class="hint">まだ登録がありません。「＋ 言葉を足す」で、読み違える言葉と、正しい読みを入れてください。</div>`;
+  Y.dict.forEach((e, i) => {
+    const n = e.k.trim() ? S.scenes.filter(s => s.text.includes(e.k.trim())).length : 0;
+    const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap";
+    row.innerHTML = `<input type="text" data-k="${i}" value="${esc(e.k)}" placeholder="表記（例: 大気）" style="flex:1 1 120px;min-width:100px"><span>→</span><input type="text" data-v="${i}" value="${esc(e.v)}" placeholder="読み（例: たいき）" style="flex:1 1 120px;min-width:100px"><span class="hint">${e.k.trim() ? n + "場面" : ""}</span><button data-del="${i}">削除</button>`;
+    d.appendChild(row);
+  });
+  d.querySelectorAll("[data-k]").forEach(el => el.oninput = () => {
+    Y.dict[+el.dataset.k].k = el.value; yRefreshState();
+    const k = el.value.trim(), h = el.parentElement.querySelector(".hint"); if(h) h.textContent = k ? S.scenes.filter(s => s.text.includes(k)).length + "場面" : "";   // 入力中も、その言葉を含む場面数を出す
+  });
+  d.querySelectorAll("[data-v]").forEach(el => el.oninput = () => { Y.dict[+el.dataset.v].v = el.value; yRefreshState(); });
+  d.querySelectorAll("[data-del]").forEach(el => el.onclick = () => { Y.dict.splice(+el.dataset.del, 1); renderYomi(); });
+  const q = Y.q.trim();
+  const list = S.scenes.filter(s => (!q || s.text.includes(q)) && inRange(s));
+  const sc = $("#y-scenes"); sc.innerHTML = "";
+  list.slice(0, Y.shown).forEach(s => {
+    const cur = Y.texts[s.id] !== undefined ? Y.texts[s.id] : s.text;
+    const el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px";
+    el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc(s.id.replace("scene_", "#"))}</b>　${esc(s.text)}</div>
+      <textarea data-t="${esc(s.id)}" rows="2" style="min-height:48px">${esc(cur)}</textarea>
+      <div class="row" style="margin:4px 0 0"><span class="hint" data-st="${esc(s.id)}"></span><button data-rs="${esc(s.id)}">元に戻す</button></div>`;
+    sc.appendChild(el);
+  });
+  sc.querySelectorAll("[data-t]").forEach(el => el.oninput = () => { Y.texts[el.dataset.t] = el.value; yRefreshState(); });
+  sc.querySelectorAll("[data-rs]").forEach(el => el.onclick = () => { delete Y.texts[el.dataset.rs]; renderYomi(); });
+  $("#y-more").style.display = list.length > Y.shown ? "" : "none";
+  $("#y-more").textContent = `さらに表示（残り${list.length - Y.shown}場面）`;
+  yRefreshState();
+}
+function yRefreshState(){
+  const bad = yProblems(), badIds = new Set(bad.map(s => s.id));
+  document.querySelectorAll("[data-st]").forEach(el => {
+    const s = S.scenes.find(x => x.id === el.dataset.st), t = Y.texts[el.dataset.st];
+    const changed = t !== undefined && t !== s.text;
+    el.textContent = badIds.has(s.id) ? `文の数が本文と違います（本文${splitSent(s.text).length}文・ここ${splitSent(t).length}文）。「。」の数を揃えてください` : changed ? "この場面の読みを直しています" : "";
+    el.style.color = badIds.has(s.id) ? "var(--bad)" : "var(--warn)";
+  });
+  const dirty = yDirty();
+  $("#y-save").disabled = !dirty || bad.length > 0;
+  yMsg(bad.length ? `文の数が本文と違う場面が${bad.length}件あります（赤字）。直すと保存できます` : dirty ? "変更があります。保存を押してください" : "", bad.length ? "err" : "");
+}
+$("#b-yomi").onclick = openYomi;
+$("#y-close").onclick = () => {
+  if(S.json && yDirty() && !confirm("保存していない変更があります。閉じますか？")) return;
+  $("#yomi").style.display = "none"; document.body.style.overflow = "";
+};
+$("#y-add").onclick = () => { Y.dict.push({k: "", v: ""}); renderYomi(); };
+$("#y-more").onclick = () => { Y.shown += 20; renderYomi(); };
+$("#y-q").oninput = e => { Y.q = e.target.value; Y.shown = 20; renderYomi(); };
+$("#y-save").onclick = async () => {
+  if(!ghReady()){ yMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  const json = JSON.parse(JSON.stringify(S.json));
+  const dict = yDictObj();
+  if(Object.keys(dict).length) json.tts_readings = dict; else delete json.tts_readings;
+  let n = 0;
+  json.narrative_structure.forEach((raw, i) => {
+    const s = S.scenes[i], t = Y.texts[s.id];
+    if(t !== undefined && t !== s.text && t.trim()){ raw.tts_text = t.trim(); n++; } else delete raw.tts_text;
+  });
+  $("#y-save").disabled = true; yMsg("保存しています…");
+  try{
+    await commitMany([{path: `${GH_DIR}/data/scripts/${S.name}`, bytes: enc(JSON.stringify(json, null, 2) + "\n")}],
+      `${S.stem}: 読み仮名を直す（辞書${Object.keys(dict).length}件・場面${n}件・画像入れ替えコンソール）`);
+    S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw);
+    yRefreshState();
+    yMsg(`保存しました（辞書${Object.keys(dict).length}件・場面${n}件）。次の生成から反映されます`, "ok");
+  }catch(e){ yMsg(e.message, "err"); $("#y-save").disabled = false; }
+};
+
 window.addEventListener("beforeunload", e => { if(changedScenes().length){ e.preventDefault(); e.returnValue = ""; } });
 
 async function start(){
