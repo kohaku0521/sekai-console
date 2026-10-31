@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 21:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 21:30</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -291,6 +291,28 @@ async function commitMany(changes, message){
     }
   }
 }
+
+// ── 台本の保存は、必ず「いまの台本」の上に、自分の変更だけを重ねる ──────────────────────────────
+// 画面を開いたあとに、ほかの変更（Claude の編集・別の保存・動きのプレビューなど）が台本に入っていても、古い画面の内容で全体を上書きしない
+// （2026-11-01 実際に、シーン64〜66の変更が、古い画面からの保存で消えた）。保存の直前に、GitHubから台本を読み直す
+async function freshScript(){
+  if(S.local) return JSON.parse(JSON.stringify(S.json));
+  try{
+    const f = await api(repoPath(`/contents/${GH_DIR}/data/scripts/${encodeURIComponent(S.name)}${refQ()}`), {cache: "no-store"});
+    const j = JSON.parse(dec(unb64(f.content)));
+    if(!j || !Array.isArray(j.narrative_structure)) throw new Error("台本を読み取れません");
+    S.mergedNote = stable(j) !== stable(S.json) ? "（保存の前に、台本にほかの変更が入っていたので、それを取り込んで保存しました）" : "";
+    return j;
+  }catch(e){
+    throw new Error("保存の前に、最新の台本を読み込めませんでした。通信を確認して、もう一度押してください（" + e.message + "）");
+  }
+}
+// 保存した台本を、画面の状態に取り込む（場面の対応は、順番ではなく、場面IDで）
+function adoptJson(json){
+  S.json = json;
+  S.scenes.forEach(sc => { const r = json.narrative_structure.find(x => x.id === sc.id); if(r) sc.raw = r; });
+}
+const rawById = (json, id) => json.narrative_structure.find(r => r.id === id);
 
 // ── 状態 ─────────────────────────────────────────────────────────────────
 const S = {
@@ -1217,11 +1239,12 @@ async function saveAll(){
   if(S.local && !confirm(`台本をリポジトリに新しく追加します。\n\n・場所: ${GH_DIR}/data/scripts/${S.name}\n・公開日（date）: ${S.json.date}\n・題名: ${S.json.title || ""}\n\n追加しても、動画は作られません（作るのは④です）。よろしいですか？`)) return;
   const base = `${GH_DIR}/assets/images/generated/${S.stem}`;
   const clipBase = `${GH_DIR}/assets/video_clips/${S.stem}`;
-  const json = JSON.parse(JSON.stringify(S.json));
+  let json;
+  try{ json = await freshScript(); }catch(e){ dockMsg(e.message, "err"); return; }
   let jsonChanged = S.local;   // 端末から開いた台本は、変更が無くても、台本そのものをリポジトリに入れる
   const changes = [], picks = [];
   for(const s of ch){
-    const raw = json.narrative_structure[s.idx];
+    const raw = rawById(json, s.id); if(!raw) continue;
     if(s.lockDirty){ if(s.locked) raw.locked = true; else delete raw.locked; jsonChanged = true; }
     if(s.locked) continue;   // ロック中の場面は、ほかの変更を書かない
     if(s.styleDirty){   // 文字の色（slide_style）。空なら消す
@@ -1279,9 +1302,9 @@ async function saveAll(){
     await commitMany(changes, `${S.stem}: ${S.local ? "台本を追加・" : ""}画像を入れ替え（${ch.length}場面・画像入れ替えコンソール）`);
     S.local = false;
     ch.forEach(s => { if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; s.lockDirty = false; });
-    if(jsonChanged){ S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw); }
+    if(jsonChanged) adoptJson(json);
     await loadAssets(); render();
-    dockMsg(`保存しました（${ch.length}場面）。続けて「④ 生成を開始」を押せます`, "ok");
+    dockMsg(`保存しました（${ch.length}場面）。続けて「④ 生成を開始」を押せます${S.mergedNote || ""}`, "ok");
   }catch(e){ dockMsg(e.message, "err"); $("#b-save").disabled = false; }
 }
 
@@ -1567,12 +1590,13 @@ $("#y-more").onclick = () => { Y.shown += 20; renderYomi(); };
 $("#y-q").oninput = e => { Y.q = e.target.value; Y.shown = 20; renderYomi(); };
 $("#y-save").onclick = async () => {
   if(!ghReady()){ yMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
-  const json = JSON.parse(JSON.stringify(S.json));
+  let json; try{ json = await freshScript(); }catch(e){ yMsg(e.message, "err"); return; }
   const dict = yDictObj();
   if(Object.keys(dict).length) json.tts_readings = dict; else delete json.tts_readings;
   let n = 0;
-  json.narrative_structure.forEach((raw, i) => {
-    const s = S.scenes[i], t = Y.texts[s.id];
+  json.narrative_structure.forEach(raw => {
+    const s = S.scenes.find(x => x.id === raw.id); if(!s) return;
+    const t = Y.texts[s.id];
     if(s.locked) return;   // ロック中の場面は、そのまま
     if(t !== undefined && t !== s.text && t.trim()){ raw.tts_text = t.trim(); n++; } else delete raw.tts_text;
   });
@@ -1580,7 +1604,7 @@ $("#y-save").onclick = async () => {
   try{
     await commitMany([{path: `${GH_DIR}/data/scripts/${S.name}`, bytes: enc(JSON.stringify(json, null, 2) + "\n")}],
       `${S.stem}: 読み仮名を直す（辞書${Object.keys(dict).length}件・場面${n}件・画像入れ替えコンソール）`);
-    S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw);
+    adoptJson(json);
     yRefreshState();
     yMsg(`保存しました（辞書${Object.keys(dict).length}件・場面${n}件）。次の生成から反映されます`, "ok");
   }catch(e){ yMsg(e.message, "err"); $("#y-save").disabled = false; }
@@ -1718,17 +1742,19 @@ $("#g-apply").onclick = () => {
 };
 $("#g-save").onclick = async () => {
   if(!ghReady()){ gMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
-  const json = JSON.parse(JSON.stringify(S.json)); let n = 0;
-  json.narrative_structure.forEach((raw, i) => {
-    if(S.scenes[i].locked) return;   // ロック中の場面は、そのまま
-    const v = G.vals[S.scenes[i].id];
+  let json; try{ json = await freshScript(); }catch(e){ gMsg(e.message, "err"); return; }
+  let n = 0;
+  json.narrative_structure.forEach(raw => {
+    const sc = S.scenes.find(x => x.id === raw.id); if(!sc) return;
+    if(sc.locked) return;   // ロック中の場面は、そのまま
+    const v = G.vals[sc.id];
     if(v){ raw.bgm = v; n++; } else delete raw.bgm;
   });
   $("#g-save").disabled = true; gMsg("保存しています…");
   try{
     await commitMany([{path: `${GH_DIR}/data/scripts/${S.name}`, bytes: enc(JSON.stringify(json, null, 2) + "\n")}],
       `${S.stem}: BGMを場面に合わせる（指名${n}場面・画像入れ替えコンソール）`);
-    S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw);
+    adoptJson(json);
     renderBgm(); gMsg(`保存しました（指名${n}場面）。次の生成から反映されます`, "ok");
   }catch(e){ gMsg(e.message, "err"); $("#g-save").disabled = false; }
 };
@@ -1767,11 +1793,12 @@ $("#c-run").onclick = async () => {
   const t = clearTargets(), chosen = CLEAR_OPTS.filter(([k]) => C.on[k]).map(([, l]) => "・" + l.replace(/（.*）/, "")).join("\n");
   const ans = prompt(`🔒ロック中ではない${t.length}場面から、次を消します。\n${chosen}\n\n消したものは、GitHubの履歴から戻せます。続けるには『まっさら』と入力してください`);
   if(ans !== "まっさら") return;
-  const json = JSON.parse(JSON.stringify(S.json)), changes = [], ids = new Set(t.map(x => x.id));
+  let json; try{ json = await freshScript(); }catch(e){ $("#c-msg").textContent = e.message; $("#c-msg").className = "msg err"; return; }
+  const changes = [], ids = new Set(t.map(x => x.id));
   let nJson = 0, nFiles = 0;
   const base = `${GH_DIR}/assets/images/generated/${S.stem}`, clipBase = `${GH_DIR}/assets/video_clips/${S.stem}`;
   for(const sc of t){
-    const raw = json.narrative_structure[sc.idx];
+    const raw = rawById(json, sc.id); if(!raw) continue;
     if(C.on.files){
       if(S.assets[sc.id]){ changes.push({path: S.assets[sc.id].path || `${base}/${S.assets[sc.id].name}`, bytes: null}); nFiles++; }
       if(S.clips[sc.id]){ changes.push({path: `${clipBase}/${S.clips[sc.id].name}`, bytes: null}); nFiles++; }
@@ -1797,7 +1824,7 @@ $("#c-run").onclick = async () => {
   $("#c-run").disabled = true; $("#c-msg").textContent = "保存しています…"; $("#c-msg").className = "msg";
   try{
     await commitMany(changes, `${S.stem}: 全シーンをまっさらにする（${t.length}場面・ファイル${nFiles}件・台本の設定${nJson}件・画像入れ替えコンソール）`);
-    S.json = json; json.narrative_structure.forEach((raw, i) => { if(S.scenes[i]) S.scenes[i].raw = raw; });
+    adoptJson(json);
     S.scenes.forEach(x => { if(ids.has(x.id)){ if(x.staged && x.staged.url) URL.revokeObjectURL(x.staged.url); x.staged = null; x.stagedClip = null; x.action = null; x.styleDirty = false; x.edits = {}; x.style = JSON.parse(JSON.stringify(x.raw.slide_style || {})); } });
     await loadAssets(); render();
     $("#c-msg").textContent = `まっさらにしました（ファイル${nFiles}件・台本の設定${nJson}件）。🔒ロック中の場面は、そのままです`; $("#c-msg").className = "msg ok";
@@ -2154,13 +2181,13 @@ $("#m-save").onclick = async () => {
   if(!ghReady()){ mMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
   const picks = M.sug.filter(x => x.on && !(S.scenes.find(y => y.id === x.scene) || {}).locked); if(!picks.length) return;
   if(!confirm(`${picks.length}場面に、動く図解を書き込みます（台本を保存します）。\n画像が設定済みの場面も、動く図解を優先して置き換わります（設定済みの画像ファイルは消さず、残ります。地図の点だけは、画像の上に重なります）。元の台本は、履歴から戻せます。よろしいですか？`)) return;
-  const json = JSON.parse(JSON.stringify(S.json));
-  picks.forEach(sg => mApply(json, sg));
+  let json; try{ json = await freshScript(); }catch(e){ mMsg(e.message, "err"); return; }
+  picks.forEach(sg => { if(rawById(json, sg.scene)) mApply(json, sg); });
   M.busy = true; $("#m-save").disabled = true; mMsg("保存しています…");
   try{
     await commitMany([{path: `${GH_DIR}/data/scripts/${S.name}`, bytes: enc(JSON.stringify(json, null, 2) + "\n")}],
       `${S.stem}: 動く図解を自動で当てはめる（${picks.length}場面・画像入れ替えコンソール）`);
-    S.json = json; json.narrative_structure.forEach((raw, i) => { if(S.scenes[i]) S.scenes[i].raw = raw; });
+    adoptJson(json);
     M.sug = []; renderMotion(); render();
     mMsg(`保存しました（${picks.length}場面）。次の生成から、動きが入ります`, "ok");
   }catch(e){ mMsg(e.message, "err"); }
