@@ -90,6 +90,8 @@ a{color:#7fb0ff}
   <select id="script" style="max-width:360px"></select>
   <select id="range" style="max-width:300px" title="表示する場面の範囲。台本の「shorts」（切り抜きショート）の場面だけに絞れます"></select>
   <button id="b-reload">読み込み</button>
+  <button id="b-open" title="このパソコン・スマホにある台本のJSONファイルを開きます。まだリポジトリに無い台本でも、画像を選べます。「③ 保存」でリポジトリに追加されます">📂 台本JSONを開く</button>
+  <input type="file" id="f-open" accept=".json,application/json" style="display:none">
   <button id="b-enall" title="英訳のない場面を、OpenAIでまとめて英訳します（全部で数円以下）。このブラウザに保存します">全場面の英訳を作る</button>
   <button id="b-bgm" title="BGMを、場面に合わせて切り替えます（場面ごとに曲を選べます）">BGMを変える</button>
   <button id="b-yomi" title="ナレーションの漢字の読み違いを直します。読み上げだけが変わり、字幕は表記のままです">読み仮名を直す</button>
@@ -122,7 +124,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/31 12:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 10/31 13:30</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -263,7 +265,7 @@ async function commitMany(changes, message){
 // ── 状態 ─────────────────────────────────────────────────────────────────
 const S = {
   en: {}, up: {},
-  scripts: [], name: "", stem: "", json: null, scenes: [],
+  scripts: [], name: "", stem: "", json: null, scenes: [], local: false,   // local: 端末のファイルから開いた、まだリポジトリに無い台本
   assets: {}, clips: {},          // 場面ID → {url,size}
   filter: "review", open: null, page: 0,
   range: "", ranges: [],          // 表示範囲: ""=全場面 / "0"=ショート1…（台本の shorts[] の from〜to の場面だけ）
@@ -342,6 +344,12 @@ async function loadScript(name){
   const json = JSON.parse(dec(unb64(f.content)));
   const ns = json.narrative_structure;
   if(!Array.isArray(ns)) throw new Error("この台本は narrative_structure が無く、場面を読めません");
+  await adoptScript(name, json, false);
+}
+// 台本JSONを画面に取り込む（リポジトリから読んだとき・端末のファイルを開いたときの共通の処理）
+async function adoptScript(name, json, local){
+  const ns = json.narrative_structure;
+  S.local = !!local;
   S.name = name; S.stem = name.replace(/\.json$/i, ""); S.json = json;
   S.scenes = ns.map((raw, i) => ({
     raw, idx: i, id: raw.id || `scene_${String(i + 1).padStart(2, "0")}`,
@@ -351,7 +359,7 @@ async function loadScript(name){
     stagedClip: null,                     // Pixabay動画クリップの選択（{bytes,url,source}）
     edits: {},                            // 文字の内容・改行・スペースの手直し（キー→文字列）
   }));
-  localStorage.setItem("tas.img.script", name);
+  if(!local) localStorage.setItem("tas.img.script", name);
   buildRanges();
   // 長尺の台本に切り抜きの指定（shorts）が無ければ、④で切り抜きは作らない（ショートは、ショート専用の台本を読み込んで④で作る）
   $("#c-shorts").checked = !json.standalone_short && (json.shorts || []).length > 0;
@@ -695,7 +703,7 @@ function currentOf(s){
   if(pv) return {url: null, asset: pv, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし → この文字で表示" : "この図・文字で表示"};
   return {url: null, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし（文字で表示）" : "文字・図で表示"};
 }
-function updateSaveBtn(){ const n = changedScenes().length; $("#b-save").textContent = `③ 保存（${n}件の変更）`; $("#b-save").disabled = !n; }
+function updateSaveBtn(){ const n = changedScenes().length; $("#b-save").textContent = S.local ? `③ 保存（台本を新規追加＋${n}件の変更）` : `③ 保存（${n}件の変更）`; $("#b-save").disabled = !n && !S.local; }
 const isChg = s => !!(s.staged || s.stagedClip || s.action || s.styleDirty);
 const changedScenes = () => S.scenes.filter(isChg);
 
@@ -761,7 +769,7 @@ function render(){
   });
   observeImages();
   const n = ch.length;
-  $("#b-save").textContent = `③ 保存（${n}件の変更）`; $("#b-save").disabled = !n;
+  updateSaveBtn();
 }
 
 // ── 文字の色（場面ごと・単語ごと。2026-10-29 社長指示）─────────────────────────────
@@ -1085,12 +1093,13 @@ function buildPanel(s){
 
 // ── 保存（1コミット）──────────────────────────────────────────────────────
 async function saveAll(){
-  const ch = changedScenes(); if(!ch.length) return;
+  const ch = changedScenes(); if(!ch.length && !S.local) return;
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  if(S.local && !confirm(`台本をリポジトリに新しく追加します。\n\n・場所: ${GH_DIR}/data/scripts/${S.name}\n・公開日（date）: ${S.json.date}\n・題名: ${S.json.title || ""}\n\n追加しても、動画は作られません（作るのは④です）。よろしいですか？`)) return;
   const base = `${GH_DIR}/assets/images/generated/${S.stem}`;
   const clipBase = `${GH_DIR}/assets/video_clips/${S.stem}`;
   const json = JSON.parse(JSON.stringify(S.json));
-  let jsonChanged = false;
+  let jsonChanged = S.local;   // 端末から開いた台本は、変更が無くても、台本そのものをリポジトリに入れる
   const changes = [], picks = [];
   for(const s of ch){
     const raw = json.narrative_structure[s.idx];
@@ -1141,7 +1150,8 @@ async function saveAll(){
   changes.push({path: `${base}/_manual_picks.json`, bytes: enc(JSON.stringify(merged, null, 2) + "\n")});
   $("#b-save").disabled = true; dockMsg(`保存しています…（${ch.length}場面）`);
   try{
-    await commitMany(changes, `${S.stem}: 画像を入れ替え（${ch.length}場面・画像入れ替えコンソール）`);
+    await commitMany(changes, `${S.stem}: ${S.local ? "台本を追加・" : ""}画像を入れ替え（${ch.length}場面・画像入れ替えコンソール）`);
+    S.local = false;
     ch.forEach(s => { if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; });
     if(jsonChanged){ S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw); }
     await loadAssets(); render();
@@ -1158,6 +1168,7 @@ async function dispatch(inputs, doneMsg){
 }
 async function runAssets(){
   if(!S.json) return;
+  if(S.local){ dockMsg("この台本は、まだリポジトリにありません。先に「③ 保存」で追加してください", "err"); return; }
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
   if(!confirm("素材だけを取ります（NASA画像とPixabay写真。絵の生成・音声・動画・アップロードはしません）。\n終わったら「読み込み」を押して画像を確認してください。よろしいですか？")) return;
   try{ await dispatch({fetch_pixabay: "true", assets_only: "true", upload: "false", slides_only: "false", shorts: "false"}, "素材の自動取得を始めました（数分）。終わったら「読み込み」を押してください"); }
@@ -1165,6 +1176,7 @@ async function runAssets(){
 }
 async function runProduce(){
   if(!S.json) return;
+  if(S.local){ dockMsg("この台本は、まだリポジトリにありません。先に「③ 保存」で追加してください", "err"); return; }
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
   if(changedScenes().length){ dockMsg("未保存の変更があります。先に「③ 保存」を押してください", "err"); return; }
   // ショート専用の台本（…-short.json）は、④でショートだけを作って予約する（2026-10-29 社長指示「⑤は消して。ショートも台本を読み込んで、画像を選んで、④を押す」）。
@@ -1180,6 +1192,7 @@ async function runProduce(){
     return;
   }
   const date = (S.json.date || "").slice(0, 10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ dockMsg("台本の date が日付（2026-11-05 の形）になっていません。公開日が決まらないので、④は押せません", "err"); return; }
   const shorts = $("#c-shorts").checked;
   if(!confirm(`動画を作ってアップロードします（約40分）。\n台本の日付 ${date} の20時に、予約公開されます。\n\n・画像は、いまリポジトリにあるものを使います（取り直しません）\n・サムネの絵（OpenAI）は、描いてあれば描き直しません\n・切り抜きショート: ${shorts ? "作って予約します（冒頭のフック動画が課金されます）" : "作りません"}\n\n※同じ台本の動画が、すでにアップロード・予約されている場合は、二重になります。先に古い動画を削除してください。\n\nよろしいですか？`)) return;
   const extra = CH.artQuality ? {art_quality: $("#s-art").value} : {};
@@ -1203,10 +1216,40 @@ $("#s-save").onclick = async () => {
   await start();
 };
 $("#b-reload").onclick = async () => {
+  if(S.local && $("#script").value === S.name){ setMsg("この台本は端末から開いたもので、まだリポジトリにありません。開き直すには「📂 台本JSONを開く」を押してください", "err"); return; }
   if(changedScenes().length && !confirm("未保存の変更は消えます。読み込み直しますか？")) return;
   try{ await loadScript($("#script").value); }catch(e){ setMsg(e.message, "err"); }
 };
 $("#b-save").onclick = saveAll;
+// ── 端末のJSONファイルから台本を開く（2026-10-31 社長指示「コンソールで台本jsonを読み込むボタンを付けて」）──────────────
+// ファイル名は「日付-名前-long.json」の形（台本の date はその日付になる）。リポジトリに無い台本でも、画像を選んで「③ 保存」で追加できる
+$("#b-open").onclick = () => $("#f-open").click();
+$("#f-open").onchange = async e => {
+  const file = e.target.files && e.target.files[0]; e.target.value = "";
+  if(!file) return;
+  try{
+    if(changedScenes().length && !confirm("未保存の変更は消えます。別の台本を開きますか？")) return;
+    const json = JSON.parse((await file.text()).replace(/^\uFEFF/, ""));
+    if(!Array.isArray(json.narrative_structure) || !json.narrative_structure.length) throw new Error("この台本は narrative_structure が無く、場面を読めません");
+    const okName = /^\d{4}-\d{2}-\d{2}-[A-Za-z0-9-]+-(long|short)\.json$/;
+    let name = file.name;
+    if(!okName.test(name)){
+      const d0 = /^\d{4}-\d{2}-\d{2}/.test(json.date || "") ? json.date.slice(0, 10) : "YYYY-MM-DD";
+      const slug = file.name.replace(/\.json$/i, "").replace(/[^A-Za-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "script";
+      const ans = prompt("台本のファイル名を決めてください（公開日-名前-long.json の形。例: 2026-11-05-mercury-long.json）", `${d0}-${slug}-long.json`);
+      if(!ans) return;
+      name = ans.trim();
+      if(!okName.test(name)) throw new Error("ファイル名は 2026-11-05-mercury-long.json のように、日付で始め、英数字とハイフンだけにして、-long.json か -short.json で終わらせてください");
+    }
+    if(!/^\d{4}-\d{2}-\d{2}/.test(json.date || "")) json.date = name.slice(0, 10);   // 日付が無い・「未定」のときは、ファイル名の日付にする
+    if(S.scripts.includes(name) && !confirm(`${name} は、リポジトリにすでにあります。\n開いた台本で置き換わります（③ 保存のとき）。よろしいですか？`)) return;
+    await adoptScript(name, json, true);
+    const sel = $("#script");
+    if(![...sel.options].some(o => o.value === name)) sel.insertAdjacentHTML("afterbegin", `<option value="${esc(name)}">${esc(name)}（未保存）</option>`);
+    sel.value = name;
+    setMsg(`台本を開きました（${S.scenes.length}場面・公開日 ${json.date}）。まだリポジトリにはありません。画像を選び、「③ 保存」で ${GH_DIR}/data/scripts/ に追加されます`, "ok");
+  }catch(err){ setMsg(err.message, "err"); }
+};
 $("#b-assets").onclick = runAssets;
 // 図・文字の表示の確認画像を作る（previewWf があるチャンネルだけ）。音声・動画・課金は使わない
 $("#b-enall").onclick = e => { if(!S.json) return; if(!oa.apiKey){ dockMsg("OpenAI のAPIキーが未設定です（⚙ 接続設定）", "err"); return; } makeEnAll(e.target); };
@@ -1459,7 +1502,7 @@ $("#g-save").onclick = async () => {
   }catch(e){ gMsg(e.message, "err"); $("#g-save").disabled = false; }
 };
 
-window.addEventListener("beforeunload", e => { if(changedScenes().length){ e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", e => { if(changedScenes().length || S.local){ e.preventDefault(); e.returnValue = ""; } });
 
 async function start(){
   if(!ghReady()){ setMsg("「⚙ 接続設定」でGitHubのトークンを入れてください", "err"); return; }
