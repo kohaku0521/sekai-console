@@ -39,6 +39,8 @@ a{color:#7fb0ff}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
 .card.changed{border-color:var(--warn)}
+.card.locked{outline:2px solid #c9a227;outline-offset:-2px}
+.lockbtn{min-width:44px}
 .card.open{grid-column:1/-1;border-color:var(--accent);display:grid;grid-template-columns:minmax(260px,420px) 1fr;align-items:start}
 .card.open .panel{grid-column:1/-1}
 @media(max-width:700px){.card.open{grid-template-columns:1fr}}
@@ -93,6 +95,7 @@ a{color:#7fb0ff}
   <button id="b-open" title="このパソコン・スマホにある台本のJSONファイルを開きます。まだリポジトリに無い台本でも、画像を選べます。「③ 保存」でリポジトリに追加されます">📂 台本JSONを開く</button>
   <input type="file" id="f-open" style="display:none">
   <button id="b-enall" title="英訳のない場面を、OpenAIでまとめて英訳します（全部で数円以下）。このブラウザに保存します">全場面の英訳を作る</button>
+  <button id="b-clear" title="全場面の、画像・動画クリップ、動き・図解の設定などを、まっさらにします（ロック中の場面は、そのまま）。選んだ項目だけを消せます">🧹 全シーンをまっさらにする</button>
   <button id="b-motion" title="数字・比較・グラフ・年表・地図・論文などの『動く図解』を、ナレーションに合わせて、ふさわしい場面に自動で当てはめます（提案を見て、選んだものだけ台本に書きます）">🎬 動きを自動で当てはめる</button>
   <button id="b-bgm" title="BGMを、場面に合わせて切り替えます（場面ごとに曲を選べます）">BGMを変える</button>
   <button id="b-yomi" title="ナレーションの漢字の読み違いを直します。読み上げだけが変わり、字幕は表記のままです">読み仮名を直す</button>
@@ -125,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 08:30</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 10:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -183,6 +186,16 @@ a{color:#7fb0ff}
       <div class="msg" id="m-msg" style="margin-bottom:6px"></div>
       <button class="primary" id="m-save" disabled>選んだ提案を台本に書く（保存）</button>
     </div>
+  </div>
+</div>
+<div id="clear" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);overflow:auto">
+  <div style="max-width:720px;margin:14px auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 14px 90px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:15px">🧹 全シーンをまっさらにする</b><span class="spacer"></span><button id="c-close">閉じる</button></div>
+    <div class="hint" style="margin-bottom:10px">消したい項目にチェックを入れてください。<b>🔒ロック中の場面は、何も消えません。</b>台本のナレーション（本文）と、題名・サムネは、消えません。消したものは、GitHubの履歴から戻せます。</div>
+    <div id="c-opts"></div>
+    <div class="msg" id="c-count" style="margin:8px 0"></div>
+    <div class="msg" id="c-msg" style="margin-bottom:6px"></div>
+    <button class="primary" id="c-run">まっさらにする（保存）</button>
   </div>
 </div>
 <div id="bgm" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);overflow:auto">
@@ -323,8 +336,8 @@ async function makeEn(s, btn){
   catch(e){ if(btn){ btn.disabled = false; btn.textContent = old; } dockMsg(e.message, "err"); }
 }
 async function makeEnAll(btn){
-  const todo = S.scenes.filter(x => !enOf(x));
-  if(!todo.length){ dockMsg("すべての場面に英訳があります", "ok"); return; }
+  const todo = S.scenes.filter(x => !enOf(x) && !x.locked);
+  if(!todo.length){ dockMsg("英訳のない場面は、ありません（ロック中の場面は除く）", "ok"); return; }
   if(!confirm(`英訳のない${todo.length}場面を、OpenAI（gpt-4o-mini）で英訳します。1場面あたり1円未満（全部で数円以下）の課金です。よろしいですか？`)) return;
   let n = 0;
   for(const x of todo){
@@ -374,6 +387,7 @@ async function adoptScript(name, json, local){
     style: JSON.parse(JSON.stringify(raw.slide_style || {})), styleDirty: false,   // 文字の色（slide_style。2026-10-29）
     stagedClip: null,                     // Pixabay動画クリップの選択（{bytes,url,source}）
     edits: {},                            // 文字の内容・改行・スペースの手直し（キー→文字列）
+    locked: !!raw.locked, lockDirty: false,   // 🔒 ロック（2026-11-01）: ロックした場面は、一括の変更も、手での変更も受け付けない。台本の locked に保存する
   }));
   if(!local) localStorage.setItem("tas.img.script", name);
   buildRanges();
@@ -719,8 +733,24 @@ function currentOf(s){
   if(pv) return {url: null, asset: pv, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし → この文字で表示" : "この図・文字で表示"};
   return {url: null, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし（文字で表示）" : "文字・図で表示"};
 }
+// ロック: 台本の locked に保存する（③保存のときに書く）。ロックした場面は、一括の変更も、手での変更も受け付けない
+function setLock(sc, on){
+  if(!!sc.locked === !!on) return;
+  if(on){   // ロックする場面の、保存前の変更は破棄する
+    if(sc.staged && sc.staged.url) URL.revokeObjectURL(sc.staged.url);
+    if(sc.stagedClip && sc.stagedClip.url) URL.revokeObjectURL(sc.stagedClip.url);
+    sc.staged = null; sc.stagedClip = null; sc.action = null; sc.edits = {}; sc.style = JSON.parse(JSON.stringify(sc.raw.slide_style || {})); sc.styleDirty = false;
+    if(S.open === sc.id) S.open = null;
+  }
+  sc.locked = !!on; sc.lockDirty = sc.locked !== !!sc.raw.locked;
+}
+function toggleLock(sc){
+  if(!sc.locked && (sc.staged || sc.stagedClip || sc.action || sc.styleDirty) && !confirm("この場面の、保存前の変更は、ロックすると破棄されます。ロックしますか？")) return;
+  setLock(sc, !sc.locked); render();
+}
 function updateSaveBtn(){ const n = changedScenes().length; $("#b-save").textContent = S.local ? `③ 保存（台本を新規追加＋${n}件の変更）` : `③ 保存（${n}件の変更）`; $("#b-save").disabled = !n && !S.local; }
-const isChg = s => !!(s.staged || s.stagedClip || s.action || s.styleDirty);
+const isChg = s => !!(s.staged || s.stagedClip || s.action || s.styleDirty || s.lockDirty);
+const LOCKED_MSG = "この場面はロック中です。変更するには、🔒を押して、ロックを外してください";
 const changedScenes = () => S.scenes.filter(isChg);
 
 function render(){
@@ -734,11 +764,14 @@ function render(){
     ["場面", S.range === "" ? S.scenes.length : `${S.scenes.filter(inRange).length} / ${S.scenes.length}`, ""], ["画像を使う場面", need.length, ""],
     ["画像が無い（文字で表示）", noImg.length, noImg.length ? "warn" : "ok"], ["変更あり", ch.length, ch.length ? "warn" : ""],
   ].map(([k, v, c]) => `<div class="stat ${c}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
-  const F = [["review", "画像を使う場面"], ["slides", "図・文字の場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["all", "すべて"]];
+  const F = [["review", "画像を使う場面"], ["slides", "図・文字の場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["locked", "🔒ロック中"], ["all", "すべて"]];
   $("#filters").innerHTML = F.map(([k, l]) => `<button data-f="${k}" class="${S.filter === k ? "on" : ""}">${l}</button>`).join("");
-  $("#filters").querySelectorAll("button").forEach(b => b.onclick = () => { S.filter = b.dataset.f; S.page = 0; S.open = null; render(); });
-  const list = S.scenes.filter(inRange).filter(s => S.filter === "all" ? true : S.filter === "slides" ? !needsReview(s) : S.filter === "changed" ? isChg(s)
+  $("#filters").insertAdjacentHTML("beforeend", `<span class="spacer"></span><button id="b-lockall" title="いま絞り込んで表示している場面を、すべてロックします">🔒 表示中をすべてロック</button><button id="b-unlockall" title="いま絞り込んで表示している場面の、ロックを外します">🔓 表示中のロックを外す</button>`);
+  $("#filters").querySelectorAll("button[data-f]").forEach(b => b.onclick = () => { S.filter = b.dataset.f; S.page = 0; S.open = null; render(); });
+  const list = S.scenes.filter(inRange).filter(s => S.filter === "all" ? true : S.filter === "slides" ? !needsReview(s) : S.filter === "changed" ? isChg(s) : S.filter === "locked" ? s.locked
     : S.filter === "noimg" ? (needsReview(s) && !S.assets[s.id] && !S.clips[s.id] && !s.staged) : needsReview(s));
+  $("#b-lockall").onclick = () => { list.forEach(x => setLock(x, true)); render(); dockMsg(`${list.length}場面をロックしました。「③ 保存」で確定します`, "ok"); };
+  $("#b-unlockall").onclick = () => { list.forEach(x => setLock(x, false)); render(); dockMsg(`${list.length}場面のロックを外しました。「③ 保存」で確定します`, "ok"); };
   // 一度にたくさんの画像を読み込むと重いので、15場面ごとのタブに分けて、いまのタブの分だけ表示する
   const PER = 15;
   const pageCount = Math.max(1, Math.ceil(list.length / PER));
@@ -761,27 +794,28 @@ function render(){
     const cur = currentOf(s);
     const approx = !s.stagedClip && showsText(s) && (s.styleDirty || !(S.prev && S.prev[s.id]) || isStale(s));
     const el = document.createElement("div");
-    el.className = "card" + (isChg(s) ? " changed" : "") + (S.open === s.id ? " open" : "");
+    el.className = "card" + (isChg(s) ? " changed" : "") + (S.open === s.id ? " open" : "") + (s.locked ? " locked" : "");
     el.innerHTML = `
       <div class="thumb">${s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
-        <span class="badge ${isChg(s) ? "ch" : ""}">${esc(s.id.replace("scene_", ""))} · ${esc(kindOf(s))}${approx ? (isStale(s) ? " · この文字で表示（目安・確認画像は未更新）" : " · この文字で表示（目安）") : cur.label && (cur.url || cur.asset || s.stagedClip) ? " · " + esc(cur.label) : ""}</span></div>
+        <span class="badge ${isChg(s) ? "ch" : ""}">${s.locked ? "🔒 " : ""}${esc(s.id.replace("scene_", ""))} · ${esc(kindOf(s))}${approx ? (isStale(s) ? " · この文字で表示（目安・確認画像は未更新）" : " · この文字で表示（目安）") : cur.label && (cur.url || cur.asset || s.stagedClip) ? " · " + esc(cur.label) : ""}</span></div>
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
-        <div class="row" style="margin:0"><button data-open="${esc(s.id)}">${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}
+        <div class="row" style="margin:0"><button class="lockbtn" data-lock="${esc(s.id)}" title="${s.locked ? "ロック中。押すと、ロックを外します" : "押すと、この場面をロックします（一括の変更も、手での変更も、受け付けなくなります）"}">${s.locked ? "🔒" : "🔓"}</button><button data-open="${esc(s.id)}" ${s.locked ? "disabled" : ""}>${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}${s.locked ? ' <span class="hint">ロック中</span>' : ""}
         ${isChg(s) ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
         ${enOf(s) ? `<button data-copyen="${esc(s.id)}" title="この場面のナレーションの英訳をコピーします">英訳をコピー</button>` : `<button data-makeen="${esc(s.id)}" title="OpenAIで、この場面のナレーションを英訳します（1円未満）">英訳を作る</button>`}
         <button data-copyja="${esc(s.id)}" title="この場面のナレーション（日本語）をコピーします">本文をコピー</button></div></div>`;
     grid.appendChild(el);
     if(S.open === s.id) el.appendChild(buildPanel(s));
   }
-  grid.querySelectorAll("[data-open]").forEach(b => b.onclick = () => { S.open = S.open === b.dataset.open ? null : b.dataset.open; render(); const o = document.querySelector(".card.open"); if(o) o.scrollIntoView({block: "nearest"}); });
+  grid.querySelectorAll("[data-lock]").forEach(b => b.onclick = () => toggleLock(S.scenes.find(x => x.id === b.dataset.lock)));
+  grid.querySelectorAll("[data-open]").forEach(b => b.onclick = () => { const sc0 = S.scenes.find(x => x.id === b.dataset.open); if(sc0 && sc0.locked){ dockMsg(LOCKED_MSG, "err"); return; } S.open = S.open === b.dataset.open ? null : b.dataset.open; render(); const o = document.querySelector(".card.open"); if(o) o.scrollIntoView({block: "nearest"}); });
   grid.querySelectorAll("[data-copyen]").forEach(b => b.onclick = () => copyText(enOf(S.scenes.find(x => x.id === b.dataset.copyen)), b));
   grid.querySelectorAll("[data-makeen]").forEach(b => b.onclick = () => makeEn(S.scenes.find(x => x.id === b.dataset.makeen), b));
   grid.querySelectorAll("[data-copyja]").forEach(b => b.onclick = () => copyText(S.scenes.find(x => x.id === b.dataset.copyja).text, b));
   grid.querySelectorAll("[data-undo]").forEach(b => b.onclick = () => {
     const s = S.scenes.find(x => x.id === b.dataset.undo);
     if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url);
-    if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; s.staged = null; s.action = null; s.style = JSON.parse(JSON.stringify(s.raw.slide_style || {})); s.edits = {}; s.styleDirty = false; render();
+    if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; s.staged = null; s.action = null; s.style = JSON.parse(JSON.stringify(s.raw.slide_style || {})); s.edits = {}; s.styleDirty = false; s.locked = !!s.raw.locked; s.lockDirty = false; render();
   });
   observeImages();
   const n = ch.length;
@@ -1119,6 +1153,8 @@ async function saveAll(){
   const changes = [], picks = [];
   for(const s of ch){
     const raw = json.narrative_structure[s.idx];
+    if(s.lockDirty){ if(s.locked) raw.locked = true; else delete raw.locked; jsonChanged = true; }
+    if(s.locked) continue;   // ロック中の場面は、ほかの変更を書かない
     if(s.styleDirty){   // 文字の色（slide_style）。空なら消す
       const st = s.style || {}, clean = {};
       if(st.color) clean.color = st.color;
@@ -1168,7 +1204,7 @@ async function saveAll(){
   try{
     await commitMany(changes, `${S.stem}: ${S.local ? "台本を追加・" : ""}画像を入れ替え（${ch.length}場面・画像入れ替えコンソール）`);
     S.local = false;
-    ch.forEach(s => { if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; });
+    ch.forEach(s => { if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; s.lockDirty = false; });
     if(jsonChanged){ S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw); }
     await loadAssets(); render();
     dockMsg(`保存しました（${ch.length}場面）。続けて「④ 生成を開始」を押せます`, "ok");
@@ -1186,7 +1222,8 @@ async function runAssets(){
   if(!S.json) return;
   if(S.local){ dockMsg("この台本は、まだリポジトリにありません。先に「③ 保存」で追加してください", "err"); return; }
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
-  if(!confirm("素材だけを取ります（NASA画像とPixabay写真。絵の生成・音声・動画・アップロードはしません）。\n終わったら「読み込み」を押して画像を確認してください。よろしいですか？")) return;
+  if(S.scenes.some(x => x.lockDirty)){ dockMsg("ロックの変更が、まだ保存されていません。先に「③ 保存」を押してください（取得は、保存された台本のロックを見ます）", "err"); return; }
+  if(!confirm("素材だけを取ります（NASA画像とPixabay写真。絵の生成・音声・動画・アップロードはしません。🔒ロック中の場面は、取りません）。\n終わったら「読み込み」を押して画像を確認してください。よろしいですか？")) return;
   try{ await dispatch({fetch_pixabay: "true", assets_only: "true", upload: "false", slides_only: "false", shorts: "false"}, "素材の自動取得を始めました（数分）。終わったら「読み込み」を押してください"); }
   catch(e){ dockMsg(e.message, "err"); }
 }
@@ -1358,13 +1395,13 @@ function openYomi(){
 const yDictObj = () => { const o = {}; Y.dict.forEach(e => { const k = e.k.trim(); if(k && e.v.trim()) o[k] = e.v.trim(); }); return o; };
 function yProblems(){
   const bad = [];
-  S.scenes.forEach(s => { const t = Y.texts[s.id]; if(t && t !== s.text && splitSent(t).length !== splitSent(s.text).length) bad.push(s); });
+  S.scenes.forEach(s => { if(s.locked) return; const t = Y.texts[s.id]; if(t && t !== s.text && splitSent(t).length !== splitSent(s.text).length) bad.push(s); });
   return bad;
 }
 function yDirty(){
   const d0 = JSON.stringify(S.json.tts_readings || {}), d1 = JSON.stringify(yDictObj());
   if(d0 !== d1) return true;
-  return S.scenes.some(s => ((Y.texts[s.id] && Y.texts[s.id] !== s.text) ? Y.texts[s.id] : "") !== (s.raw.tts_text || ""));
+  return S.scenes.some(s => !s.locked && ((Y.texts[s.id] && Y.texts[s.id] !== s.text) ? Y.texts[s.id] : "") !== (s.raw.tts_text || ""));
 }
 // エンジンの読みに混じる、アクセントの印（')や区切り記号を、読みやすくする（src/render_tts_readings.py clean_reading と同じ）
 const cleanYomi = t => String(t || "").replace(/['_\/!]/g, "").replace(/,/g, "、").replace(/\./g, "。").replace(/\?/g, "？");
@@ -1400,7 +1437,8 @@ function renderYomi(){
     const el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px";
     el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc(s.id.replace("scene_", "#"))}</b>　${esc(s.text)}</div>
       ${aiYomiHtml(s)}
-      <textarea data-t="${esc(s.id)}" rows="2" style="min-height:48px">${esc(cur)}</textarea>
+      ${s.locked ? '<div class="hint" style="color:var(--warn)">🔒 ロック中の場面は、読み上げ文を変えられません（辞書は、全場面に効きます）</div>' : ""}
+      <textarea data-t="${esc(s.id)}" rows="2" style="min-height:48px" ${s.locked ? "disabled" : ""}>${esc(cur)}</textarea>
       <div class="row" style="margin:4px 0 0"><span class="hint" data-st="${esc(s.id)}"></span><button data-rs="${esc(s.id)}">元に戻す</button></div>`;
     sc.appendChild(el);
   });
@@ -1439,6 +1477,7 @@ $("#y-save").onclick = async () => {
   let n = 0;
   json.narrative_structure.forEach((raw, i) => {
     const s = S.scenes[i], t = Y.texts[s.id];
+    if(s.locked) return;   // ロック中の場面は、そのまま
     if(t !== undefined && t !== s.text && t.trim()){ raw.tts_text = t.trim(); n++; } else delete raw.tts_text;
   });
   $("#y-save").disabled = true; yMsg("保存しています…");
@@ -1501,7 +1540,7 @@ function renderBgm(){
     const v = G.vals[s.id] || "", old = v && !gIsTrack(v);
     const el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px";
     el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc(s.id.replace("scene_", "#"))}</b>　${esc(s.text.slice(0, 40))}${s.text.length > 40 ? "…" : ""}</div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><select data-b="${esc(s.id)}" style="flex:1 1 200px;width:auto"><option value="">（指定しない）</option>${old ? `<option value="${esc(v)}" selected>旧指定: ${esc(v)}（使われません）</option>` : ""}${opts.map(o => `<option value="${esc(o)}"${gCanon(v) === o ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${s.locked ? "<span>🔒</span>" : ""}<select data-b="${esc(s.id)}" ${s.locked ? "disabled" : ""} style="flex:1 1 200px;width:auto"><option value="">（指定しない）</option>${old ? `<option value="${esc(v)}" selected>旧指定: ${esc(v)}（使われません）</option>` : ""}${opts.map(o => `<option value="${esc(o)}"${gCanon(v) === o ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>
       <span class="hint">♪ ${esc(eff[s.id] || "（なし）")}${v && gIsTrack(v) ? "　← ここから切り替え" : ""}</span></div>`;
     sc.appendChild(el);
   });
@@ -1539,16 +1578,19 @@ $("#g-apply").onclick = () => {
   if(a < 0 || b < a){ gMsg("範囲の始まりが終わりより後です", "err"); return; }
   const eff = gEffective();
   const before = a > 0 ? eff[S.scenes[a - 1].id] : G.def;     // 範囲の直前に流れていた曲（終わりの次の場面で、ここへ戻す）
-  G.vals[S.scenes[a].id] = tr;
-  if(b + 1 < S.scenes.length) G.vals[S.scenes[b + 1].id] = before;
-  // 範囲の中の、ほかの指名は消す（範囲は1曲で通す）
-  for(let i = a + 1; i <= b; i++) delete G.vals[S.scenes[i].id];
+  const skipped = S.scenes.slice(a, b + 2).filter(x => x.locked).length;
+  if(!S.scenes[a].locked) G.vals[S.scenes[a].id] = tr;
+  if(b + 1 < S.scenes.length && !S.scenes[b + 1].locked) G.vals[S.scenes[b + 1].id] = before;
+  // 範囲の中の、ほかの指名は消す（範囲は1曲で通す）。ロック中の場面は、そのまま
+  for(let i = a + 1; i <= b; i++) if(!S.scenes[i].locked) delete G.vals[S.scenes[i].id];
   renderBgm();
+  if(skipped) gMsg(`🔒ロック中の${skipped}場面は、変えていません`, "ok");
 };
 $("#g-save").onclick = async () => {
   if(!ghReady()){ gMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
   const json = JSON.parse(JSON.stringify(S.json)); let n = 0;
   json.narrative_structure.forEach((raw, i) => {
+    if(S.scenes[i].locked) return;   // ロック中の場面は、そのまま
     const v = G.vals[S.scenes[i].id];
     if(v){ raw.bgm = v; n++; } else delete raw.bgm;
   });
@@ -1559,6 +1601,78 @@ $("#g-save").onclick = async () => {
     S.json = json; json.narrative_structure.forEach((raw, i) => S.scenes[i].raw = raw);
     renderBgm(); gMsg(`保存しました（指名${n}場面）。次の生成から反映されます`, "ok");
   }catch(e){ gMsg(e.message, "err"); $("#g-save").disabled = false; }
+};
+
+// ── 全シーンをまっさらにする（2026-11-01 社長指示）。ロック中の場面は、何も変えない ────────────────────────────────
+const CLEAR_OPTS = [
+  ["files", "画像・動画クリップ（GitHubのファイルを消す）", true],
+  ["motion", "動き・地図の点の設定（動く図解の指定をはずす。図解の中身は残す）", true],
+  ["real", "NASAなどの『本物の素材』の指定（visual.real）", false],
+  ["style", "文字の色・文字の手直し", false],
+  ["bgm", "BGMの指名", false],
+  ["tts", "場面ごとの読み上げ文（辞書は残す）", false],
+];
+const C = {on: {}};
+function renderClear(){
+  $("#c-opts").innerHTML = CLEAR_OPTS.map(([k, l]) => `<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;cursor:pointer"><input type="checkbox" data-c="${k}" ${C.on[k] ? "checked" : ""} style="width:20px;height:20px;margin-top:2px"><span>${esc(l)}</span></label>`).join("");
+  $("#c-opts").querySelectorAll("input").forEach(el => el.onchange = () => { C.on[el.dataset.c] = el.checked; refreshClear(); });
+  refreshClear();
+}
+function clearTargets(){ return S.scenes.filter(x => !x.locked); }
+function refreshClear(){
+  const t = clearTargets(), locked = S.scenes.length - t.length;
+  const nFiles = t.filter(x => S.assets[x.id] || S.clips[x.id]).length;
+  $("#c-count").textContent = `対象: ${t.length}場面（🔒ロック中の${locked}場面は、そのまま）。画像・動画のファイルがある場面: ${nFiles}`;
+  $("#c-run").disabled = !Object.values(C.on).some(Boolean) || !t.length;
+}
+$("#b-clear").onclick = () => {
+  if(!S.json){ setMsg("先に台本を読み込んでください", "err"); return; }
+  C.on = Object.fromEntries(CLEAR_OPTS.map(([k, , d]) => [k, d])); $("#c-msg").textContent = "";
+  renderClear(); $("#clear").style.display = ""; document.body.style.overflow = "hidden";
+};
+$("#c-close").onclick = () => { $("#clear").style.display = "none"; document.body.style.overflow = ""; };
+$("#c-run").onclick = async () => {
+  if(!ghReady()){ $("#c-msg").textContent = "先に「⚙ 接続設定」でGitHubにつないでください"; $("#c-msg").className = "msg err"; return; }
+  if(changedScenes().length && !confirm("保存していない変更があります。まっさらにすると、その変更は消えます。続けますか？")) return;
+  const t = clearTargets(), chosen = CLEAR_OPTS.filter(([k]) => C.on[k]).map(([, l]) => "・" + l.replace(/（.*）/, "")).join("\n");
+  const ans = prompt(`🔒ロック中ではない${t.length}場面から、次を消します。\n${chosen}\n\n消したものは、GitHubの履歴から戻せます。続けるには『まっさら』と入力してください`);
+  if(ans !== "まっさら") return;
+  const json = JSON.parse(JSON.stringify(S.json)), changes = [], ids = new Set(t.map(x => x.id));
+  let nJson = 0, nFiles = 0;
+  const base = `${GH_DIR}/assets/images/generated/${S.stem}`, clipBase = `${GH_DIR}/assets/video_clips/${S.stem}`;
+  for(const sc of t){
+    const raw = json.narrative_structure[sc.idx];
+    if(C.on.files){
+      if(S.assets[sc.id]){ changes.push({path: S.assets[sc.id].path || `${base}/${S.assets[sc.id].name}`, bytes: null}); nFiles++; }
+      if(S.clips[sc.id]){ changes.push({path: `${clipBase}/${S.clips[sc.id].name}`, bytes: null}); nFiles++; }
+    }
+    if(C.on.motion){
+      if(raw.visual){ for(const k of ["anim", "anim_sec", "map_pin"]) if(k in raw.visual){ delete raw.visual[k]; nJson++; } }
+      if(raw.slide && "anim" in raw.slide){ delete raw.slide.anim; delete raw.slide.anim_sec; nJson++; }
+    }
+    if(C.on.real && raw.visual && raw.visual.real){ delete raw.visual.real; nJson++; }
+    if(C.on.style){ for(const k of ["slide_style", "slide_text"]) if(k in raw){ delete raw[k]; nJson++; } }
+    if(C.on.bgm && raw.bgm){ delete raw.bgm; nJson++; }
+    if(C.on.tts && raw.tts_text){ delete raw.tts_text; nJson++; }
+  }
+  if(nJson) changes.push({path: `${GH_DIR}/data/scripts/${S.name}`, bytes: enc(JSON.stringify(json, null, 2) + "\n")});
+  if(C.on.files){   // 出典の控えからも、消した場面を外す
+    try{
+      const f = await api(repoPath(`/contents/${base}/_manual_picks.json${refQ()}`));
+      const old = JSON.parse(dec(unb64(f.content))), kept = old.filter(o => !ids.has(o.scene));
+      if(kept.length !== old.length) changes.push({path: `${base}/_manual_picks.json`, bytes: enc(JSON.stringify(kept, null, 2) + "\n")});
+    }catch{}
+  }
+  if(!changes.length){ $("#c-msg").textContent = "消すものが、ありませんでした"; $("#c-msg").className = "msg"; return; }
+  $("#c-run").disabled = true; $("#c-msg").textContent = "保存しています…"; $("#c-msg").className = "msg";
+  try{
+    await commitMany(changes, `${S.stem}: 全シーンをまっさらにする（${t.length}場面・ファイル${nFiles}件・台本の設定${nJson}件・画像入れ替えコンソール）`);
+    S.json = json; json.narrative_structure.forEach((raw, i) => { if(S.scenes[i]) S.scenes[i].raw = raw; });
+    S.scenes.forEach(x => { if(ids.has(x.id)){ if(x.staged && x.staged.url) URL.revokeObjectURL(x.staged.url); x.staged = null; x.stagedClip = null; x.action = null; x.styleDirty = false; x.edits = {}; x.style = JSON.parse(JSON.stringify(x.raw.slide_style || {})); } });
+    await loadAssets(); render();
+    $("#c-msg").textContent = `まっさらにしました（ファイル${nFiles}件・台本の設定${nJson}件）。🔒ロック中の場面は、そのままです`; $("#c-msg").className = "msg ok";
+  }catch(e){ $("#c-msg").textContent = e.message; $("#c-msg").className = "msg err"; }
+  refreshClear();
 };
 
 // ── 動きを自動で当てはめる（2026-11-01 社長指示。src/anim_render.py の『動く図解』を、ナレーションに合わせて適材適所に当てはめる）──────────
@@ -1599,6 +1713,7 @@ function mValid(sg){
 }
 function mSkip(sc){
   const raw = sc.raw, v = vis(sc), lay = (raw.slide || {}).layout;
+  if(sc.locked) return "🔒ロック中";
   if(["hook", "opening", "cta"].includes(raw.type)) return "冒頭・あいさつ・締めは、そのまま";
   if(kindOf(sc) === "clip") return "動画クリップの場面";
   if(v.anim || (raw.slide || {}).anim || v.map_pin) return "すでに動きがある";
@@ -1748,7 +1863,7 @@ $("#m-ai").onclick = async () => {
 };
 $("#m-save").onclick = async () => {
   if(!ghReady()){ mMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
-  const picks = M.sug.filter(x => x.on); if(!picks.length) return;
+  const picks = M.sug.filter(x => x.on && !(S.scenes.find(y => y.id === x.scene) || {}).locked); if(!picks.length) return;
   if(!confirm(`${picks.length}場面に、動く図解を書き込みます（台本を保存します）。\n写真・生成画像の場面は、図解に置き換わります（地図の点だけは、写真の上に重なります）。元の台本は、履歴から戻せます。よろしいですか？`)) return;
   const json = JSON.parse(JSON.stringify(S.json));
   picks.forEach(sg => mApply(json, sg));
