@@ -44,6 +44,25 @@ a{color:#7fb0ff}
 .card.open{grid-column:1/-1;border-color:var(--accent);display:grid;grid-template-columns:minmax(260px,420px) 1fr;align-items:start}
 .card.open .panel{grid-column:1/-1}
 @media(max-width:700px){.card.open{grid-template-columns:1fr}}
+/* スマホ: 場面の一覧を広く見せる（2026-11-01 社長指摘「スマホだとメインのシーンの画面が小さくなって見づらい」）。上のボタン欄は、画面に張り付かず、スクロールで流れる。下の操作欄は、細くする */
+@media(max-width:700px){
+  header{position:static;backdrop-filter:none}
+  .bar{padding:8px 10px;gap:6px}
+  .bar button{padding:6px 9px;font-size:12px}
+  .bar select{font-size:12px;padding:5px 8px}
+  .brand{font-size:14px}
+  main{padding:10px 10px 130px}
+  .note{display:none}
+  .dock{padding:6px 8px}
+  .dock .in{gap:6px}
+  .dock .spacer{display:none}
+  .dock button{padding:6px 10px;font-size:12px}
+  .dock .hint{font-size:10px}
+  #dock-msg{flex:1 1 60%;max-height:2.7em;overflow:hidden;font-size:11px;line-height:1.35}
+  #ver{font-size:10px}
+  .filters button,.pages button{padding:6px 10px;font-size:12px}
+  .stat{min-width:90px;padding:6px 10px}
+}
 .thumb{position:relative;aspect-ratio:16/9;background:#1d2128;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:12px}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .thumb .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--dim);padding:8px;text-align:center}
@@ -128,7 +147,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/02 00:15</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/02 00:25</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
