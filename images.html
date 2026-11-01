@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 22:30</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 23:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -1635,12 +1635,15 @@ async function loadTracks(){
   const mk = (i, group) => ({name: i.name, stem: i.name.replace(/\.[^.]+$/, ""), sha: i.sha, size: i.size, group});
   const byName = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
   const main = (await listDir(`${GH_DIR}/assets/audio/bgm`)).filter(BGM_FILE).map(i => mk(i, "")).sort(byName);
-  const seen = new Set(main.map(t => t.stem.toLowerCase())), extra = [];
+  const seen = new Set(main.map(t => t.stem.toLowerCase())), extra = [], genreOf = new Map();
   for(const d of (await listDir(`${GH_DIR}/${BGM_EXTRA}`)).filter(i => i.type === "dir" && !i.name.startsWith("_")).sort(byName)){
     for(const i of (await listDir(`${GH_DIR}/${BGM_EXTRA}/${d.name}`)).filter(BGM_FILE).sort(byName)){
-      const tr = mk(i, d.name); if(!seen.has(tr.stem.toLowerCase())){ seen.add(tr.stem.toLowerCase()); extra.push(tr); }   // 同じ曲が bgm にもあれば、そちらだけ
+      const tr = mk(i, d.name); const k = tr.stem.toLowerCase();
+      if(!genreOf.has(k)) genreOf.set(k, d.name);                       // 曲のジャンル（フォルダ）。bgm にもある曲は、このジャンルに入れる
+      if(!seen.has(k)){ seen.add(k); extra.push(tr); }                  // 同じ曲が bgm にもあれば、ファイルは bgm のものを使う
     }
   }
+  main.forEach(t => { t.group = genreOf.get(t.stem.toLowerCase()) || ""; t.isMain = true; });   // セカイ秒読みの元の曲も、ジャンルごとに分ける
   G.tracks = [...main, ...extra]; G.nMain = main.length;
   G.def = main.length ? main[ordinalOf(S.json.date) % main.length].stem : "";                  // 冒頭の自動の曲は、本体の曲だけ
   G.loaded = true;
@@ -1653,9 +1656,15 @@ function bgmAddInit(){
   $("#g-addmood").innerHTML = Object.entries(BGM_MOOD).map(([k, l]) => `<option value="${esc(k)}">${esc(l)}</option>`).join("");
   $("#g-addmood").value = "2_中立";
 }
-const gGroupLabel = g => g ? "ポストの向こう側の曲／" + (BGM_MOOD[g] || g) : "セカイ秒読みの曲";
+// ジャンル（雰囲気）の順番: シリアス・中立・ほのぼの・笑い・感動・怖い。ジャンルの決まっていない曲は、最後
+const gGroupLabel = g => g ? (BGM_MOOD[g] || g) : "ジャンル未分類";
+const gGroupList = () => {
+  const present = new Set(G.tracks.map(t => t.group)), order = Object.keys(BGM_MOOD);
+  return [...order.filter(k => present.has(k)), ...[...present].filter(k => k && !order.includes(k)).sort(), ...(present.has("") ? [""] : [])];
+};
+const gSrcOf = t => /_OpenTracks$/.test(t.stem) ? "OpenTracks" : /_甘茶の音楽工房$/.test(t.stem) ? "甘茶の音楽工房" : /_MusMus$/.test(t.stem) ? "MusMus" : "";
 const gOptions = (sel, blank) => {
-  const groups = [...new Set(G.tracks.map(t => t.group))];
+  const groups = gGroupList();
   return (blank === undefined ? `<option value="">（指定しない）</option>` : blank) + groups.map(g => `<optgroup label="${esc(gGroupLabel(g))}">` + G.tracks.filter(t => t.group === g).map(t =>
     `<option value="${esc(t.stem)}"${gCanon(sel) === t.stem ? " selected" : ""}>${esc(t.stem)}${gWarn(t) ? "　⚠政治の回は不可" : ""}</option>`).join("") + "</optgroup>").join("");
 };
@@ -1679,15 +1688,26 @@ async function openBgm(){
   const opts = gOptions("");
   const scOpts = S.scenes.map(s => `<option value="${esc(s.id)}">${esc(("#" + numOf(s.id)))}</option>`).join("");
   $("#g-from").innerHTML = scOpts; $("#g-to").innerHTML = scOpts; $("#g-tr").innerHTML = opts.replace("（指定しない）", "曲を選ぶ");
-  $("#g-info").textContent = G.tracks.length ? `曲 ${G.tracks.length}本（セカイ秒読みの曲 ${G.nMain}本＋ポストの向こう側の曲 ${G.tracks.length - G.nMain}本）。この動画の冒頭は、自動で「${G.def}」になります。` : "このチャンネルには、BGMの曲（assets/audio/bgm）がありません。";
+  $("#g-info").textContent = G.tracks.length ? `曲 ${G.tracks.length}本（${gGroupList().length}ジャンル）。この動画の冒頭は、自動で「${G.def}」になります。` : "このチャンネルには、BGMの曲（assets/audio/bgm）がありません。";
   renderBgm();
 }
 function renderBgm(){
   const tb = $("#g-tracks"); tb.innerHTML = "";
-  G.tracks.forEach(t => {
-    const row = document.createElement("div"); row.style.cssText = "display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap";
-    row.innerHTML = `<button data-play="${esc(t.stem)}">${t.stem === G.loadingStem ? "読み込み中…（押すとやめる）" : t.stem === G.playing ? "■ 止める" : "▶ 試聴"}</button><span style="flex:1 1 200px;word-break:break-all">${esc(t.stem)}${t.stem === G.def ? ' <span class="hint">（この動画の自動の曲）</span>' : ""}${t.group ? ` <span class="hint">（ポストの向こう側／${esc(BGM_MOOD[t.group] || t.group)}）</span>` : ""}${gWarn(t) ? ' <span class="hint" style="color:var(--warn)">⚠政治・宗教の回は不可</span>' : ""}</span>`;
-    tb.appendChild(row);
+  const open = G.openGroups || (G.openGroups = new Set()), known = G.knownGroups || (G.knownGroups = new Set());   // ジャンルごとの開閉（新しく現れたジャンルは、開いて出す）
+  gGroupList().forEach(g => {
+    if(!known.has(g)){ known.add(g); open.add(g); }
+    const list = G.tracks.filter(t => t.group === g).sort((a, b) => a.stem < b.stem ? -1 : a.stem > b.stem ? 1 : 0);
+    const box = document.createElement("details"); box.open = open.has(g); box.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin-bottom:8px";
+    box.innerHTML = `<summary style="cursor:pointer;font-weight:700">${esc(gGroupLabel(g))}　<span class="hint">${list.length}曲</span></summary><div class="gl" style="margin-top:6px"></div>`;
+    box.ontoggle = () => { if(box.open) open.add(g); else open.delete(g); };
+    const body = box.querySelector(".gl");
+    list.forEach(t => {
+      const row = document.createElement("div"); row.style.cssText = "display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap";
+      const src = gSrcOf(t);
+      row.innerHTML = `<button data-play="${esc(t.stem)}">${t.stem === G.loadingStem ? "読み込み中…（押すとやめる）" : t.stem === G.playing ? "■ 止める" : "▶ 試聴"}</button><span style="flex:1 1 200px;word-break:break-all">${esc(t.stem)}${t.stem === G.def ? ' <span class="hint">（この動画の自動の曲）</span>' : ""}${src ? ` <span class="hint">［${esc(src)}］</span>` : t.isMain ? ' <span class="hint">［セカイ秒読みの元の曲］</span>' : ""}${gWarn(t) ? ' <span class="hint" style="color:var(--warn)">⚠政治・宗教の回は不可</span>' : ""}</span>`;
+      body.appendChild(row);
+    });
+    tb.appendChild(box);
   });
   tb.querySelectorAll("[data-play]").forEach(b => b.onclick = () => playTrack(b));
   const eff = gEffective();
