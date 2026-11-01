@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 23:55</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/02 00:05</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -859,7 +859,7 @@ function render(){
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
         <div class="row" style="margin:0"><button class="lockbtn" data-lock="${esc(s.id)}" title="${s.locked ? "ロック中。押すと、ロックを外します" : "押すと、この場面をロックします（一括の変更も、手での変更も、受け付けなくなります）"}">${s.locked ? "🔒" : "🔓"}</button><label class="mpick" title="チェックを入れて、上の「🎬 チェックした場面に動きをつける」を押すと、この場面にふさわしい動きを提案します" style="display:inline-flex;align-items:center;gap:4px;margin-right:6px;cursor:pointer"><input type="checkbox" data-mpick="${esc(s.id)}" ${M.pick.has(s.id) ? "checked" : ""} ${s.locked ? "disabled" : ""} style="width:18px;height:18px">🎬</label>${motionOf(s) && CH.previewWf ? `<button data-pvone="${esc(s.id)}" title="この場面の動きのプレビューだけ、作り直します（約2〜3分・課金なし）。台本を保存してから押してください">▶ 動きを作る</button>` : ""}<button data-open="${esc(s.id)}" ${s.locked ? "disabled" : ""}>${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : bgOk(s) ? "背景の画像・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}${s.locked ? ' <span class="hint">ロック中</span>' : ""}
         ${isChg(s) ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
-        ${enOf(s) ? `<button data-copyen="${esc(s.id)}" title="この場面のナレーションの英訳をコピーします">英訳をコピー</button>` : `<button data-makeen="${esc(s.id)}" title="OpenAIで、この場面のナレーションを英訳します（1円未満）">英訳を作る</button>`}
+        ${enOf(s) ? `<button data-copyen="${esc(s.id)}" title="この場面のナレーションの英訳をコピーします">英語のナレーションをコピー</button>` : `<button data-makeen="${esc(s.id)}" title="OpenAIで、この場面のナレーションを英訳します（1円未満）">英訳を作る</button>`}
         <button data-copyja="${esc(s.id)}" title="この場面のナレーション（日本語）をコピーします">本文をコピー</button>${ipButtons(s)}</div></div>`;
     grid.appendChild(el);
     if(S.open === s.id) el.appendChild(buildPanel(s));
@@ -1166,7 +1166,7 @@ function buildPanel(s){
       ${narEn ? `<div class="hint" style="margin-bottom:6px">この場面のナレーションの英訳: ${esc(narEn)}</div>
       <div class="row"><button id="gp-subj">主題だけにする</button><button id="gp-both">主題＋ナレーションの英訳にする</button></div>` : `<div class="hint" style="margin-bottom:6px">この場面には、ナレーションの英訳がありません。</div>
       <div class="row"><button id="mk-en" class="primary">この場面の英訳を作る（OpenAI・1円未満）</button></div>`}
-      <div class="row"><button id="cp-prompt">プロンプトをコピー</button>${narEn ? `<button id="cp-en">ナレーションの英訳をコピー</button>` : ""}<button id="cp-ja">日本語のナレーションをコピー</button></div>
+      <div class="row"><button id="cp-prompt">プロンプトをコピー</button><button id="cp-en" ${narEn ? "" : 'disabled title="この場面には英訳がありません。画面を開き直しても無いときは、上の「この場面の英訳を作る」を押してください"'}>英語のナレーションをコピー</button><button id="cp-ja">日本語のナレーションをコピー</button></div>
       <div class="row"><select id="gs" style="width:auto" title="画風">${STYLE_OPTS.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("")}</select>
         <button class="primary" id="gen" ${g.busy ? "disabled" : ""}>${g.busy ? "描いています…" : "OpenAIで描く（1枚ごとに課金）"}</button>
         <select id="gq" style="width:auto" title="画質。low は安く、medium は細部がきれいです（1枚ごとの目安: low 約0.016ドル、medium 約0.06ドル。円で約2〜10円）"><option value="low">low（安い・約2円）</option><option value="medium">medium（標準・約10円）</option></select>
@@ -1179,7 +1179,7 @@ function buildPanel(s){
     body.querySelector("#gp").oninput = e => g.prompt = e.target.value;
     const mke = body.querySelector("#mk-en"); if(mke) mke.onclick = () => makeEn(s, mke);
     body.querySelector("#cp-prompt").onclick = e => copyText(body.querySelector("#gp").value, e.target);
-    const cen = body.querySelector("#cp-en"); if(cen) cen.onclick = e => copyText(narEn, e.target);
+    const cen = body.querySelector("#cp-en"); if(cen && narEn) cen.onclick = e => copyText(narEn, e.target);
     body.querySelector("#cp-ja").onclick = e => copyText(s.text, e.target);
     const bs = body.querySelector("#gp-subj"), bb = body.querySelector("#gp-both");
     if(bs) bs.onclick = () => { g.prompt = mkPrompt(false); body.querySelector("#gp").value = g.prompt; };
