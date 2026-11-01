@@ -148,7 +148,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/02 01:05</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/02 02:30</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -650,8 +650,9 @@ const fillWords = q => [...new Set(fillTok(q).filter(w => w.length >= 3 && !FILL
 const fillScore = (words, text) => { const t = new Set(fillTok(text).map(fillStem)); return words.filter(w => t.has(w)).length; };
 function fillTopic(){ const t = ((S.json || {}).search_keyword || "") + " " + ((S.json || {}).title || ""); for(const [k, v] of Object.entries(FILL_TOPICS)) if(t.includes(k)) return v; return ""; }
 const fillSleep = ms => new Promise(res => setTimeout(res, ms));
-const fillTargets = () => S.scenes.filter(s => needsReview(s) && !motionOf(s) && !s.locked && !S.assets[s.id] && !S.clips[s.id] && !s.staged && !s.stagedClip && s.action !== "text");
-const fillClipCount = () => S.scenes.filter(s => S.clips[s.id] || s.stagedClip).length;
+// 対象: ロックされていない、画像の場面（動く図解は除く）。すでに画像・クリップがある場面も、取り直す（合う映像が見つからなければ、そのまま残す）。守りたい場面は、🔒ロックする（2026-11-01 社長指示）
+const fillTargets = () => S.scenes.filter(s => needsReview(s) && !motionOf(s) && !s.locked && s.action !== "text");
+const fillClipCount = () => S.scenes.filter(s => (s.locked && S.clips[s.id]) || s.stagedClip).length;   // ロック中のクリップと、今回入れたクリップ（取り直す場面の、これまでのクリップは数えない）
 function fillReportShow(){
   const e = $("#bulk-report"); if(!e) return;
   if(!FILL.report.length){ e.style.display = "none"; return; }
@@ -677,8 +678,8 @@ async function fillOne(s, topic, st){
   }catch(e){ /* NASA に届かないときは、次へ */ }
   if(planetOnly) return null;
   if(!px.apiKey) return null;
-  // ② 動画クリップ（Pixabay。最大12本まで）
-  if(fillClipCount() < 12){
+  // ② 動画クリップ（Pixabay。最大24本まで。2026-11-01 社長指示で12→24）
+  if(fillClipCount() < 24 && s.text.length <= 80){   // ナレーションが長い場面（約8秒を超える）は、クリップでは尺が足りないので、動画クリップにしない
     try{
       await fillSleep(500);
       const items = await pxSearchVideo(base);
@@ -703,9 +704,10 @@ async function fillOne(s, topic, st){
 }
 async function fillAll(){
   const t = fillTargets();
-  if(!t.length){ dockMsg("入れられる場面がありません（画像のある場面・動く図解・ロック中の場面は、対象外です）", "err"); return; }
+  if(!t.length){ dockMsg("入れられる場面がありません（動く図解の場面と、ロック中の場面は、対象外です）", "err"); return; }
   if(!px.apiKey && !confirm("Pixabay のAPIキーが未設定です（⚙ 接続設定）。NASA画像だけで探します。よろしいですか？")) return;
-  if(!confirm(`画像がまだ無い ${t.length} 場面に、NASA画像 → 動画クリップ → Pixabayの写真 の順で、場面の内容に合う映像を探して入れます（すべて無料）。\n\n・動く図解の場面、ロック中の場面、すでに画像のある場面は、そのままです\n・動画クリップは、全体で最大12本まで\n・入れたあと、「③ 保存」を押すまで確定しません（場面ごとに「元に戻す」もできます）\n・数分かかります。途中で止めるときは、「■ 一括を中止」を押します`)) return;
+  const had = t.filter(x => S.assets[x.id] || S.clips[x.id] || x.staged || x.stagedClip).length;
+  if(!confirm(`🔒ロックされていない ${t.length} 場面（うち、すでに画像・クリップがある場面が ${had}）に、NASA画像 → 動画クリップ → Pixabayの写真 の順で、場面の内容に合う映像を探し直して入れます（すべて無料）。\n\n・動く図解の場面と、🔒ロック中の場面は、そのままです\n・守りたい場面は、先に🔒ロックしてください。ロックしていない場面の、いまの画像は、合う映像が見つかると入れ替わります（見つからなければ、そのまま）\n・動画クリップは、全体で最大24本まで\n・入れたあと、「③ 保存」を押すまで確定しません（場面ごとに「元に戻す」もできます）\n・数分かかります。途中で止めるときは、「■ 一括を中止」を押します`)) return;
   FILL.running = true; FILL.stop = false; FILL.report = []; render();
   const st = {nasa: 0, clip: 0, photo: 0}; let miss = 0, done = 0, err = "";
   const topic = fillTopic();
@@ -928,7 +930,7 @@ function render(){
   ].map(([k, v, c]) => `<div class="stat ${c}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
   const F = [["all", "すべて"], ["review", "画像を使う場面"], ["motion", "🎬 動く図解"], ["slides", "図・文字の場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["locked", "🔒ロック中"]];
   $("#filters").innerHTML = F.map(([k, l]) => `<button data-f="${k}" class="${S.filter === k ? "on" : ""}">${l}</button>`).join("");
-  $("#filters").insertAdjacentHTML("beforeend", `<span class="spacer"></span><button id="b-fill" class="primary" title="画像がまだ無い場面に、NASA画像 → 動画クリップ（Pixabay）→ Pixabayの写真の順で、場面の内容に合う映像を探して入れます（すべて無料）。動く図解の場面・ロック中の場面・すでに画像のある場面には入れません。入れたあと、③保存を押すまで確定しません">${FILL.running ? "■ 一括を中止" : "🎞 映像を一括で入れる（無料）"}</button><button id="b-mpick" class="primary" title="場面カードの🎬にチェックを入れた場面に、ふさわしい動く図解を提案します（確認してから保存）">🎬 チェックした場面に動きをつける</button><button id="b-struct" title="🎬にチェックを入れた場面を、動く図解の「構造図」（地形・建物・体・仕組みの断面など）に書き直してもらう依頼文をコピーします。Claudeのチャットに貼って送ると、構造図を台本に書いて、反映します（構造図は、AIの自動提案では安定しないため）">🧩 構造図を頼む</button><button id="b-mpick-clear" title="🎬のチェックを、すべて外します">チェックを外す</button><button id="b-lockall" title="いま絞り込んで表示している場面を、すべてロックします">🔒 表示中をすべてロック</button><button id="b-unlockall" title="いま絞り込んで表示している場面の、ロックを外します">🔓 表示中のロックを外す</button>`);
+  $("#filters").insertAdjacentHTML("beforeend", `<span class="spacer"></span><button id="b-fill" class="primary" title="🔒ロックされていない場面に、NASA画像 → 動画クリップ（Pixabay）→ Pixabayの写真の順で、場面の内容に合う映像を探し直して入れます（すべて無料。すでに画像のある場面も、合うものが見つかれば入れ替わります）。動く図解の場面とロック中の場面には入れません。入れたあと、③保存を押すまで確定しません">${FILL.running ? "■ 一括を中止" : "🎞 映像を一括で入れる（無料）"}</button><button id="b-mpick" class="primary" title="場面カードの🎬にチェックを入れた場面に、ふさわしい動く図解を提案します（確認してから保存）">🎬 チェックした場面に動きをつける</button><button id="b-struct" title="🎬にチェックを入れた場面を、動く図解の「構造図」（地形・建物・体・仕組みの断面など）に書き直してもらう依頼文をコピーします。Claudeのチャットに貼って送ると、構造図を台本に書いて、反映します（構造図は、AIの自動提案では安定しないため）">🧩 構造図を頼む</button><button id="b-mpick-clear" title="🎬のチェックを、すべて外します">チェックを外す</button><button id="b-lockall" title="いま絞り込んで表示している場面を、すべてロックします">🔒 表示中をすべてロック</button><button id="b-unlockall" title="いま絞り込んで表示している場面の、ロックを外します">🔓 表示中のロックを外す</button>`);
   $("#filters").querySelectorAll("button[data-f]").forEach(b => b.onclick = () => { S.filter = b.dataset.f; S.page = 0; S.open = null; render(); });
   const list = S.scenes.filter(inRange).filter(s => S.filter === "all" ? true : S.filter === "slides" ? !needsReview(s) : S.filter === "changed" ? isChg(s) : S.filter === "locked" ? s.locked : S.filter === "motion" ? !!motionOf(s)
     : S.filter === "noimg" ? (needsReview(s) && !S.assets[s.id] && !S.clips[s.id] && !s.staged) : (needsReview(s) || !!motionOf(s)));   // 「画像を使う場面」には、動く図解に替えた場面も並べる（消えたように見えないため）
@@ -1401,6 +1403,7 @@ async function saveAll(){
       if(S.clips[s.id] && S.clips[s.id].name !== `${s.id}.mp4`) changes.push({path: `${clipBase}/${S.clips[s.id].name}`, bytes: null});
       raw.visual = raw.visual || {};
       raw.visual.kind = "clip"; raw.visual.clip_sec = s.stagedClip.source.sec || raw.visual.clip_sec || 8; delete raw.visual.real;
+      if(!raw.visual.prompt_en) raw.visual.prompt_en = raw.visual.image_prompt_en || raw.visual.subject || "";   // 動画クリップの場面には、英語の主題（検索語）が要る（台本の点検が警告する）
       jsonChanged = true;
       picks.push({scene: s.id, ...s.stagedClip.source});
     }else if(s.staged){
