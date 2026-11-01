@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 21:30</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 22:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -296,6 +296,7 @@ async function commitMany(changes, message){
 // 画面を開いたあとに、ほかの変更（Claude の編集・別の保存・動きのプレビューなど）が台本に入っていても、古い画面の内容で全体を上書きしない
 // （2026-11-01 実際に、シーン64〜66の変更が、古い画面からの保存で消えた）。保存の直前に、GitHubから台本を読み直す
 async function freshScript(){
+  if(typeof screenOld !== "undefined" && screenOld) throw new Error(OLD_SCREEN_MSG);   // 古い画面からは、保存しない
   if(S.local) return JSON.parse(JSON.stringify(S.json));
   try{
     const f = await api(repoPath(`/contents/${GH_DIR}/data/scripts/${encodeURIComponent(S.name)}${refQ()}`), {cache: "no-store"});
@@ -1234,6 +1235,7 @@ function buildPanel(s){
 
 // ── 保存（1コミット）──────────────────────────────────────────────────────
 async function saveAll(){
+  if(screenOld){ dockMsg(OLD_SCREEN_MSG, "err"); return; }   // 古い画面からは、保存しない
   const ch = changedScenes(); if(!ch.length && !S.local) return;
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
   if(S.local && !confirm(`台本をリポジトリに新しく追加します。\n\n・場所: ${GH_DIR}/data/scripts/${S.name}\n・公開日（date）: ${S.json.date}\n・題名: ${S.json.title || ""}\n\n追加しても、動画は作られません（作るのは④です）。よろしいですか？`)) return;
@@ -2196,10 +2198,26 @@ $("#m-save").onclick = async () => {
 
 window.addEventListener("beforeunload", e => { if(changedScenes().length || S.local){ e.preventDefault(); e.returnValue = ""; } });
 
+// この画面が古い版のままでないかを、GitHubの最新の画面（console/images.html）と比べて確かめる。
+// 古い画面で保存すると、新しい変更を上書きする恐れがあるため、古いときは大きく警告し、保存を止める（2026-11-01 実際に、古い画面からの保存で、Claudeが入れた変更が2度消えた）
+const OLD_SCREEN_MSG = "⚠ この画面は古い版です。保存すると、新しい変更を消す恐れがあります。ブラウザで、アドレスの最後に ?v=（新しい数字）を付けて開き直してください（例: …/images.html?v=22）";
+let screenOld = false;
+async function checkScreenVersion(){
+  try{
+    const f = await api(`/repos/${gh.owner}/${gh.repo}/contents/CMO/YouTube/trend-auto-studio/console/images.html${refQ()}`, {cache: "no-store"});
+    const m = /id="ver"[^>]*>版 (\d\d\/\d\d \d\d:\d\d)</.exec(dec(unb64(f.content)));
+    const mine = (($("#ver") || {}).textContent || "").replace("版", "").trim();
+    if(m && mine && m[1] > mine){
+      screenOld = true; $("#ver").style.color = "var(--bad, #ff6b6b)"; $("#ver").title = `最新の版は ${m[1]} です`;
+      setMsg(OLD_SCREEN_MSG + `（この画面: ${mine}／最新: ${m[1]}）`, "err"); dockMsg(OLD_SCREEN_MSG, "err");
+    }
+  }catch{}
+}
 async function start(){
   if(!ghReady()){ setMsg("「⚙ 接続設定」でGitHubのトークンを入れてください", "err"); return; }
   try{ await loadScriptList(); await loadScript($("#script").value); }
   catch(e){ setMsg(e.message, "err"); }
+  checkScreenVersion().then(() => { if(screenOld) updateSaveBtn(); });
 }
 {
   const cs = $("#chsel");
