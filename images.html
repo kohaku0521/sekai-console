@@ -148,7 +148,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/02 02:30</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/02 08:10</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -1841,7 +1841,7 @@ function renderBgm(){
     const v = G.vals[s.id] || "", old = v && !gIsTrack(v);
     const el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px";
     el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc(("#" + numOf(s.id)))}</b>　${esc(s.text.slice(0, 40))}${s.text.length > 40 ? "…" : ""}</div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${s.locked ? "<span>🔒</span>" : ""}<select data-b="${esc(s.id)}" ${s.locked ? "disabled" : ""} style="flex:1 1 200px;width:auto"><option value="">（指定しない）</option>${old ? `<option value="${esc(v)}" selected>旧指定: ${esc(v)}（使われません）</option>` : ""}${gOptions(v, "")}</select>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${s.locked ? "<span title='画像はロック中。BGMは、ロックに関係なく変えられます'>🔒</span>" : ""}<select data-b="${esc(s.id)}" style="flex:1 1 160px;width:auto;min-width:0;max-width:100%"><option value="">（指定しない）</option>${old ? `<option value="${esc(v)}" selected>旧指定: ${esc(v)}（使われません）</option>` : ""}${gOptions(v, "")}</select>
       <span class="hint">♪ ${esc(eff[s.id] || "（なし）")}${v && gIsTrack(v) ? "　← ここから切り替え" : ""}</span></div>`;
     sc.appendChild(el);
   });
@@ -1924,13 +1924,11 @@ $("#g-apply").onclick = () => {
   if(a < 0 || b < a){ gMsg("範囲の始まりが終わりより後です", "err"); return; }
   const eff = gEffective();
   const before = a > 0 ? eff[S.scenes[a - 1].id] : G.def;     // 範囲の直前に流れていた曲（終わりの次の場面で、ここへ戻す）
-  const skipped = S.scenes.slice(a, b + 2).filter(x => x.locked).length;
-  if(!S.scenes[a].locked) G.vals[S.scenes[a].id] = tr;
-  if(b + 1 < S.scenes.length && !S.scenes[b + 1].locked) G.vals[S.scenes[b + 1].id] = before;
-  // 範囲の中の、ほかの指名は消す（範囲は1曲で通す）。ロック中の場面は、そのまま
-  for(let i = a + 1; i <= b; i++) if(!S.scenes[i].locked) delete G.vals[S.scenes[i].id];
+  G.vals[S.scenes[a].id] = tr;
+  if(b + 1 < S.scenes.length) G.vals[S.scenes[b + 1].id] = before;
+  // 範囲の中の、ほかの指名は消す（範囲は1曲で通す）。BGMは、画像のロックに関係なく変える（2026-11-02 社長「場面を押しても曲が変更できない」）
+  for(let i = a + 1; i <= b; i++) delete G.vals[S.scenes[i].id];
   renderBgm();
-  if(skipped) gMsg(`🔒ロック中の${skipped}場面は、変えていません`, "ok");
 };
 $("#g-save").onclick = async () => {
   if(!ghReady()){ gMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
@@ -1938,8 +1936,7 @@ $("#g-save").onclick = async () => {
   let n = 0;
   json.narrative_structure.forEach(raw => {
     const sc = S.scenes.find(x => x.id === raw.id); if(!sc) return;
-    if(sc.locked) return;   // ロック中の場面は、そのまま
-    const v = G.vals[sc.id];
+    const v = G.vals[sc.id];   // BGMは画像のロックに関係なく保存する
     if(v){ raw.bgm = v; n++; } else delete raw.bgm;
   });
   $("#g-save").disabled = true; gMsg("保存しています…");
