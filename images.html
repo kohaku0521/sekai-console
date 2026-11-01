@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/02 00:05</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/02 00:15</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -973,7 +973,8 @@ function motionThumb(s){
     <div style="position:relative;font-size:13px;color:#ffb347;font-weight:800">🎬 動く図解${bgImg ? "（背景の画像あり）" : ""}</div>
     <div style="position:relative;font-size:16px;font-weight:800;color:#fff">${esc(MOTION_TYPES[m.type] || m.type)}</div>
     <div style="position:relative;font-size:12px;color:#bcd0ea;line-height:1.5">${esc(sum.slice(0, 90))}</div>
-    <div style="position:relative;font-size:11px;color:#9aa3b2">${st.state === "stale" ? "台本を直したので、動きのプレビューは古くなっています。ヘッダーの「▶ 図・動きの確認を作る」で作り直せます" : "動きの確認は、ヘッダーの「▶ 図・動きの確認を作る」で作れます（約10分・課金なし）"}</div></div>`;
+    <div style="position:relative;font-size:11px;color:#9aa3b2">${st.state === "stale" ? "台本を直したので、動きのプレビューは古くなっています。" : "この場面の動きは、まだ確認できません。"}${CH.previewWf ? "" : "ヘッダーの「▶ 図・動きの確認を作る」で作れます（約10分・課金なし）"}</div>
+    ${CH.previewWf ? `<button data-pvone="${esc(s.id)}" style="position:relative;align-self:flex-start;margin-top:4px" title="この場面の動きのプレビューだけを作ります（約2〜3分・課金なし）。台本を保存してから押してください">▶ この場面の動きを作る（約2〜3分・課金なし）</button>` : ""}</div>`;
 }
 function approxHtml(s){
   const fs = slideFields(s), st = s.style || {}, light = ((s.raw && s.raw.slide) || {}).theme === "light";
