@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 22:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 22:30</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -205,6 +205,14 @@ a{color:#7fb0ff}
     <div class="msg" id="g-info" style="margin-bottom:6px"></div>
     <div style="font-weight:700;margin:8px 0 4px">① 曲の一覧（▶で試聴）</div>
     <div id="g-tracks"></div>
+    <details id="g-addbox" style="margin:10px 0;border:1px solid var(--line);border-radius:8px;padding:8px 10px">
+      <summary style="cursor:pointer;font-weight:700">＋ 曲を追加する（PCにダウンロードした曲のファイルを、リポジトリに入れる）</summary>
+      <div class="hint" style="margin:6px 0">配布元の曲のページで、<b>その曲の利用条件（クレジットの要否・禁止事項）を確認</b>してから、ダウンロードして追加してください。追加した曲は、場面ごとの指名に使えます。ポストの向こう側の場面別BGMにも、同じ雰囲気のフォルダの曲として加わります。</div>
+      <div class="row" style="flex-wrap:wrap;gap:6px;align-items:center"><label class="chip" style="cursor:pointer"><input type="file" id="g-addfile" accept=".mp3,.wav,.m4a,.ogg,audio/*" style="display:none">📁 曲のファイルを選ぶ</label><span class="hint" id="g-addname">（未選択）</span></div>
+      <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px"><input type="text" id="g-addnum" placeholder="番号（任意）" style="width:96px"><input type="text" id="g-addtitle" placeholder="曲名（必須）" style="flex:1 1 160px"><input type="text" id="g-addby" placeholder="作者（任意）" style="flex:1 1 120px"></div>
+      <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px"><select id="g-addsrc" style="width:auto"></select><select id="g-addmood" style="width:auto"></select><button class="primary" id="g-addgo">追加して保存</button></div>
+      <div class="msg" id="g-addmsg" style="margin-top:6px"></div>
+    </details>
     <div style="font-weight:700;margin:14px 0 4px">② 範囲をまとめて決める</div>
     <div class="row" style="flex-wrap:wrap;gap:6px"><select id="g-from" style="width:auto"></select><span>から</span><select id="g-to" style="width:auto"></select><span>まで</span><select id="g-tr" style="width:auto;max-width:220px"></select><button id="g-apply">この範囲に適用</button></div>
     <div class="hint" style="margin-top:4px">範囲の終わりの次の場面で、元の曲に戻します。</div>
@@ -1637,6 +1645,14 @@ async function loadTracks(){
   G.def = main.length ? main[ordinalOf(S.json.date) % main.length].stem : "";                  // 冒頭の自動の曲は、本体の曲だけ
   G.loaded = true;
 }
+// 曲の追加（2026-11-01 社長「BGMを追加したい」）。ファイル名は「番号_曲名_作者_配布元.mp3」（既存の曲と同じ形）。「_OpenTracks」の印は、政治・宗教の回で外す目印になる
+const BGM_SRC = [["OpenTracks", "OpenTracks（旧DOVA-SYNDROME）"], ["甘茶の音楽工房", "甘茶の音楽工房"], ["MusMus", "MusMus（クレジット必須）"], ["YouTubeAudioLibrary", "YouTubeオーディオライブラリ"], ["", "その他（配布元の印なし）"]];
+const bgmClean = s => String(s || "").trim().replace(/[\\/:*?"<>|\s]+/g, "_").replace(/^[._]+|_+$/g, "");
+function bgmAddInit(){
+  $("#g-addsrc").innerHTML = BGM_SRC.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+  $("#g-addmood").innerHTML = Object.entries(BGM_MOOD).map(([k, l]) => `<option value="${esc(k)}">${esc(l)}</option>`).join("");
+  $("#g-addmood").value = "2_中立";
+}
 const gGroupLabel = g => g ? "ポストの向こう側の曲／" + (BGM_MOOD[g] || g) : "セカイ秒読みの曲";
 const gOptions = (sel, blank) => {
   const groups = [...new Set(G.tracks.map(t => t.group))];
@@ -1721,6 +1737,36 @@ async function playTrack(btn){
   }catch(e){ if(my === G.token){ G.loadingStem = ""; gPlayLabels(); gMsg(e.message, "err"); } }
 }
 $("#b-bgm").onclick = openBgm;
+bgmAddInit();
+$("#g-addfile").onchange = e => {
+  const f = e.target.files && e.target.files[0]; $("#g-addname").textContent = f ? `${f.name}（${(f.size / 1048576).toFixed(1)}MB）` : "（未選択）";
+  if(f && !$("#g-addtitle").value){ $("#g-addtitle").value = f.name.replace(/\.[^.]+$/, ""); }
+};
+$("#g-addgo").onclick = async () => {
+  const msg = (t, cls = "") => { const e = $("#g-addmsg"); e.textContent = t; e.className = "msg " + cls; };
+  if(!ghReady()){ msg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  const f = $("#g-addfile").files && $("#g-addfile").files[0], title = bgmClean($("#g-addtitle").value);
+  if(!f){ msg("曲のファイルを選んでください", "err"); return; }
+  if(!title){ msg("曲名を入れてください", "err"); return; }
+  if(!/\.(mp3|wav|m4a|ogg)$/i.test(f.name)){ msg("対応しているのは、mp3・wav・m4a・ogg です", "err"); return; }
+  if(f.size > 60 * 1048576){ msg("ファイルが大きすぎます（60MBまで）", "err"); return; }
+  const ext = f.name.match(/\.([^.]+)$/)[1].toLowerCase(), mood = $("#g-addmood").value, src = $("#g-addsrc").value;
+  const name = [bgmClean($("#g-addnum").value), title, bgmClean($("#g-addby").value), src].filter(Boolean).join("_");
+  if(!G.loaded){ try{ await loadTracks(); }catch(e){ msg(e.message, "err"); return; } }
+  if(G.tracks.some(x => x.stem.toLowerCase() === name.toLowerCase())){ msg(`同じ名前の曲が、すでにあります（${name}）。番号や作者を足して、名前を変えてください`, "err"); return; }
+  const path = `${GH_DIR}/${BGM_EXTRA}/${mood}/${name}.${ext}`, srcPath = `${GH_DIR}/${BGM_EXTRA}/_sources.json`;
+  $("#g-addgo").disabled = true; msg("追加しています…");
+  try{
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    let old = {}; try{ const j = await api(repoPath(`/contents/${srcPath}${refQ()}`), {cache: "no-store"}); old = JSON.parse(dec(unb64(j.content))); }catch{}
+    old[`${name}.${ext}`] = {folder: mood, title: $("#g-addtitle").value.trim(), number: $("#g-addnum").value.trim(), composer: $("#g-addby").value.trim(), source: src || "その他", added_at: new Date().toISOString(), terms_checked: false};
+    await commitMany([{path, bytes}, {path: srcPath, bytes: enc(JSON.stringify(old, null, 2) + "\n")}], `BGMの曲を追加: ${name}（${mood}・画像入れ替えコンソール）`);
+    await loadTracks(); $("#g-tr").innerHTML = gOptions("").replace("（指定しない）", "曲を選ぶ"); renderBgm();
+    msg(`追加しました: ${name}.${ext}（${BGM_MOOD[mood] || mood}）。場面ごとの指名で選べます`, "ok");
+    $("#g-addfile").value = ""; $("#g-addname").textContent = "（未選択）"; ["#g-addnum", "#g-addtitle", "#g-addby"].forEach(s => $(s).value = "");
+  }catch(e){ msg(e.message, "err"); }
+  $("#g-addgo").disabled = false;
+};
 $("#g-more").onclick = () => { G.shown += 25; renderBgm(); };
 $("#g-close").onclick = () => {
   stopAudio();
