@@ -128,7 +128,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 23:30</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/01 23:45</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -469,7 +469,7 @@ async function loadAssets(){
   for(const i of pvItems) if(/^scene_\d+\.mp4$/.test(i.name)) S.pvMotion[i.name.replace(/\.mp4$/, "")] = {size: i.size, sha: i.sha, name: i.name};   // 動く図解の、動きの確認用の動画
   for(const i of pvItems) if(/^scene_\d+\.jpg$/.test(i.name)) S.prev[i.name.replace(/\.jpg$/, "")] = {size: i.size, sha: i.sha, name: i.name, path: i.path || `${GH_DIR}/assets/slide_previews/${S.stem}/${i.name}`};
   for(const i of imgs) if(/\.(png|jpe?g|webp)$/i.test(i.name)) S.assets[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, sha: i.sha, name: i.name, path: i.path || `${GH_DIR}/assets/images/generated/${S.stem}/${i.name}`};
-  for(const i of clips) if(/\.mp4$/i.test(i.name)) S.clips[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, name: i.name};
+  for(const i of clips) if(/\.mp4$/i.test(i.name)) S.clips[i.name.replace(/\.[^.]+$/, "")] = {size: i.size, sha: i.sha, name: i.name};
 }
 
 // ── 画像の取り込み（どの取得元でも、16:9に切り出したPNGにそろえる）────────────────
@@ -780,7 +780,7 @@ function currentOf(s){
   if(s.action === "text") return pv ? {url: null, asset: pv, label: "文字・図にする（この表示）"} : {url: null, label: "文字・図にする"};
   const a = S.assets[s.id];
   if(a) return {url: null, asset: a, label: ""};
-  if(S.clips[s.id]) return {url: null, label: "動画クリップ"};
+  if(S.clips[s.id]) return {url: null, clip: S.clips[s.id], label: "動画クリップ"};
   if(pv) return {url: null, asset: pv, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし → この文字で表示" : "この図・文字で表示"};
   return {url: null, label: PHOTO_KINDS.has(kindOf(s)) ? "画像なし（文字で表示）" : "文字・図で表示"};
 }
@@ -850,7 +850,7 @@ function render(){
     const el = document.createElement("div");
     el.className = "card" + (isChg(s) ? " changed" : "") + (S.open === s.id ? " open" : "") + (s.locked ? " locked" : "");
     el.innerHTML = `
-      <div class="thumb">${motionOf(s) && !s.stagedClip && (!s.staged || bgOk(s)) ? motionThumb(s) : s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
+      <div class="thumb">${motionOf(s) && !s.stagedClip && (!s.staged || bgOk(s)) ? motionThumb(s) : s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : cur.clip && cur.clip.sha ? `<video data-pv="1" data-noplay="1" data-sha="${esc(cur.clip.sha)}" muted loop playsinline controls preload="none" style="width:100%;height:100%;object-fit:contain;background:#05070d"></video><span class="ph">動画クリップを読み込み中…</span>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
         <span class="badge ${isChg(s) ? "ch" : ""}" title="場面ID: ${esc(s.id)}">${s.locked ? "🔒 " : ""}${esc(numOf(s.id))} · ${esc(kindOf(s))}${motionOf(s) && !s.stagedClip && !s.staged ? " · 🎬動く図解" : approx ? (isStale(s) ? " · この文字で表示（目安・確認画像は未更新）" : " · この文字で表示（目安）") : cur.label && (cur.url || cur.asset || s.stagedClip) ? " · " + esc(cur.label) : ""}</span></div>
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
@@ -952,7 +952,7 @@ function pumpPv(){
         const bin = atob(blob.content.replace(/\n/g, "")), u8 = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
         pvBlobs.set(key, URL.createObjectURL(new Blob([u8], {type: "video/mp4"})));
       }
-      v.src = pvBlobs.get(key); const ph = v.parentElement.querySelector(".ph"); if(ph) ph.remove(); v.play().catch(() => {});
+      v.src = pvBlobs.get(key); const ph = v.parentElement.querySelector(".ph"); if(ph) ph.remove(); if(!v.dataset.noplay) v.play().catch(() => {});
     })().catch(() => { const ph = v.parentElement.querySelector(".ph"); if(ph) ph.textContent = "読み込めません（もう一度、表示してください）"; }).finally(() => { pvLoading--; pumpPv(); });
   }
 }
