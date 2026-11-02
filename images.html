@@ -40,6 +40,12 @@ a{color:#7fb0ff}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
 .card.changed{border-color:var(--warn)}
 .card.locked{outline:2px solid #c9a227;outline-offset:-2px}
+.card.flash{animation:cardflash 1.6s ease-out 1}
+@keyframes cardflash{0%{box-shadow:0 0 0 4px #ffb347}100%{box-shadow:0 0 0 0 rgba(255,179,71,0)}}
+.lockbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 8px}
+.lockbar .lk{flex:1 1 100%;font-size:15px}
+.lockbar .lkbar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;flex:1 1 100%}
+.lockbar .lkbar span{display:block;height:8px;background:#d9b030}
 .lockbtn{min-width:44px}
 .card.open{grid-column:1/-1;border-color:var(--accent);display:grid;grid-template-columns:minmax(260px,420px) 1fr;align-items:start}
 .card.open .panel{grid-column:1/-1}
@@ -132,6 +138,7 @@ a{color:#7fb0ff}
     画像はここで決めてから動画を作るので、作り直し（二重生成）になりません。OpenAIで描くときだけ、1枚ごとに課金されます。
   </div>
   <div id="stats" class="stats"></div>
+  <div id="lockbar" class="lockbar"></div>
   <div id="filters" class="filters"></div>
   <div id="pages" class="filters pages"></div>
   <div id="msg" class="msg"></div>
@@ -149,7 +156,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 06:40</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 07:30</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -952,6 +959,31 @@ const isChg = s => !!(s.staged || s.stagedClip || s.action || s.styleDirty || s.
 const LOCKED_MSG = "この場面はロック中です。変更するには、🔒を押して、ロックを外してください";
 const changedScenes = () => S.scenes.filter(isChg);
 
+// ロックの数と、未ロックの場面へのジャンプ（2026-11-03 社長指示「ロックされているのは私がOKと判断したということ」。全体の何個がロックか一目で知り、未ロックへすぐ飛べるように）
+function renderLockBar(){
+  const el = $("#lockbar"); if(!el) return;
+  const n = S.scenes.length, lk = S.scenes.filter(s => s.locked).length, un = n - lk;
+  el.innerHTML = `<div class="lk">🔒 <b>ロック済み ${lk} / ${n}</b>（社長がOKとした場面）　<span style="color:${un ? "var(--warn)" : "var(--ok)"}">${un ? `🔓 未ロック ${un}` : "✅ すべてロック済み"}</span></div>
+    <div class="lkbar"><span style="width:${n ? (100 * lk / n).toFixed(1) : 0}%"></span></div>
+    <button id="b-prevunlock" ${un ? "" : "disabled"}>◀ 前の未ロックへ</button><button id="b-nextunlock" class="primary" ${un ? "" : "disabled"}>次の未ロックへ ▶</button>
+    <button id="b-onlyunlock" ${un ? "" : "disabled"} title="未ロックの場面だけを一覧にします">🔓 未ロックだけ表示</button>`;
+  $("#b-nextunlock").onclick = () => jumpUnlocked(1);
+  $("#b-prevunlock").onclick = () => jumpUnlocked(-1);
+  $("#b-onlyunlock").onclick = () => { S.filter = "unlocked"; S.page = 0; S.open = null; render(); window.scrollTo({top: 0}); };
+}
+function jumpUnlocked(dir){
+  const n = S.scenes.length, un = S.scenes.map((s, i) => s.locked ? -1 : i).filter(i => i >= 0);
+  if(!un.length){ dockMsg("すべてロック済みです", "ok"); return; }
+  const cur = S.jumpIdx === undefined ? -1 : S.jumpIdx;
+  const target = dir > 0 ? (un.find(i => i > cur) ?? un[0]) : ([...un].reverse().find(i => i < cur) ?? un[un.length - 1]);
+  S.jumpIdx = target;
+  const s = S.scenes[target];
+  S.filter = "all"; S.range = ""; $("#range").value = ""; S.page = Math.floor(target / 15); S.open = null;
+  render();
+  const card = document.querySelector(`.card[data-sid="${s.id}"]`);
+  if(card){ card.scrollIntoView({block: "start", behavior: "smooth"}); card.classList.add("flash"); setTimeout(() => card.classList.remove("flash"), 1800); }
+  dockMsg(`未ロックの場面: #${numOf(s.id)}（残り ${un.length}場面のうち ${un.indexOf(target) + 1}番目）`, "ok");
+}
 function render(){
   const has = !!S.json;
   $("#empty").style.display = has ? "none" : "";
@@ -963,11 +995,12 @@ function render(){
     ["場面", S.range === "" ? S.scenes.length : `${S.scenes.filter(inRange).length} / ${S.scenes.length}`, ""], ["画像を使う場面", need.length, ""],
     ["画像が無い（文字で表示）", noImg.length, noImg.length ? "warn" : "ok"], ["変更あり", ch.length, ch.length ? "warn" : ""],
   ].map(([k, v, c]) => `<div class="stat ${c}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
-  const F = [["all", "すべて"], ["review", "画像を使う場面"], ["motion", "🎬 動く図解"], ["slides", "図・文字の場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["locked", "🔒ロック中"]];
+  renderLockBar();
+  const F = [["all", "すべて"], ["review", "画像を使う場面"], ["motion", "🎬 動く図解"], ["slides", "図・文字の場面"], ["changed", "変更あり"], ["noimg", "画像が無い"], ["locked", "🔒ロック中"], ["unlocked", "🔓未ロック"]];
   $("#filters").innerHTML = F.map(([k, l]) => `<button data-f="${k}" class="${S.filter === k ? "on" : ""}">${l}</button>`).join("");
   $("#filters").insertAdjacentHTML("beforeend", `<span class="spacer"></span><button id="b-fill" class="primary" title="🔒ロックされていない場面に、NASA画像 → 動画クリップ（Pixabay）→ Pixabayの写真の順で、場面の内容に合う映像を探し直して入れます（すべて無料。すでに画像のある場面も、合うものが見つかれば入れ替わります）。動く図解の場面とロック中の場面には入れません。入れたあと、③保存を押すまで確定しません">${FILL.running ? "■ 一括を中止" : "🎞 映像を一括で入れる（無料）"}</button><button id="b-mpick" class="primary" title="場面カードの🎬にチェックを入れた場面に、ふさわしい動く図解を提案します（確認してから保存）">🎬 チェックした場面に動きをつける</button><button id="b-struct" title="🎬にチェックを入れた場面を、動く図解の「構造図」（地形・建物・体・仕組みの断面など）に書き直してもらう依頼文をコピーします。Claudeのチャットに貼って送ると、構造図を台本に書いて、反映します（構造図は、AIの自動提案では安定しないため）">🧩 構造図を頼む</button><button id="b-mpick-clear" title="🎬のチェックを、すべて外します">チェックを外す</button><button id="b-lockall" title="いま絞り込んで表示している場面を、すべてロックします">🔒 表示中をすべてロック</button><button id="b-unlockall" title="いま絞り込んで表示している場面の、ロックを外します">🔓 表示中のロックを外す</button>`);
   $("#filters").querySelectorAll("button[data-f]").forEach(b => b.onclick = () => { S.filter = b.dataset.f; S.page = 0; S.open = null; render(); });
-  const list = S.scenes.filter(inRange).filter(s => S.filter === "all" ? true : S.filter === "slides" ? !needsReview(s) : S.filter === "changed" ? isChg(s) : S.filter === "locked" ? s.locked : S.filter === "motion" ? !!motionOf(s)
+  const list = S.scenes.filter(inRange).filter(s => S.filter === "all" ? true : S.filter === "slides" ? !needsReview(s) : S.filter === "changed" ? isChg(s) : S.filter === "locked" ? s.locked : S.filter === "unlocked" ? !s.locked : S.filter === "motion" ? !!motionOf(s)
     : S.filter === "noimg" ? (needsReview(s) && !S.assets[s.id] && !S.clips[s.id] && !s.staged) : (needsReview(s) || !!motionOf(s)));   // 「画像を使う場面」には、動く図解に替えた場面も並べる（消えたように見えないため）
   $("#b-fill").onclick = () => { if(FILL.running) FILL.stop = true; else fillAll(); };
   fillReportShow();
@@ -990,7 +1023,7 @@ function render(){
   pg.innerHTML = pageCount <= 1 ? "" : Array.from({length: pageCount}, (_, i) => {
     const chunk = list.slice(i * PER, (i + 1) * PER);
     const a = numOf(chunk[0].id), b = numOf(chunk[chunk.length - 1].id);
-    const mark = chunk.some(isChg) ? " ●" : "";
+    const mark = (chunk.some(isChg) ? " ●" : "") + (chunk.every(x => x.locked) ? " 🔒" : "");
     return `<button data-p="${i}" class="${i === S.page ? "on" : ""}${mark ? " has" : ""}">${a}〜${b}${mark}</button>`;
   }).join("");
   pg.querySelectorAll("button").forEach(b => b.onclick = () => { S.page = +b.dataset.p; S.open = null; render(); window.scrollTo({top: 0}); });
@@ -1004,6 +1037,7 @@ function render(){
     const cur = currentOf(s);
     const approx = !s.stagedClip && showsText(s) && (s.styleDirty || !(S.prev && S.prev[s.id]) || isStale(s));
     const el = document.createElement("div");
+    el.dataset.sid = s.id;
     el.className = "card" + (isChg(s) ? " changed" : "") + (S.open === s.id ? " open" : "") + (s.locked ? " locked" : "");
     el.innerHTML = `
       <div class="thumb">${motionOf(s) && !s.stagedClip && (!s.staged || bgOk(s)) ? motionThumb(s) : s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : cur.clip && cur.clip.sha ? `<video data-pv="1" data-noplay="1" data-sha="${esc(cur.clip.sha)}" muted loop playsinline controls preload="none" style="width:100%;height:100%;object-fit:contain;background:#05070d"></video><span class="ph">動画クリップを読み込み中…</span>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
