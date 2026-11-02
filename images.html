@@ -149,7 +149,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/02 23:50</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 00:10</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -353,7 +353,10 @@ async function freshScript(){
   if(typeof screenOld !== "undefined" && screenOld) throw new Error(OLD_SCREEN_MSG);   // 古い画面からは、保存しない
   if(S.local) return JSON.parse(JSON.stringify(S.json));
   try{
-    const f = await api(repoPath(`/contents/${GH_DIR}/data/scripts/${encodeURIComponent(S.name)}${refQ()}`), {cache: "no-store"});
+    // 2026-11-02: 保存の直前の読み直しが、古い台本を返し、直前に入った台本の直し（イントロの書き直し）を、画像入れ替えの保存が元に戻した。
+    // ブランチ名で読むと、GitHubの応答が少し古いことがあるので、いまの先頭のコミット（sha）を取ってから、そのコミットのファイルを読む（コミットは変わらないので、古い応答にならない）
+    const rf = await api(repoPath(`/git/ref/heads/${encodeURIComponent(gh.branch)}?_=${Date.now()}`), {cache: "no-store"});
+    const f = await api(repoPath(`/contents/${GH_DIR}/data/scripts/${encodeURIComponent(S.name)}?ref=${rf.object.sha}`), {cache: "no-store"});
     const j = JSON.parse(dec(unb64(f.content)));
     if(!j || !Array.isArray(j.narrative_structure)) throw new Error("台本を読み取れません");
     S.mergedNote = stable(j) !== stable(S.json) ? "（保存の前に、台本にほかの変更が入っていたので、それを取り込んで保存しました）" : "";
