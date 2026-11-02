@@ -117,6 +117,7 @@ a{color:#7fb0ff}
   <button id="b-clear" title="全場面の、画像・動画クリップ、動き・図解の設定などを、まっさらにします（ロック中の場面は、そのまま）。選んだ項目だけを消せます">🧹 全シーンをまっさらにする</button>
   <button id="b-motion" title="数字・比較・グラフ・年表・地図・論文などの『動く図解』を、ナレーションに合わせて、ふさわしい場面に自動で当てはめます（提案を見て、選んだものだけ台本に書きます）">🎬 動きを自動で当てはめる</button>
   <button id="b-bgm" title="BGMを、場面に合わせて切り替えます（場面ごとに曲を選べます）">BGMを変える</button>
+  <button id="b-sfx" title="効果音を、場面ごとに指名します。効果音のファイル（効果音ラボなどで取った音）を追加することもできます（音量はピーク−28dBにそろえます）">効果音を変える</button>
   <button id="b-yomi" title="ナレーションの漢字の読み違いを直します。読み上げだけが変わり、字幕は表記のままです">読み仮名を直す</button>
   <button id="b-prev" style="display:none" title="文字・図解・グラフになる場面が、動画でどう見えるかの確認画像と、動く図解の動きの確認用の動画を作ります（音声・動画づくり・課金は使いません。約10分）">▶ 図・動きの確認を作る</button>
   <span class="spacer"></span>
@@ -148,7 +149,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/02 09:30</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/02 23:50</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -242,6 +243,31 @@ a{color:#7fb0ff}
     <div style="position:sticky;bottom:0;background:var(--panel);padding:10px 0 0;margin-top:10px;border-top:1px solid var(--line)">
       <div class="msg" id="g-msg" style="margin-bottom:6px"></div>
       <button class="primary" id="g-save" disabled>保存</button>
+    </div>
+  </div>
+</div>
+<div id="sfx" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);overflow:auto">
+  <div style="max-width:760px;margin:14px auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 14px 90px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:15px">効果音を場面に合わせる</b><span class="spacer"></span><button id="x-close">閉じる</button></div>
+    <div class="hint" style="margin-bottom:10px">場面ごとに効果音を選ぶと、<b>その場面の頭で1回</b>鳴ります。選ばない場面は、章の頭（chapter）と、台本が指名した場面（accent など）だけが、これまでどおり鳴ります。動く図解の場面には、図解の種類ごとの音（<code>config.yaml</code> の <code>se_by_template</code>）も別に鳴ります。保存した台本の<b>次の生成から</b>反映されます。</div>
+    <div class="msg" id="x-info" style="margin-bottom:6px"></div>
+    <div style="font-weight:700;margin:8px 0 4px">① 効果音の一覧（▶で試聴）</div>
+    <div id="x-tracks"></div>
+    <details id="x-addbox" style="margin:10px 0;border:1px solid var(--line);border-radius:8px;padding:8px 10px">
+      <summary style="cursor:pointer;font-weight:700">＋ 効果音を追加する（PCにダウンロードした音のファイルを、リポジトリに入れる）</summary>
+      <div class="hint" style="margin:6px 0">配布元の<b>利用条件（商用利用・クレジットの要否・禁止事項）を確認</b>してから、ダウンロードして追加してください。追加すると、<b>音量をピーク −28 dB にそろえた WAV</b> に変えて保存します（元のままだと、ナレーションより大きくなります）。長い音は、開始と長さで切り出せます。</div>
+      <div class="row" style="flex-wrap:wrap;gap:6px;align-items:center"><label class="chip" style="cursor:pointer"><input type="file" id="x-addfile" accept=".mp3,.wav,.m4a,.ogg,audio/*" style="display:none">📁 効果音のファイルを選ぶ</label><span class="hint" id="x-addfname">（未選択）</span></div>
+      <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px"><input type="text" id="x-addname" placeholder="音の名前（必須。台本の se に書く名前。例: ひらめき）" style="flex:1 1 220px"><select id="x-addsrc" style="width:auto"></select></div>
+      <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px"><input type="text" id="x-addurl" placeholder="配布ページのアドレス（任意）" style="flex:1 1 240px"><input type="number" id="x-addst" placeholder="開始（秒）" step="0.05" min="0" style="width:110px"><input type="number" id="x-addlen" placeholder="長さ（秒）" step="0.05" min="0.1" style="width:110px"></div>
+      <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="x-addnorm" checked style="width:20px;height:20px">音量をそろえる（推奨）</label><button class="primary" id="x-addgo">追加して保存</button></div>
+      <div class="msg" id="x-addmsg" style="margin-top:6px"></div>
+    </details>
+    <div style="font-weight:700;margin:14px 0 4px">② 場面ごと</div>
+    <div id="x-scenes"></div>
+    <div class="row"><button id="x-more" style="display:none">さらに表示</button></div>
+    <div style="position:sticky;bottom:0;background:var(--panel);padding:10px 0 0;margin-top:10px;border-top:1px solid var(--line)">
+      <div class="msg" id="x-msg" style="margin-bottom:6px"></div>
+      <button class="primary" id="x-save" disabled>保存</button>
     </div>
   </div>
 </div>
@@ -1946,6 +1972,172 @@ $("#g-save").onclick = async () => {
     adoptJson(json);
     renderBgm(); gMsg(`保存しました（指名${n}場面）。次の生成から反映されます`, "ok");
   }catch(e){ gMsg(e.message, "err"); $("#g-save").disabled = false; }
+};
+
+// ── 効果音を場面に合わせる／追加する（2026-11-02 社長「コンソールで効果音を追加できるようにして」）──────────────
+// 台本の場面の se（効果音の名前＝assets/audio/se のファイル名の拡張子なし。accent・chapter・transition は、無ければ自前の合成音）。
+// その場面の頭で1回鳴る。追加した音は、ブラウザで WAV に変えて、ピークを −28 dB にそろえて保存する（src/audio_mix.py find_se が、.wav・.mp3 を探す）
+const SX = {items: [], vals: {}, shown: 25, loaded: false, audio: null, url: null, token: 0, playing: "", loading: "", meta: {}};
+const SE_DIR = "assets/audio/se", SE_PEAK_DB = -28;
+const SE_BUILTIN = [["accent", "accent（驚き・強調）"], ["chapter", "chapter（章の頭）"], ["transition", "transition（場面の切り替え）"]];
+const SE_FIG = {fig_rise: "グラフが伸びる", fig_pop: "数字・比較・カード・まとめ", fig_tick: "ノード図・構造図", fig_step: "進行ステップ", fig_sweep: "太陽系・粒子と磁場", fig_thud: "クレーター・論文", fig_pin: "地図の点"};
+const SE_SRC = [["効果音ラボ", "効果音ラボ（商用利用無料・クレジット不要と表示）"], ["OtoLogic", "OtoLogic（クレジット必須）"], ["魔王魂", "魔王魂"], ["Springin", "Springin' Sound Stock"],
+  ["YouTubeオーディオライブラリ", "YouTubeオーディオライブラリ"], ["Pixabay", "Pixabay"], ["Mixkit", "Mixkit"], ["Freesound(CC0)", "Freesound（CC0だけ）"], ["その他", "その他・自作"]];
+const sxMsg = (t, cls = "") => { const e = $("#x-msg"); e.textContent = t || ""; e.className = "msg " + cls; };
+const SE_FILE = i => i.type === "file" && /\.(mp3|wav|m4a|ogg)$/i.test(i.name);
+const sxDirty = () => S.scenes.some(s => (SX.vals[s.id] || "") !== (s.raw.se || ""));
+const sxNames = () => [...SE_BUILTIN.map(x => x[0]), ...SX.items.map(x => x.stem).filter(n => !SE_BUILTIN.some(b => b[0] === n))];
+async function loadSfx(){
+  const byName = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+  const items = (await listDir(`${GH_DIR}/${SE_DIR}`)).filter(SE_FILE).sort(byName);
+  SX.items = items.map(i => ({name: i.name, stem: i.name.replace(/\.[^.]+$/, ""), sha: i.sha, size: i.size}));
+  SX.meta = {}; try{ const j = await api(repoPath(`/contents/${GH_DIR}/${SE_DIR}/_sources.json${refQ()}`), {cache: "no-store"}); SX.meta = JSON.parse(dec(unb64(j.content))); }catch{}
+  SX.loaded = true;
+}
+function sxOptions(sel){
+  const known = sxNames(), own = SX.items.filter(x => !SE_BUILTIN.some(b => b[0] === x.stem) && !SE_FIG[x.stem]), fig = SX.items.filter(x => SE_FIG[x.stem]);
+  const o = (v, l) => `<option value="${esc(v)}"${sel === v ? " selected" : ""}>${esc(l)}</option>`;
+  return `<option value="">（指定しない）</option>` + (sel && !known.includes(sel) ? `<option value="${esc(sel)}" selected>旧指定: ${esc(sel)}（見つかりません）</option>` : "")
+    + `<optgroup label="標準の音">${SE_BUILTIN.map(([v, l]) => o(v, l)).join("")}</optgroup>`
+    + (own.length ? `<optgroup label="追加した効果音">${own.map(x => o(x.stem, x.stem)).join("")}</optgroup>` : "")
+    + (fig.length ? `<optgroup label="図解用の音">${fig.map(x => o(x.stem, `${x.stem}（${SE_FIG[x.stem]}）`)).join("")}</optgroup>` : "");
+}
+function sxStop(){
+  SX.token++;
+  if(SX.audio){ try{ SX.audio.pause(); SX.audio.src = ""; }catch{} SX.audio = null; }
+  if(SX.url){ try{ URL.revokeObjectURL(SX.url); }catch{} SX.url = null; }
+  SX.playing = ""; SX.loading = ""; sxLabels();
+}
+function sxLabels(){
+  document.querySelectorAll("[data-xplay]").forEach(b => { b.textContent = b.dataset.xplay === SX.loading ? "読み込み中…（押すとやめる）" : b.dataset.xplay === SX.playing ? "■ 止める" : "▶ 試聴"; });
+}
+async function sxPlay(btn){
+  const stem = btn.dataset.xplay, t = SX.items.find(x => x.stem === stem); if(!t) return;
+  if(SX.playing === stem || SX.loading === stem){ sxStop(); return; }
+  sxStop();
+  const my = SX.token; SX.loading = stem; sxLabels();
+  try{
+    const blob = await api(repoPath(`/git/blobs/${t.sha}`));
+    if(my !== SX.token) return;
+    const mime = /\.wav$/i.test(t.name) ? "audio/wav" : /\.m4a$/i.test(t.name) ? "audio/mp4" : /\.ogg$/i.test(t.name) ? "audio/ogg" : "audio/mpeg";
+    SX.url = URL.createObjectURL(new Blob([unb64(blob.content)], {type: mime}));
+    const a = new Audio(SX.url); a.volume = 1; SX.audio = a;
+    a.onended = () => { if(SX.audio === a) sxStop(); };
+    await a.play();
+    if(my !== SX.token){ a.pause(); return; }
+    SX.loading = ""; SX.playing = stem; sxLabels();
+  }catch(e){ if(my === SX.token){ SX.loading = ""; sxLabels(); sxMsg(e.message, "err"); } }
+}
+function renderSfx(){
+  const tb = $("#x-tracks");
+  const rows = [...SE_BUILTIN.map(([v, l]) => ({stem: v, label: l, file: SX.items.find(x => x.stem === v), builtin: true})),
+    ...SX.items.filter(x => !SE_BUILTIN.some(b => b[0] === x.stem)).map(x => ({stem: x.stem, label: x.stem + (SE_FIG[x.stem] ? `（図解用：${SE_FIG[x.stem]}）` : ""), file: x}))];
+  tb.innerHTML = rows.map(r => {
+    const m = r.file && SX.meta[r.file.name], src = m ? `［${esc(m.source || "")}${m.name ? "・" + esc(m.name) : ""}］` : "";
+    return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap">${r.file ? `<button data-xplay="${esc(r.stem)}">▶ 試聴</button>` : `<span class="hint" style="min-width:72px">（合成音）</span>`}<span style="flex:1 1 200px;word-break:break-all">${esc(r.label)}${r.builtin && r.file ? ' <span class="hint">（置いた音が優先）</span>' : ""} <span class="hint">${src}</span></span></div>`;
+  }).join("");
+  tb.querySelectorAll("[data-xplay]").forEach(b => b.onclick = () => sxPlay(b));
+  const sc = $("#x-scenes"); sc.innerHTML = "";
+  S.scenes.slice(0, SX.shown).forEach(s => {
+    const v = SX.vals[s.id] || "", el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px";
+    const ch = s.raw && s.raw.chapter_label;
+    el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc("#" + numOf(s.id))}</b>　${esc(s.text.slice(0, 40))}${s.text.length > 40 ? "…" : ""}${ch ? `　<span style="color:var(--warn)">章の頭（chapter が自動で鳴る）</span>` : ""}</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><select data-xs="${esc(s.id)}" style="flex:1 1 160px;width:auto;min-width:0;max-width:100%">${sxOptions(v)}</select></div>`;
+    sc.appendChild(el);
+  });
+  sc.querySelectorAll("[data-xs]").forEach(el => el.onchange = () => { if(el.value) SX.vals[el.dataset.xs] = el.value; else delete SX.vals[el.dataset.xs]; renderSfx(); });
+  $("#x-more").style.display = S.scenes.length > SX.shown ? "" : "none";
+  $("#x-more").textContent = `さらに表示（残り${S.scenes.length - SX.shown}場面）`;
+  $("#x-save").disabled = !sxDirty();
+  sxMsg(sxDirty() ? "変更があります。保存を押してください" : "");
+}
+async function openSfx(){
+  if(!S.json){ setMsg("先に台本を読み込んでください", "err"); return; }
+  $("#sfx").style.display = ""; document.body.style.overflow = "hidden"; sxMsg("");
+  try{ await loadSfx(); }catch(e){ sxMsg(e.message, "err"); return; }
+  SX.vals = {}; S.scenes.forEach(s => { if(s.raw.se) SX.vals[s.id] = s.raw.se; }); SX.shown = 25;
+  $("#x-info").textContent = `効果音 ${SX.items.length}本（標準の合成音 3種のほかに置いたもの）。`;
+  renderSfx();
+}
+$("#b-sfx").onclick = openSfx;
+$("#x-addsrc").innerHTML = SE_SRC.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+$("#x-addfile").onchange = e => {
+  const f = e.target.files && e.target.files[0]; $("#x-addfname").textContent = f ? `${f.name}（${(f.size / 1048576).toFixed(2)}MB）` : "（未選択）";
+  if(f && !$("#x-addname").value){ $("#x-addname").value = f.name.replace(/\.[^.]+$/, ""); }
+};
+// ブラウザでの変換: 切り出す→ピークを −28 dBFS にそろえる→最後を0.06秒フェード→16bit WAV。元の音は、ピーク −6〜−12 dB で、ナレーションより大きすぎる
+async function sxProcess(f, st, len, norm){
+  const AC = window.AudioContext || window.webkitAudioContext; if(!AC) throw new Error("このブラウザは、音の変換に対応していません");
+  const ac = new AC(); let buf;
+  try{ buf = await ac.decodeAudioData(await f.arrayBuffer()); }catch(e){ throw new Error("音のファイルを読めませんでした（壊れているか、対応していない形式です）"); }finally{ try{ ac.close(); }catch{} }
+  const sr = buf.sampleRate, ch = Math.min(buf.numberOfChannels, 2);
+  const s0 = Math.max(0, Math.floor((st || 0) * sr)), s1 = len ? Math.min(buf.length, s0 + Math.floor(len * sr)) : buf.length, n = s1 - s0;
+  if(n <= 0) throw new Error("切り出す範囲が、音の長さを超えています");
+  if(n / sr > 15) throw new Error(`${(n / sr).toFixed(1)}秒あります。効果音は15秒までです。「長さ」を入れて切り出してください`);
+  const data = []; let peak = 0;
+  for(let c = 0; c < ch; c++){ const a = buf.getChannelData(c).slice(s0, s1); data.push(a); for(let i = 0; i < n; i++){ const v = Math.abs(a[i]); if(v > peak) peak = v; } }
+  const peakDb = peak > 0 ? 20 * Math.log10(peak) : -120;
+  const gain = norm && peak > 0 ? Math.pow(10, SE_PEAK_DB / 20) / peak : 1;
+  const fout = Math.min(n, Math.floor(0.06 * sr)), fin = Math.min(n, Math.floor(0.003 * sr));
+  const out = new DataView(new ArrayBuffer(44 + n * ch * 2)), w = (o, s) => { for(let i = 0; i < s.length; i++) out.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, "RIFF"); out.setUint32(4, 36 + n * ch * 2, true); w(8, "WAVE"); w(12, "fmt "); out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, ch, true);
+  out.setUint32(24, sr, true); out.setUint32(28, sr * ch * 2, true); out.setUint16(32, ch * 2, true); out.setUint16(34, 16, true); w(36, "data"); out.setUint32(40, n * ch * 2, true);
+  for(let i = 0; i < n; i++){
+    let g = gain; if(i < fin) g *= i / fin; if(i >= n - fout) g *= (n - 1 - i) / fout;
+    for(let c = 0; c < ch; c++){ const v = Math.max(-1, Math.min(1, data[c][i] * g)); out.setInt16(44 + (i * ch + c) * 2, v < 0 ? v * 32768 : v * 32767, true); }
+  }
+  return {bytes: new Uint8Array(out.buffer), seconds: n / sr, peakDb, afterDb: peak > 0 ? 20 * Math.log10(peak * gain) : -120};
+}
+$("#x-addgo").onclick = async () => {
+  const msg = (t, cls = "") => { const e = $("#x-addmsg"); e.textContent = t; e.className = "msg " + cls; };
+  if(!ghReady()){ msg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  const f = $("#x-addfile").files && $("#x-addfile").files[0], name = bgmClean($("#x-addname").value);
+  if(!f){ msg("効果音のファイルを選んでください", "err"); return; }
+  if(!name){ msg("音の名前を入れてください", "err"); return; }
+  if(!/\.(mp3|wav|m4a|ogg)$/i.test(f.name)){ msg("対応しているのは、mp3・wav・m4a・ogg です", "err"); return; }
+  if(f.size > 10 * 1048576){ msg("ファイルが大きすぎます（10MBまで）", "err"); return; }
+  if(!SX.loaded){ try{ await loadSfx(); }catch(e){ msg(e.message, "err"); return; } }
+  if(sxNames().some(x => x.toLowerCase() === name.toLowerCase())){ msg(`同じ名前の効果音が、すでにあります（${name}）。名前を変えてください`, "err"); return; }
+  const src = $("#x-addsrc").value, url = $("#x-addurl").value.trim();
+  const st = parseFloat($("#x-addst").value) || 0, len = parseFloat($("#x-addlen").value) || 0, norm = $("#x-addnorm").checked;
+  $("#x-addgo").disabled = true; msg("変換しています…");
+  try{
+    const r = await sxProcess(f, st, len, norm);
+    const path = `${GH_DIR}/${SE_DIR}/${name}.wav`, srcPath = `${GH_DIR}/${SE_DIR}/_sources.json`;
+    let old = {}; try{ const j = await api(repoPath(`/contents/${srcPath}${refQ()}`), {cache: "no-store"}); old = JSON.parse(dec(unb64(j.content))); }catch{}
+    old[`${name}.wav`] = {name, role: "（コンソールで追加）", source: src, source_url: url, original_file: f.name,
+      edit: `${st ? "開始" + st + "秒・" : ""}${len ? "長さ" + len + "秒・" : ""}${norm ? "ピーク" + r.peakDb.toFixed(1) + "dB→" + SE_PEAK_DB + "dBにそろえた" : "音量はそのまま"}・末尾0.06秒フェード・WAV化`,
+      added: new Date().toISOString().slice(0, 10), license: "社長の申告: " + src + "。利用条件は、配布ページで確認すること", terms_checked: false};
+    msg("保存しています…");
+    await commitMany([{path, bytes: r.bytes}, {path: srcPath, bytes: enc(JSON.stringify(old, null, 2) + "\n")}], `効果音を追加: ${name}（${src}・画像入れ替えコンソール）`);
+    await loadSfx(); renderSfx();
+    msg(`追加しました: ${name}.wav（${r.seconds.toFixed(2)}秒・ピーク ${r.peakDb.toFixed(1)}→${r.afterDb.toFixed(1)} dB）。下の「場面ごと」で選べます`, "ok");
+    $("#x-addfile").value = ""; $("#x-addfname").textContent = "（未選択）"; ["#x-addname", "#x-addurl", "#x-addst", "#x-addlen"].forEach(s => $(s).value = "");
+  }catch(e){ msg(e.message, "err"); }
+  $("#x-addgo").disabled = false;
+};
+$("#x-more").onclick = () => { SX.shown += 25; renderSfx(); };
+$("#x-close").onclick = () => {
+  sxStop();
+  if(SX.loaded && S.json && sxDirty() && !confirm("保存していない変更があります。閉じますか？")) return;
+  $("#sfx").style.display = "none"; document.body.style.overflow = "";
+};
+$("#x-save").onclick = async () => {
+  if(!ghReady()){ sxMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  let json; try{ json = await freshScript(); }catch(e){ sxMsg(e.message, "err"); return; }
+  let n = 0;
+  json.narrative_structure.forEach(raw => {
+    const sc = S.scenes.find(x => x.id === raw.id); if(!sc) return;
+    const v = SX.vals[sc.id];   // 効果音は、画像のロックに関係なく保存する
+    if(v){ raw.se = v; n++; } else delete raw.se;
+  });
+  $("#x-save").disabled = true; sxMsg("保存しています…");
+  try{
+    await commitMany([{path: `${GH_DIR}/data/scripts/${S.name}`, bytes: enc(JSON.stringify(json, null, 2) + "\n")}],
+      `${S.stem}: 効果音を場面に合わせる（指名${n}場面・画像入れ替えコンソール）`);
+    adoptJson(json);
+    renderSfx(); sxMsg(`保存しました（指名${n}場面）。次の生成から反映されます`, "ok");
+  }catch(e){ sxMsg(e.message, "err"); $("#x-save").disabled = false; }
 };
 
 // ── 全シーンをまっさらにする（2026-11-01 社長指示）。ロック中の場面は、何も変えない ────────────────────────────────
