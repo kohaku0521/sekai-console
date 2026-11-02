@@ -149,7 +149,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 00:10</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 06:40</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -462,6 +462,9 @@ async function loadScript(name){
   await adoptScript(name, json, false);
 }
 // 台本JSONを画面に取り込む（リポジトリから読んだとき・端末のファイルを開いたときの共通の処理）
+// 共通のオープニング動画（2026-11-03 社長指示「今後このシーンでは必ずこの動画を割り当てて」）: あいさつの場面（type が opening、または本文が「こんにちは。セカイ秒読みです」で始まる）には、
+// 台本の画像・クリップに関係なく、assets/brand/opening.mp4 が使われる（src/produce_longform.py _fill_opening）。台本の visual に opening_clip: false を書くと、使わない
+const isOpeningRaw = raw => !(raw.visual && raw.visual.opening_clip === false) && (raw.type === "opening" || String(raw.text || "").trim().startsWith("こんにちは。セカイ秒読みです"));
 async function adoptScript(name, json, local){
   const ns = json.narrative_structure;
   S.local = !!local;
@@ -473,7 +476,7 @@ async function adoptScript(name, json, local){
     style: JSON.parse(JSON.stringify(raw.slide_style || {})), styleDirty: false,   // 文字の色（slide_style。2026-10-29）
     stagedClip: null,                     // Pixabay動画クリップの選択（{bytes,url,source}）
     edits: {},                            // 文字の内容・改行・スペースの手直し（キー→文字列）
-    locked: !!raw.locked, lockDirty: false,   // 🔒 ロック（2026-11-01）: ロックした場面は、一括の変更も、手での変更も受け付けない。台本の locked に保存する
+    opening: isOpeningRaw(raw), locked: !!raw.locked || isOpeningRaw(raw), lockDirty: false,   // 🔒 ロック（2026-11-01）: ロックした場面は、一括の変更も、手での変更も受け付けない。台本の locked に保存する
   }));
   if(!local) localStorage.setItem("tas.img.script", name);
   buildRanges();
@@ -514,6 +517,8 @@ async function loadAssets(){
     listDir(`${GH_DIR}/assets/video_clips/${S.stem}`),
   ]);
   S.assets = {}; S.clips = {}; S.prev = {}; S.pvMotion = {};
+  S.brandOpening = null;
+  try{ const bi = (await listDir(`${GH_DIR}/assets/brand`)).find(i => i.name === "opening.mp4"); if(bi) S.brandOpening = {size: bi.size, sha: bi.sha, name: bi.name, brand: true}; }catch{}
   // 文字・図解・グラフになる場面の、動画での表示の確認画像（render_slide_previews.py）。無いチャンネル・台本は空のまま
   S.manifest = {};
   try{ const mj = await api(repoPath(`/contents/${GH_DIR}/assets/slide_previews/${S.stem}/_manifest.json${refQ()}`)); S.manifest = JSON.parse(dec(unb64(mj.content))); }catch{}
@@ -916,6 +921,7 @@ const bgOk = s => !!motionOf(s) && ["data", "slide"].includes(kindOf(s));
 const hasBg = s => bgOk(s) && s.action !== "nobg" && (!!s.staged || (!!vis(s).bg && !!S.assets[s.id]));
 const motionLabel = s => { const m = motionOf(s); return m ? (MOTION_TYPES[m.type] || m.type) : ""; };
 function currentOf(s){
+  if(s.opening && S.brandOpening) return {url: null, clip: S.brandOpening, label: "共通のオープニング動画"};
   if(s.stagedClip) return {url: null, label: "動画クリップに変更"};
   if(s.staged) return {url: s.staged.url, label: "変更あり"};
   const pv = S.prev && S.prev[s.id];
@@ -1002,7 +1008,7 @@ function render(){
     el.innerHTML = `
       <div class="thumb">${motionOf(s) && !s.stagedClip && (!s.staged || bgOk(s)) ? motionThumb(s) : s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : cur.clip && cur.clip.sha ? `<video data-pv="1" data-noplay="1" data-sha="${esc(cur.clip.sha)}" muted loop playsinline controls preload="none" style="width:100%;height:100%;object-fit:contain;background:#05070d"></video><span class="ph">動画クリップを読み込み中…</span>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
         <span class="badge ${isChg(s) ? "ch" : ""}" title="場面ID: ${esc(s.id)}">${s.locked ? "🔒 " : ""}${esc(numOf(s.id))} · ${esc(kindOf(s))}${motionOf(s) && !s.stagedClip && !s.staged ? " · 🎬動く図解" : approx ? (isStale(s) ? " · この文字で表示（目安・確認画像は未更新）" : " · この文字で表示（目安）") : cur.label && (cur.url || cur.asset || s.stagedClip) ? " · " + esc(cur.label) : ""}</span></div>
-      <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>
+      <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>${s.opening ? `<div class="q" style="color:var(--warn)">全動画共通のオープニング動画（assets/brand/opening.mp4）が、必ず使われます${S.brandOpening ? "" : "（まだ置かれていません）"}</div>` : ""}
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
         <div class="row" style="margin:0"><button class="lockbtn" data-lock="${esc(s.id)}" title="${s.locked ? "ロック中。押すと、ロックを外します" : "押すと、この場面をロックします（一括の変更も、手での変更も、受け付けなくなります）"}">${s.locked ? "🔒" : "🔓"}</button><label class="mpick" title="チェックを入れて、上の「🎬 チェックした場面に動きをつける」を押すと、この場面にふさわしい動きを提案します" style="display:inline-flex;align-items:center;gap:4px;margin-right:6px;cursor:pointer"><input type="checkbox" data-mpick="${esc(s.id)}" ${M.pick.has(s.id) ? "checked" : ""} ${s.locked ? "disabled" : ""} style="width:18px;height:18px">🎬</label>${motionOf(s) && CH.previewWf ? `<button data-pvone="${esc(s.id)}" title="この場面の動きのプレビューだけ、作り直します（約2〜3分・課金なし）。台本を保存してから押してください">▶ 動きを作る</button>` : ""}<button data-open="${esc(s.id)}" ${s.locked ? "disabled" : ""}>${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : bgOk(s) ? "背景の画像・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}${s.locked ? ' <span class="hint">ロック中</span>' : ""}
         ${isChg(s) ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
