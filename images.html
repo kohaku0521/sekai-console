@@ -156,7 +156,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 07:30</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 08:10</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -924,7 +924,10 @@ function motionOf(s){
   return null;
 }
 // 動く図解（図・グラフ・スライド）の場面でも、画像を背景に敷ける（2026-11-01 社長指示）。台本の visual.bg に入り、場面の画像ファイルを、図の後ろに暗くして敷く
-const bgOk = s => !!motionOf(s) && ["data", "slide"].includes(kindOf(s));
+// 背景の画像を敷ける場面: 動く図解（data・slide）／動かない文字スライド（kind=slide）／「文字を重ねる」にした画像の場面（photo・generated。台本の visual.bg が真、または s.bgMode）
+// （2026-11-03 社長指示「動かない文字に背景画像を差し込みたい」。生成側は src/produce_longform.py _fill_slides・slide_render.py の _bg）
+const textBg = s => !!vis(s).bg || !!s.bgMode;
+const bgOk = s => (!!motionOf(s) && ["data", "slide"].includes(kindOf(s))) || kindOf(s) === "slide" || (["photo", "generated"].includes(kindOf(s)) && textBg(s));
 const hasBg = s => bgOk(s) && s.action !== "nobg" && (!!s.staged || (!!vis(s).bg && !!S.assets[s.id]));
 const motionLabel = s => { const m = motionOf(s); return m ? (MOTION_TYPES[m.type] || m.type) : ""; };
 function currentOf(s){
@@ -955,7 +958,7 @@ function toggleLock(sc){
   setLock(sc, !sc.locked); render();
 }
 function updateSaveBtn(){ const n = changedScenes().length; $("#b-save").textContent = S.local ? `③ 保存（台本を新規追加＋${n}件の変更）` : `③ 保存（${n}件の変更）`; $("#b-save").disabled = !n && !S.local; }
-const isChg = s => !!(s.staged || s.stagedClip || s.action || s.styleDirty || s.lockDirty);
+const isChg = s => !!(s.staged || s.stagedClip || s.action || s.styleDirty || s.lockDirty || s.bgMode);
 const LOCKED_MSG = "この場面はロック中です。変更するには、🔒を押して、ロックを外してください";
 const changedScenes = () => S.scenes.filter(isChg);
 
@@ -1040,12 +1043,13 @@ function render(){
     el.dataset.sid = s.id;
     el.className = "card" + (isChg(s) ? " changed" : "") + (S.open === s.id ? " open" : "") + (s.locked ? " locked" : "");
     el.innerHTML = `
-      <div class="thumb">${motionOf(s) && !s.stagedClip && (!s.staged || bgOk(s)) ? motionThumb(s) : s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : cur.clip && cur.clip.sha ? `<video data-pv="1" data-noplay="1" data-sha="${esc(cur.clip.sha)}" muted loop playsinline controls preload="none" style="width:100%;height:100%;object-fit:contain;background:#05070d"></video><span class="ph">動画クリップを読み込み中…</span>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
+      <div class="thumb">${hasBg(s) && !motionOf(s) && !s.stagedClip ? bgTextThumb(s) : motionOf(s) && !s.stagedClip && (!s.staged || bgOk(s)) ? motionThumb(s) : s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : cur.clip && cur.clip.sha ? `<video data-pv="1" data-noplay="1" data-sha="${esc(cur.clip.sha)}" muted loop playsinline controls preload="none" style="width:100%;height:100%;object-fit:contain;background:#05070d"></video><span class="ph">動画クリップを読み込み中…</span>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
         <span class="badge ${isChg(s) ? "ch" : ""}" title="場面ID: ${esc(s.id)}">${s.locked ? "🔒 " : ""}${esc(numOf(s.id))} · ${esc(kindOf(s))}${motionOf(s) && !s.stagedClip && !s.staged ? " · 🎬動く図解" : approx ? (isStale(s) ? " · この文字で表示（目安・確認画像は未更新）" : " · この文字で表示（目安）") : cur.label && (cur.url || cur.asset || s.stagedClip) ? " · " + esc(cur.label) : ""}</span></div>
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>${s.opening ? `<div class="q" style="color:var(--warn)">全動画共通のオープニング動画（assets/brand/opening.mp4）が、必ず使われます${S.brandOpening ? "" : "（まだ置かれていません）"}</div>` : ""}
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
         <div class="row" style="margin:0"><button class="lockbtn" data-lock="${esc(s.id)}" title="${s.locked ? "ロック中。押すと、ロックを外します" : "押すと、この場面をロックします（一括の変更も、手での変更も、受け付けなくなります）"}">${s.locked ? "🔒" : "🔓"}</button><label class="mpick" title="チェックを入れて、上の「🎬 チェックした場面に動きをつける」を押すと、この場面にふさわしい動きを提案します" style="display:inline-flex;align-items:center;gap:4px;margin-right:6px;cursor:pointer"><input type="checkbox" data-mpick="${esc(s.id)}" ${M.pick.has(s.id) ? "checked" : ""} ${s.locked ? "disabled" : ""} style="width:18px;height:18px">🎬</label>${motionOf(s) && CH.previewWf ? `<button data-pvone="${esc(s.id)}" title="この場面の動きのプレビューだけ、作り直します（約2〜3分・課金なし）。台本を保存してから押してください">▶ 動きを作る</button>` : ""}<button data-open="${esc(s.id)}" ${s.locked ? "disabled" : ""}>${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : bgOk(s) ? "背景の画像・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}${s.locked ? ' <span class="hint">ロック中</span>' : ""}
         ${isChg(s) ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
+        ${!s.locked && !s.opening && ["photo", "generated"].includes(kindOf(s)) && !bgOk(s) ? `<button data-bgmode="${esc(s.id)}" title="この場面を、画像を背景にして、ナレーションの文字を重ねる場面にします（画像は暗くなります）。画像は、このあと「画像を選ぶ」で選ぶか、すでにある画像がそのまま背景になります">文字を重ねる</button>` : ""}
         ${enOf(s) ? `<button data-copyen="${esc(s.id)}" title="この場面のナレーションの英訳をコピーします">英語のナレーションをコピー</button>` : `<button data-makeen="${esc(s.id)}" title="OpenAIで、この場面のナレーションを英訳します（1円未満）">英訳を作る</button>`}
         <button data-copyja="${esc(s.id)}" title="この場面のナレーション（日本語）をコピーします">本文をコピー</button>${ipButtons(s)}</div></div>`;
     grid.appendChild(el);
@@ -1059,10 +1063,11 @@ function render(){
   grid.querySelectorAll("[data-makeen]").forEach(b => b.onclick = () => makeEn(S.scenes.find(x => x.id === b.dataset.makeen), b));
   grid.querySelectorAll("[data-copyja]").forEach(b => b.onclick = () => copyText(S.scenes.find(x => x.id === b.dataset.copyja).text, b));
   grid.querySelectorAll("[data-copyip]").forEach(b => b.onclick = () => { const [id, i] = b.dataset.copyip.split(":"); const sc = S.scenes.find(x => x.id === id); const p = sc && ipOf(sc)[Number(i)]; if(p) copyText(p.prompt, b); });
+  grid.querySelectorAll("[data-bgmode]").forEach(b => b.onclick = () => { const s = S.scenes.find(x => x.id === b.dataset.bgmode); if(!s || s.locked) return; s.bgMode = true; render(); dockMsg(`#${numOf(s.id)}: 文字を重ねる場面にしました。背景にする画像を「画像を選ぶ」で選ぶか、このまま「③ 保存」を押すと、いまの画像が背景になります`, "ok"); });
   grid.querySelectorAll("[data-undo]").forEach(b => b.onclick = () => {
     const s = S.scenes.find(x => x.id === b.dataset.undo);
     if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url);
-    if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; s.staged = null; s.action = null; s.style = JSON.parse(JSON.stringify(s.raw.slide_style || {})); s.edits = {}; s.styleDirty = false; s.locked = !!s.raw.locked; s.lockDirty = false; render();
+    if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; s.staged = null; s.action = null; s.bgMode = false; s.style = JSON.parse(JSON.stringify(s.raw.slide_style || {})); s.edits = {}; s.styleDirty = false; s.locked = !!s.raw.locked; s.lockDirty = false; render();
   });
   observeImages();
   const n = ch.length;
@@ -1163,13 +1168,20 @@ function motionThumb(s){
     <div style="position:relative;font-size:11px;color:#9aa3b2">${st.state === "stale" ? "台本を直したので、動きのプレビューは古くなっています。" : "この場面の動きは、まだ確認できません。"}${CH.previewWf ? "" : "ヘッダーの「▶ 図・動きの確認を作る」で作れます（約10分・課金なし）"}</div>
     ${CH.previewWf ? `<button data-pvone="${esc(s.id)}" style="position:relative;align-self:flex-start;margin-top:4px" title="この場面の動きのプレビューだけを作ります（約2〜3分・課金なし）。台本を保存してから押してください">▶ この場面の動きを作る（約2〜3分・課金なし）</button>` : ""}</div>`;
 }
-function approxHtml(s){
+function approxHtml(s, over){
   const fs = slideFields(s), st = s.style || {}, light = ((s.raw && s.raw.slide) || {}).theme === "light";
   const bg = light ? "linear-gradient(160deg,#f7f8fb,#e6ebf2)" : "linear-gradient(160deg,#070c18,#141e3a)";
   const main = st.color || (light ? "#121826" : "#ffffff"), sub = st.sub_color || (light ? "#4a5466" : "#9aa3b2");
   const lines = fs.map((f, i) => ({v: curVal(s, f), head: i === 0})).filter(x => x.v && x.v.trim());
   const body = lines.slice(0, 5).map(x => `<div style="white-space:pre-wrap;word-break:break-all;${x.head ? `font-weight:800;font-size:15px;color:${main};margin-bottom:4px` : `font-size:11.5px;color:${sub};line-height:1.45`}">${paintLine(x.v, st.spans)}</div>`).join("");
-  return `<div style="position:absolute;inset:0;background:${bg};padding:14px 14px 18px;overflow:hidden;display:flex;flex-direction:column;justify-content:center">${body}</div>`;
+  return `<div style="position:absolute;inset:0;background:${over ? "transparent" : bg};padding:14px 14px 18px;overflow:hidden;display:flex;flex-direction:column;justify-content:center">${body}</div>`;
+}
+// 動かない文字スライドに、背景の画像を敷いた見た目の目安（画像を暗くして、文字を重ねる）
+function bgTextThumb(s){
+  const img = s.staged ? `<img src="${esc(s.staged.url)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">`
+    : (S.assets[s.id] ? `<img data-asset="${esc(S.assets[s.id].path)}" data-size="${S.assets[s.id].size}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;visibility:hidden">` : "");
+  const dim = (vis(s).bg && typeof vis(s).bg === "object" && vis(s).bg.dim !== undefined) ? +vis(s).bg.dim : 0.62;
+  return `<div style="position:absolute;inset:0;background:#05070d">${img}<div style="position:absolute;inset:0;background:rgba(5,7,13,${Math.min(Math.max(dim, 0), 0.95)})"></div>${approxHtml(s, true)}</div>`;
 }
 const PALETTE = [["白", "#ffffff"], ["黄", "#ffd54a"], ["琥珀", "#e8a74a"], ["赤", "#ff6b6b"], ["水色", "#6ec6ff"], ["緑", "#7bd88f"], ["灰", "#9aa3b2"]];
 const hasStyle = s => !!(s.style && (s.style.color || s.style.sub_color || (s.style.spans || []).length));
@@ -1483,6 +1495,8 @@ async function saveAll(){
       if(raw.visual && raw.visual.real){ delete raw.visual.real; jsonChanged = true; }   // 手で選んだ画像を、NASA自動取得で上書きさせない
       if(bgOk(s)){ raw.visual = raw.visual || {}; if(!raw.visual.bg) raw.visual.bg = {dim: 0.62}; jsonChanged = true; }   // 動く図解の背景に敷く
       picks.push({scene: s.id, ...s.staged.source});
+    }else if(s.bgMode && bgOk(s)){   // 画像の場面を、文字を重ねる背景にする（すでにある画像を背景にする）
+      raw.visual = raw.visual || {}; if(!raw.visual.bg) raw.visual.bg = {dim: 0.62}; jsonChanged = true;
     }else if(s.action === "nobg"){   // 動く図解の背景の画像を外す
       if(S.assets[s.id]) changes.push({path: `${base}/${S.assets[s.id].name}`, bytes: null});
       if(raw.visual) delete raw.visual.bg;
@@ -1504,7 +1518,7 @@ async function saveAll(){
   try{
     await commitMany(changes, `${S.stem}: ${S.local ? "台本を追加・" : ""}画像を入れ替え（${ch.length}場面・画像入れ替えコンソール）`);
     S.local = false;
-    ch.forEach(s => { if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; s.lockDirty = false; });
+    ch.forEach(s => { s.bgMode = false; if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; s.lockDirty = false; });
     if(jsonChanged) adoptJson(json);
     await loadAssets(); render();
     dockMsg(`保存しました（${ch.length}場面）。続けて「④ 生成を開始」を押せます${S.mergedNote || ""}`, "ok");
