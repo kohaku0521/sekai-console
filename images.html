@@ -156,7 +156,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 18:40</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 19:10</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -2042,6 +2042,12 @@ const SX = {items: [], vals: {}, shown: 25, loaded: false, audio: null, url: nul
 const SE_DIR = "assets/audio/se", SE_PEAK_DB = -28;
 const SE_BUILTIN = [["accent", "accent（驚き・強調）"], ["chapter", "chapter（章の頭）"], ["transition", "transition（場面の切り替え）"]];
 const SE_FIG = {fig_rise: "グラフが伸びる", fig_pop: "数字・比較・カード・まとめ", fig_tick: "ノード図・構造図", fig_step: "進行ステップ", fig_sweep: "太陽系・粒子と磁場", fig_thud: "クレーター・論文", fig_pin: "地図の点"};
+// 動く図解の型ごとの自動の効果音（config.yaml audio.se_by_template と同じ。変えたら、ここも直す）。太陽系の並び（solar_system）は鳴らさない
+const SE_BY_TPL = {column_chart: "fig_rise", bar_chart: "fig_rise", line_chart: "fig_rise", timeline: "fig_rise", size_compare: "fig_rise", big_number: "fig_pop", compare: "fig_pop", cards: "fig_pop", summary: "fig_pop", node_map: "fig_tick", structure: "fig_tick", step_track: "fig_step", particle_field: "fig_sweep", crater_section: "fig_thud", map_pin: "fig_pin", doc_pan: "fig_thud"};
+function sxMotionKey(s){   // 生成側（produce_longform.py _motion_key）と同じ見方。動く図解の型の名前、動かない場面は ""
+  const m = motionOf(s); if(m) return m.type;
+  const v = vis(s); return ["map_pin", "doc_pan"].includes(v.template) ? v.template : "";
+}
 const SE_SRC = [["効果音ラボ", "効果音ラボ（商用利用無料・クレジット不要と表示）"], ["OtoLogic", "OtoLogic（クレジット必須）"], ["魔王魂", "魔王魂"], ["Springin", "Springin' Sound Stock"],
   ["YouTubeオーディオライブラリ", "YouTubeオーディオライブラリ"], ["Pixabay", "Pixabay"], ["Mixkit", "Mixkit"], ["Freesound(CC0)", "Freesound（CC0だけ）"], ["その他", "その他・自作"]];
 const sxMsg = (t, cls = "") => { const e = $("#x-msg"); e.textContent = t || ""; e.className = "msg " + cls; };
@@ -2103,6 +2109,8 @@ function renderSfx(){
     const v = SX.vals[s.id] || "", el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px";
     const ch = s.raw && s.raw.chapter_label;
     el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc("#" + numOf(s.id))}</b>　${esc(s.text.slice(0, 40))}${s.text.length > 40 ? "…" : ""}${ch ? `　<span style="color:var(--warn)">章の頭（chapter が自動で鳴る）</span>` : ""}</div>
+      ${(() => { const k = sxMotionKey(s); if(!k) return ""; const a = SE_BY_TPL[k], lab = (typeof MOTION_TYPES !== "undefined" && MOTION_TYPES[k]) || k;
+        return `<div class="hint" style="margin-bottom:4px;color:var(--ok, #6c6)">🎬 <b>動く図解</b>（${esc(lab)}）　${a ? `自動の音：<b>${esc(a)}</b>（${esc(SE_FIG[a] || "")}）。直前の効果音から15秒以内なら、鳴りません` : "自動の音：なし（この型は鳴らさない設定）"}</div>`; })()}
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><select data-xs="${esc(s.id)}" style="flex:1 1 160px;width:auto;min-width:0;max-width:100%">${sxOptions(v)}</select></div>`;
     sc.appendChild(el);
   });
