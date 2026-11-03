@@ -156,7 +156,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 21:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 21:30</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -2108,7 +2108,7 @@ function renderSfx(){
   S.scenes.slice(0, SX.shown).forEach(s => {
     const v = SX.vals[s.id] || "", el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px";
     const ch = s.raw && s.raw.chapter_label;
-    el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc("#" + numOf(s.id))}</b>　${esc(s.text.slice(0, 40))}${s.text.length > 40 ? "…" : ""}${ch ? `　<span style="color:var(--warn)">章の頭（chapter が自動で鳴る）</span>` : ""}${s.opening ? `　<span style="color:var(--warn)">オープニング（decision37 が必ず鳴る）</span>` : ""}${s.text.trim().startsWith("毎週、宇宙の話を") ? `　<span style="color:var(--warn)">チャンネル登録の案内（decision35 が必ず鳴る）</span>` : ""}</div>
+    el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc("#" + numOf(s.id))}</b>　${esc(s.text.slice(0, 40))}${s.text.length > 40 ? "…" : ""}${ch ? `　<span style="color:var(--warn)">章の頭（chapter が自動で鳴る）</span>` : ""}${s.opening ? `　<span style="color:var(--warn)">オープニング（decision37 が必ず鳴る）</span>` : ""}${s.text.trim().startsWith("毎週、宇宙の話を") ? `　<span style="color:var(--warn)">チャンネル登録の案内（decision35 が必ず鳴る）</span>` : ""}${s.text.trim().startsWith("決まりです。あなたの家は") ? `　<span style="color:var(--warn)">家が決まる場面（decision53 が鳴る）</span>` : ""}</div>
       ${(() => { const k = sxMotionKey(s); if(!k) return ""; const a = SE_BY_TPL[k], lab = (typeof MOTION_TYPES !== "undefined" && MOTION_TYPES[k]) || k;
         return `<div class="hint" style="margin-bottom:4px;color:var(--ok, #6c6)">🎬 <b>動く図解</b>（${esc(lab)}）　${a ? `自動の音：<b>${esc(a)}</b>（${esc(SE_FIG[a] || "")}）。直前の効果音から15秒以内なら、鳴りません` : "自動の音：なし（この型は鳴らさない設定）"}</div>`; })()}
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><select data-xs="${esc(s.id)}" style="flex:1 1 160px;width:auto;min-width:0;max-width:100%">${sxOptions(v)}</select></div>`;
