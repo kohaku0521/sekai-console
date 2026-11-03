@@ -156,7 +156,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 22:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 22:30</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -265,6 +265,7 @@ a{color:#7fb0ff}
       <div class="hint" style="margin:6px 0">配布元の<b>利用条件（商用利用・クレジットの要否・禁止事項）を確認</b>してから、ダウンロードして追加してください。追加すると、<b>音量をピーク −28 dB にそろえた WAV</b> に変えて保存します（元のままだと、ナレーションより大きくなります）。長い音は、開始と長さで切り出せます。</div>
       <div class="row" style="flex-wrap:wrap;gap:6px;align-items:center"><label class="chip" style="cursor:pointer"><input type="file" id="x-addfile" accept=".mp3,.wav,.m4a,.ogg,audio/*" style="display:none">📁 効果音のファイルを選ぶ</label><span class="hint" id="x-addfname">（未選択）</span></div>
       <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px"><input type="text" id="x-addname" placeholder="音の名前（必須。台本の se に書く名前。例: ひらめき）" style="flex:1 1 220px"><select id="x-addsrc" style="width:auto"></select></div>
+      <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px"><input type="text" id="x-addnote" placeholder="説明（おすすめ。選ぶ画面に出ます。例: 宇宙船が動き出すとき）" style="flex:1 1 320px"></div>
       <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px"><input type="text" id="x-addurl" placeholder="配布ページのアドレス（任意）" style="flex:1 1 240px"><input type="number" id="x-addst" placeholder="開始（秒）" step="0.05" min="0" style="width:110px"><input type="number" id="x-addlen" placeholder="長さ（秒）" step="0.05" min="0.1" style="width:110px"></div>
       <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="x-addnorm" checked style="width:20px;height:20px">音量をそろえる（推奨）</label><button class="primary" id="x-addgo">追加して保存</button></div>
       <div class="msg" id="x-addmsg" style="margin-top:6px"></div>
@@ -2061,12 +2062,13 @@ async function loadSfx(){
   SX.meta = {}; try{ const j = await api(repoPath(`/contents/${GH_DIR}/${SE_DIR}/_sources.json${refQ()}`), {cache: "no-store"}); SX.meta = JSON.parse(dec(unb64(j.content))); }catch{}
   SX.loaded = true;
 }
+const sxNoteOf = x => { const m = x && SX.meta[x.name]; return m && m.note ? `　${m.note}` : ""; };   // 追加した効果音の、社長の説明（_sources.json の note）。選ぶとき、ファイル名だけでは分からないため
 function sxOptions(sel){
   const known = sxNames(), own = SX.items.filter(x => !SE_BUILTIN.some(b => b[0] === x.stem) && !SE_FIG[x.stem]), fig = SX.items.filter(x => SE_FIG[x.stem]);
   const o = (v, l) => `<option value="${esc(v)}"${sel === v ? " selected" : ""}>${esc(l)}</option>`;
   return `<option value="">（指定しない）</option>` + (sel && !known.includes(sel) ? `<option value="${esc(sel)}" selected>旧指定: ${esc(sel)}（見つかりません）</option>` : "")
     + `<optgroup label="標準の音">${SE_BUILTIN.map(([v, l]) => o(v, l)).join("")}</optgroup>`
-    + (own.length ? `<optgroup label="追加した効果音">${own.map(x => o(x.stem, x.stem)).join("")}</optgroup>` : "")
+    + (own.length ? `<optgroup label="追加した効果音">${own.map(x => o(x.stem, x.stem + sxNoteOf(x))).join("")}</optgroup>` : "")
     + (fig.length ? `<optgroup label="図解用の音">${fig.map(x => o(x.stem, `${x.stem}（${SE_FIG[x.stem]}）`)).join("")}</optgroup>` : "");
 }
 function sxStop(){
@@ -2098,7 +2100,7 @@ async function sxPlay(btn){
 function renderSfx(){
   const tb = $("#x-tracks");
   const rows = [...SE_BUILTIN.map(([v, l]) => ({stem: v, label: l, file: SX.items.find(x => x.stem === v), builtin: true})),
-    ...SX.items.filter(x => !SE_BUILTIN.some(b => b[0] === x.stem)).map(x => ({stem: x.stem, label: x.stem + (SE_FIG[x.stem] ? `（図解用：${SE_FIG[x.stem]}）` : ""), file: x}))];
+    ...SX.items.filter(x => !SE_BUILTIN.some(b => b[0] === x.stem)).map(x => ({stem: x.stem, label: x.stem + (SE_FIG[x.stem] ? `（図解用：${SE_FIG[x.stem]}）` : "") + sxNoteOf(x), file: x}))];
   tb.innerHTML = rows.map(r => {
     const m = r.file && SX.meta[r.file.name], src = m ? `［${esc(m.source || "")}${m.name ? "・" + esc(m.name) : ""}］` : "";
     return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap">${r.file ? `<button data-xplay="${esc(r.stem)}">▶ 試聴</button>` : `<span class="hint" style="min-width:72px">（合成音）</span>`}<span style="flex:1 1 200px;word-break:break-all">${esc(r.label)}${r.builtin && r.file ? ' <span class="hint">（置いた音が優先）</span>' : ""} <span class="hint">${src}</span></span></div>`;
@@ -2174,14 +2176,14 @@ $("#x-addgo").onclick = async () => {
     const r = await sxProcess(f, st, len, norm);
     const path = `${GH_DIR}/${SE_DIR}/${name}.wav`, srcPath = `${GH_DIR}/${SE_DIR}/_sources.json`;
     let old = {}; try{ const j = await api(repoPath(`/contents/${srcPath}${refQ()}`), {cache: "no-store"}); old = JSON.parse(dec(unb64(j.content))); }catch{}
-    old[`${name}.wav`] = {name, role: "（コンソールで追加）", source: src, source_url: url, original_file: f.name,
+    old[`${name}.wav`] = {name, role: "（コンソールで追加）", note: $("#x-addnote").value.trim(), source: src, source_url: url, original_file: f.name,
       edit: `${st ? "開始" + st + "秒・" : ""}${len ? "長さ" + len + "秒・" : ""}${norm ? "ピーク" + r.peakDb.toFixed(1) + "dB→" + SE_PEAK_DB + "dBにそろえた" : "音量はそのまま"}・末尾0.06秒フェード・WAV化`,
       added: new Date().toISOString().slice(0, 10), license: "社長の申告: " + src + "。利用条件は、配布ページで確認すること", terms_checked: false};
     msg("保存しています…");
     await commitMany([{path, bytes: r.bytes}, {path: srcPath, bytes: enc(JSON.stringify(old, null, 2) + "\n")}], `効果音を追加: ${name}（${src}・画像入れ替えコンソール）`);
     await loadSfx(); renderSfx();
     msg(`追加しました: ${name}.wav（${r.seconds.toFixed(2)}秒・ピーク ${r.peakDb.toFixed(1)}→${r.afterDb.toFixed(1)} dB）。下の「場面ごと」で選べます`, "ok");
-    $("#x-addfile").value = ""; $("#x-addfname").textContent = "（未選択）"; ["#x-addname", "#x-addurl", "#x-addst", "#x-addlen"].forEach(s => $(s).value = "");
+    $("#x-addfile").value = ""; $("#x-addfname").textContent = "（未選択）"; ["#x-addname", "#x-addnote", "#x-addurl", "#x-addst", "#x-addlen"].forEach(s => $(s).value = "");
   }catch(e){ msg(e.message, "err"); }
   $("#x-addgo").disabled = false;
 };
