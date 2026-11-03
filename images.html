@@ -156,7 +156,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 22:30</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 08:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -2040,7 +2040,7 @@ $("#g-save").onclick = async () => {
 // 台本の場面の se（効果音の名前＝assets/audio/se のファイル名の拡張子なし。accent・chapter・transition は、無ければ自前の合成音）。
 // その場面の頭で1回鳴る。追加した音は、ブラウザで WAV に変えて、ピークを −28 dB にそろえて保存する（src/audio_mix.py find_se が、.wav・.mp3 を探す）
 const SX = {items: [], vals: {}, shown: 25, loaded: false, audio: null, url: null, token: 0, playing: "", loading: "", meta: {}};
-const SE_DIR = "assets/audio/se", SE_PEAK_DB = -28;
+const SE_DIR = "assets/audio/se", SE_PEAK_DB = -6;
 const SE_BUILTIN = [["accent", "accent（驚き・強調）"], ["chapter", "chapter（章の頭）"], ["transition", "transition（場面の切り替え）"]];
 const SE_FIG = {fig_rise: "グラフが伸びる", fig_pop: "数字・比較・カード・まとめ", fig_tick: "ノード図・構造図", fig_step: "進行ステップ", fig_sweep: "太陽系・粒子と磁場", fig_thud: "クレーター・論文", fig_pin: "地図の点"};
 // 動く図解の型ごとの自動の効果音（config.yaml audio.se_by_template と同じ。変えたら、ここも直す）。太陽系の並び（solar_system）は鳴らさない
