@@ -156,7 +156,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 08:10</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/03 09:20</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -1013,7 +1013,9 @@ function render(){
     const t = S.scenes.filter(x => M.pick.has(x.id) && !x.locked);
     if(!t.length){ dockMsg("構造図にしたい場面の🎬にチェックを入れてから、押してください", "err"); return; }
     const txt = `次の場面を、動く図解の構造図（structure）に書き直してください（台本: ${S.name}）。構造図は、CLAUDE.md の「動く図鑑（structure）」と data/structure_samples/ のとおりに書いて、台本に反映してください。\n` + t.map(x => `・#${numOf(x.id)}（${x.id}）「${x.text}」`).join("\n");
-    copyText(txt, e.target); dockMsg(`${t.length}場面の依頼文をコピーしました。Claudeのチャットに貼って送ってください`, "ok");
+    copyText(txt, e.target);
+    M.pick.clear(); render();   // 2026-11-03 社長指示: 「構造図を頼む」を押したら、チェックを外す（前の場面が残って、次の依頼に混ざらないように）
+    dockMsg(`${t.length}場面の依頼文をコピーしました（チェックは外しました）。Claudeのチャットに貼って送ってください`, "ok");
   };
   mPickBtn();
   $("#b-lockall").onclick = () => { list.forEach(x => setLock(x, true)); render(); dockMsg(`${list.length}場面をロックしました。「③ 保存」で確定します`, "ok"); };
