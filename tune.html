@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>動画の微調整（効果音・BGM・予約公開）</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0d10;--panel:#14171c;--panel2:#1a1e24;--line:#262b33;--text:#e6e9ee;--dim:#8b93a1;--accent:#3d79d5;--ok:#46b86a;--warn:#e0a63a;--err:#e5534b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line);padding:8px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+header b{font-size:15px}
+main{max-width:860px;margin:0 auto;padding:12px 12px 120px}
+select,input[type=text],input[type=number],input[type=datetime-local]{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;max-width:100%}
+button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px 11px;font:inherit;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.warn{background:#7a5a14;border-color:var(--warn)}
+button:disabled{opacity:.45;cursor:default}
+.hint{color:var(--dim);font-size:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.card h3{margin:0 0 6px;font-size:14px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cue{border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px}
+.cue.mute{opacity:.45}
+.cue.chg{border-color:var(--accent)}
+.cue .t{font-variant-numeric:tabular-nums;font-weight:700}
+.msg{min-height:20px;font-size:13px}.msg.ok{color:var(--ok)}.msg.err{color:var(--err)}
+input[type=range]{flex:1 1 140px;min-width:110px}
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--panel);border-top:1px solid var(--line);padding:8px 12px}
+.dock .in{max-width:860px;margin:0 auto}
+a{color:#79a8f0}
+.chip{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:0 8px;font-size:11px;color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+  <b>🎚 動画の微調整</b>
+  <select id="script" style="max-width:300px"></select>
+  <button id="b-load">読み込み</button>
+  <span class="hint" id="ver">版 11/04 18:00</span>
+  <span style="flex:1"></span>
+  <a href="images.html" style="font-size:12px">画像入れ替えコンソール</a>
+</header>
+<main>
+  <div class="card hint" id="intro">
+    できあがった動画の<b>効果音（時刻・音量・消す・足す）</b>と<b>BGM（曲・音量）</b>を、動画を作り直さずに直します（約5分。ナレーション・字幕・映像は、そのままです）。
+    直したら「① 保存」→「② 反映して作る」。確認用の動画（限定公開）のURLがDiscordに届くので、聞いて良ければ「③ 予約公開にする」。
+    <br>※ <b>漢字の読み・句読点</b>を直すと、ナレーションと字幕が変わるので、「画像入れ替えコンソール」で台本を直して、「④ 生成を開始」で作り直します（約40分）。
+    <br>※ 初めて使う動画は、先に1回「④ 生成を開始」で作ってください（そのとき、音の台帳と、微調整用の素材が保存されます）。
+  </div>
+  <div id="body"></div>
+</main>
+<div class="dock"><div class="in">
+  <div class="msg" id="msg"></div>
+  <div class="row">
+    <button class="primary" id="b-save" disabled>① 保存</button>
+    <button id="b-remix" disabled title="微調整を反映して音を作り直します（約5分）。アップロードはしません">② 作るだけ</button>
+    <button id="b-draft" disabled title="作り直して、確認用に限定公開（リンクを知る人だけ）でアップロードします。URLはDiscordに届きます">② 作って確認用にアップロード</button>
+  </div>
+</div></div>
+
+<script>
+const GH_DIR = "CMO/YouTube/trend-auto-studio", WF = "trend-auto-studio-remix.yml";
+const gh = {owner: "kohaku0521", repo: "kaitai-check", branch: "main", token: ""};
+try { Object.assign(gh, JSON.parse(localStorage.getItem("tas.gh") || "{}")); } catch {}
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const dec = u => new TextDecoder("utf-8").decode(u), enc = s => new TextEncoder().encode(s);
+function unb64(s){ const bin = atob(s.replace(/\n/g, "")); const u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+function b64(bytes){ let s = ""; for(let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
+const ghReady = () => !!(gh.token && gh.owner && gh.repo && gh.branch);
+async function api(path, opt = {}){
+  const r = await fetch("https://api.github.com" + path, {...opt, headers: {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "Authorization": "Bearer " + gh.token, ...(opt.headers || {})}})
+    .catch(() => { throw new Error("GitHubに接続できません（通信状態を確認してください）"); });
+  if(r.status === 204) return null;
+  const j = await r.json().catch(() => null);
+  if(!r.ok){ const e = new Error(`GitHub ${r.status}: ${(j && j.message) || r.statusText}`); e.status = r.status; throw e; }
+  return j;
+}
+const rp = p => `/repos/${gh.owner}/${gh.repo}${p}`, refQ = () => `?ref=${encodeURIComponent(gh.branch)}`;
+const msg = (t, cls = "") => { const e = $("#msg"); e.textContent = t || ""; e.className = "msg " + cls; };
+async function listDir(path){ try{ const r = await api(rp(`/contents/${path}${refQ()}`)); return Array.isArray(r) ? r : []; }catch(e){ if(e.status === 404) return []; throw e; } }
+async function readJson(path){ try{ const f = await api(rp(`/contents/${path}${refQ()}`), {cache: "no-store"}); return {json: JSON.parse(dec(unb64(f.content))), sha: f.sha}; }catch(e){ if(e.status === 404) return null; throw e; } }
+
+// ── 状態 ──────────────────────────────────────────────────────────────────
+const EMPTY = () => ({master: {}, se: {}, se_add: [], bgm: {}});
+const T = {stem: "", sheet: null, tuning: EMPTY(), saved: "", sha: null, seFiles: [], bgmTracks: [], filter: "", loaded: false};
+const BUILTIN_SE = ["accent", "chapter", "transition"];
+const fmt = s => { s = Math.max(+s || 0, 0); const m = Math.floor(s / 60); return `${m}:${(s - m * 60).toFixed(1).padStart(4, "0")}`; };
+const sceneOf = id => (T.sheet.scenes || []).find(s => s.id === id);
+const numOf = id => String(Math.max((T.sheet.scenes || []).findIndex(s => s.id === id), 0) + 1).padStart(2, "0");
+const norm = t => JSON.stringify({master: t.master, se: t.se, se_add: t.se_add, bgm: t.bgm});
+const dirty = () => norm(T.tuning) !== T.saved;
+const seGain = () => T.tuning.master.se_gain_db ?? T.sheet.audio.se_gain_db ?? -1;
+const bgmGain = () => T.tuning.master.bgm_gain_db ?? T.sheet.audio.bgm_gain_db ?? -22;
+function cleanEdit(key){ const e = T.tuning.se[key]; if(e && !Object.keys(e).length) delete T.tuning.se[key]; }
+
+async function loadList(){
+  const items = (await listDir(`${GH_DIR}/data/cuesheets`)).filter(i => /\.json$/.test(i.name) && !/\.meta\.json$/.test(i.name)).map(i => i.name.replace(/\.json$/, "")).sort().reverse();
+  const sel = $("#script"); sel.innerHTML = items.length ? items.map(n => `<option>${esc(n)}</option>`).join("") : `<option value="">（音の台帳のある動画が、まだありません）</option>`;
+  let last = ""; try{ last = localStorage.getItem("tas.tune.script") || ""; }catch{}
+  if(last && items.includes(last)) sel.value = last;
+}
+async function loadTracks(){
+  const BF = i => i.type === "file" && /\.(mp3|wav|m4a|ogg)$/i.test(i.name) && !/^bed_\d+\./i.test(i.name);
+  const out = [];
+  for(const i of (await listDir(`${GH_DIR}/assets/audio/bgm`)).filter(BF)) out.push({name: i.name.replace(/\.[^.]+$/, ""), group: ""});
+  for(const d of (await listDir(`${GH_DIR}/assets/audio/bgm_candidates`)).filter(i => i.type === "dir" && !i.name.startsWith("_")))
+    for(const i of (await listDir(`${GH_DIR}/assets/audio/bgm_candidates/${d.name}`)).filter(BF)) out.push({name: i.name.replace(/\.[^.]+$/, ""), group: d.name});
+  T.bgmTracks = out.sort((a, b) => a.name < b.name ? -1 : 1);
+  T.seFiles = (await listDir(`${GH_DIR}/assets/audio/se`)).filter(i => i.type === "file" && /\.(wav|mp3)$/i.test(i.name)).map(i => ({stem: i.name.replace(/\.[^.]+$/, ""), name: i.name})).sort((a, b) => a.stem < b.stem ? -1 : 1);
+}
+async function loadAll(){
+  if(!ghReady()){ msg("先に、画像入れ替えコンソールの「⚙ 接続設定」で、GitHubにつないでください", "err"); return; }
+  const stem = $("#script").value; if(!stem){ msg("動画を選んでください", "err"); return; }
+  msg("読み込んでいます…");
+  try{
+    const sh = await readJson(`${GH_DIR}/data/cuesheets/${stem}.json`); if(!sh) throw new Error("音の台帳がありません");
+    const tu = await readJson(`${GH_DIR}/data/tuning/${stem}.json`);
+    await loadTracks();
+    T.stem = stem; T.sheet = sh.json; T.tuning = {...EMPTY(), ...(tu ? tu.json : {})}; T.tuning.master ||= {}; T.tuning.se ||= {}; T.tuning.se_add ||= []; T.tuning.bgm ||= {};
+    T.sha = tu ? tu.sha : null; T.saved = norm(T.tuning); T.loaded = true;
+    try{ localStorage.setItem("tas.tune.script", stem); }catch{}
+    msg(""); render();
+  }catch(e){ msg(e.message, "err"); }
+}
+
+// ── 画面 ──────────────────────────────────────────────────────────────────
+const seOpts = sel => [...BUILTIN_SE.map(n => ({stem: n})), ...T.seFiles.filter(f => !BUILTIN_SE.includes(f.stem))].map(f => `<option value="${esc(f.stem)}"${f.stem === sel ? " selected" : ""}>${esc(f.stem)}</option>`).join("");
+const bgmOpts = sel => `<option value="">（変えない）</option>` + T.bgmTracks.map(t => `<option value="${esc(t.name)}"${t.name === sel ? " selected" : ""}>${esc(t.name)}${t.group ? "（" + esc(t.group) + "）" : ""}</option>`).join("");
+function render(){
+  const b = $("#body"); if(!T.loaded){ b.innerHTML = ""; return; }
+  const sh = T.sheet, q = T.filter.trim();
+  const rows = (sh.se || []).filter(r => !q || (r.name + " " + r.scene + " " + ((sceneOf(r.scene) || {}).text || "")).includes(q));
+  const cueHtml = r => {
+    const e = T.tuning.se[r.key] || {}, at = e.at ?? r.at, g = e.gain_db ?? r.gain_db, sc = sceneOf(r.scene) || {}, mute = !!e.mute, chg = !!Object.keys(e).length;
+    const off = at - (sc.start ?? 0);
+    return `<div class="cue${mute ? " mute" : ""}${chg ? " chg" : ""}">
+      <div class="row"><span class="chip">#${numOf(r.scene)}</span><b>${esc(r.name)}</b>${r.user ? '<span class="chip">自分で置いた音</span>' : ""}${sc.chapter ? `<span class="chip">${esc(sc.chapter)}</span>` : ""}
+        <span class="hint" style="flex:1 1 160px">${esc(sc.text || "")}</span></div>
+      <div class="row" style="margin-top:4px">
+        <span class="t" data-t="${esc(r.key)}">${fmt(at)}</span><span class="hint">（場面の頭から ${off >= 0 ? "+" : ""}${off.toFixed(1)}秒）</span>
+        ${[-0.5, -0.1, 0.1, 0.5].map(d => `<button data-nudge="${esc(r.key)}" data-d="${d}">${d > 0 ? "+" : ""}${d}</button>`).join("")}
+        <button data-play="${esc(r.name)}">▶</button>
+        <label class="hint"><input type="checkbox" data-mute="${esc(r.key)}"${mute ? " checked" : ""}> 消す</label>
+        ${chg ? `<button data-reset="${esc(r.key)}">元に戻す</button>` : ""}</div>
+      <div class="row" style="margin-top:4px"><span class="hint" style="min-width:64px">音量</span>
+        <input type="range" min="-30" max="6" step="0.5" value="${g ?? seGain()}" data-vol="${esc(r.key)}"><span class="hint" data-vt="${esc(r.key)}" style="min-width:90px">${g == null ? "標準（全体と同じ）" : g + " dB"}</span>
+        ${g != null ? `<button data-vreset="${esc(r.key)}">標準に</button>` : ""}</div></div>`;
+  };
+  const adds = T.tuning.se_add.map((a, i) => {
+    const sc = sceneOf(a.scene) || {};
+    return `<div class="cue chg"><div class="row"><span class="chip">足した音</span><span class="chip">#${a.scene ? numOf(a.scene) : "—"}</span>
+      <select data-addname="${i}">${seOpts(a.name)}</select><button data-play="${esc(a.name)}">▶</button>
+      <input type="number" step="0.1" min="0" style="width:84px" value="${a.dt ?? ""}" data-adddt="${i}" placeholder="秒"><span class="hint">秒（場面の頭から）</span><button data-adddel="${i}">× 消す</button></div>
+      <div class="hint">${esc(sc.text || "")}</div>
+      <div class="row" style="margin-top:4px"><span class="hint" style="min-width:64px">音量</span><input type="range" min="-30" max="6" step="0.5" value="${a.gain_db ?? seGain()}" data-addvol="${i}"><span class="hint" data-addvt="${i}" style="min-width:90px">${a.gain_db == null ? "標準" : a.gain_db + " dB"}</span></div></div>`;
+  }).join("");
+  const sceneSel = (sh.scenes || []).map(s => `<option value="${esc(s.id)}">#${numOf(s.id)} ${esc((s.text || "").slice(0, 22))}${s.chapter ? "（" + esc(s.chapter) + "）" : ""}</option>`).join("");
+  const bgmRows = (sh.bgm || []).map(r => {
+    const ch = T.tuning.bgm[r.scene];
+    return `<div class="cue${ch ? " chg" : ""}"><div class="row"><span class="chip">#${numOf(r.scene)}</span><span class="t">${fmt(r.at)}〜</span><span class="hint" style="flex:1 1 160px">${esc((sceneOf(r.scene) || {}).text || "")}</span></div>
+      <div class="row" style="margin-top:4px"><span class="hint">いまの曲:</span> <b style="word-break:break-all">${esc(r.name)}</b>${ch ? ` <span class="hint">→ 変更: <b>${esc(ch)}</b></span>` : ""}</div>
+      <div class="row" style="margin-top:4px"><select data-bgm="${esc(r.scene)}" style="flex:1 1 220px">${bgmOpts(ch)}</select></div></div>`;
+  }).join("");
+  const newBgmScenes = Object.keys(T.tuning.bgm).filter(id => !(sh.bgm || []).some(r => r.scene === id));
+  b.innerHTML = `
+    <div class="card"><h3>${esc(sh.title || T.stem)}</h3><div class="hint">長さ ${fmt(sh.total_sec)}　効果音 ${(sh.se || []).length}個　BGMの切り替え ${(sh.bgm || []).length}回　生成の日: ${esc(sh.date || "")}</div></div>
+    <div class="card"><h3>全体の音量</h3>
+      <div class="row"><span style="min-width:90px">効果音</span><input type="range" min="-20" max="6" step="0.5" id="m-se" value="${seGain()}"><span id="m-se-t" style="min-width:70px">${seGain()} dB</span><button data-mreset="se_gain_db">元に戻す</button></div>
+      <div class="row" style="margin-top:6px"><span style="min-width:90px">BGM</span><input type="range" min="-40" max="0" step="0.5" id="m-bgm" value="${bgmGain()}"><span id="m-bgm-t" style="min-width:70px">${bgmGain()} dB</span><button data-mreset="bgm_gain_db">元に戻す</button></div>
+      <div class="hint" style="margin-top:4px">生成のときは、効果音 ${sh.audio.se_gain_db} dB・BGM ${sh.audio.bgm_gain_db} dB でした。数字が大きい（0に近い）ほど、大きい音です。効果音のファイル自体は、約 −6 dB にそろえてあります。</div></div>
+    <div class="card"><h3>効果音（${rows.length}個）</h3>
+      <div class="row" style="margin-bottom:6px"><input type="text" id="flt" placeholder="絞り込み（音の名前・場面の文）" value="${esc(T.filter)}" style="flex:1 1 200px"></div>
+      ${rows.map(cueHtml).join("") || '<div class="hint">該当する効果音がありません</div>'}
+      <div style="font-weight:700;margin:10px 0 4px">＋ 効果音を足す</div>
+      ${adds}
+      <div class="row"><select id="add-scene" style="flex:1 1 220px">${sceneSel}</select><button id="add-se">＋ この場面に足す</button></div></div>
+    <div class="card"><h3>BGM</h3>
+      ${bgmRows || '<div class="hint">この動画には、場面ごとのBGMの切り替えが記録されていません（1曲を通しで流しています）</div>'}
+      <div style="font-weight:700;margin:10px 0 4px">＋ この場面から、曲を変える</div>
+      ${newBgmScenes.map(id => `<div class="cue chg"><div class="row"><span class="chip">#${numOf(id)}</span><b>${esc(T.tuning.bgm[id])}</b><button data-bgmdel="${esc(id)}">× 消す</button></div></div>`).join("")}
+      <div class="row"><select id="bgm-scene" style="flex:1 1 200px">${sceneSel}</select><select id="bgm-track" style="flex:1 1 200px">${bgmOpts("")}</select><button id="bgm-add">＋ 追加</button></div>
+      <div class="hint" style="margin-top:4px">曲は、約3秒かけてつなぎます。約6秒より短い切り替えは、前の曲にまとめられます。この動画が1曲通しの場合（本番の曲があるとき）は、指名した場面だけ切り替わります。</div></div>
+    <div class="card"><h3>③ 予約公開にする</h3>
+      <div class="hint">確認用の動画（限定公開）を聞いて良ければ、そのまま予約公開にします（再アップロードはしません）。</div>
+      <div class="row" style="margin-top:6px"><input type="text" id="vid" placeholder="確認用の動画のURLまたはID（Discordに届いたもの）" style="flex:1 1 280px">
+        <input type="datetime-local" id="pat" title="空なら、視聴ピーク枠の次の空き"><button class="warn" id="b-sched">予約公開にする</button></div>
+      <div class="hint" style="margin-top:4px">日時を空にすると、次の空き枠に入ります。<b>前に上げた同じ動画（微調整前）は、YouTube Studioで削除してください</b>（二重に公開されます）。削除は、自動ではしません。</div>
+      <div class="row" style="margin-top:8px"><button class="warn" id="b-sched2" title="確認用を挟まず、作り直して、そのまま予約公開でアップロードします">作り直して、そのまま予約公開</button><span class="hint">確認用の動画を挟まない場合</span></div></div>`;
+  sync();
+}
+function sync(){
+  const d = dirty(); $("#b-save").disabled = !d; $("#b-save").textContent = d ? "① 保存（変更あり）" : "① 保存";
+  $("#b-remix").disabled = $("#b-draft").disabled = d || !T.loaded;
+  if(d) msg("変更があります。「① 保存」を押してください", ""); else if($("#msg").textContent.startsWith("変更があります")) msg("");
+}
+
+// ── 操作 ──────────────────────────────────────────────────────────────────
+const ed = k => (T.tuning.se[k] ||= {});
+document.addEventListener("click", ev => {
+  const t = ev.target.closest("button"); if(!t || !T.loaded) return;
+  const D = t.dataset, sh = T.sheet;
+  if(D.nudge){ const r = sh.se.find(x => x.key === D.nudge), e = ed(D.nudge); e.at = Math.max(Math.round(((e.at ?? r.at) + (+D.d)) * 100) / 100, 0); render(); }
+  else if(D.reset){ delete T.tuning.se[D.reset]; render(); }
+  else if(D.vreset){ const e = ed(D.vreset); delete e.gain_db; cleanEdit(D.vreset); render(); }
+  else if(D.mreset){ delete T.tuning.master[D.mreset]; render(); }
+  else if(D.adddel != null){ T.tuning.se_add.splice(+D.adddel, 1); render(); }
+  else if(D.bgmdel){ delete T.tuning.bgm[D.bgmdel]; render(); }
+  else if(D.play){ playSe(D.play, t); }
+  else if(t.id === "add-se"){ const id = $("#add-scene").value; if(id){ T.tuning.se_add.push({scene: id, dt: 1.0, name: (T.seFiles[0] || {stem: "accent"}).stem}); render(); } }
+  else if(t.id === "bgm-add"){ const id = $("#bgm-scene").value, tr = $("#bgm-track").value; if(id && tr){ T.tuning.bgm[id] = tr; render(); } }
+});
+document.addEventListener("change", ev => {
+  const e = ev.target, D = e.dataset; if(!T.loaded) return;
+  if(D.mute){ const x = ed(D.mute); if(e.checked) x.mute = true; else { delete x.mute; cleanEdit(D.mute); } render(); }
+  else if(D.addname != null){ T.tuning.se_add[+D.addname].name = e.value; render(); }
+  else if(D.bgm){ if(e.value) T.tuning.bgm[D.bgm] = e.value; else delete T.tuning.bgm[D.bgm]; render(); }
+});
+document.addEventListener("input", ev => {
+  const e = ev.target, D = e.dataset; if(!T.loaded) return;
+  if(D.vol){ ed(D.vol).gain_db = +e.value; const l = document.querySelector(`[data-vt="${CSS.escape(D.vol)}"]`); if(l) l.textContent = e.value + " dB"; sync(); }
+  else if(D.addvol != null){ T.tuning.se_add[+D.addvol].gain_db = +e.value; const l = document.querySelector(`[data-addvt="${D.addvol}"]`); if(l) l.textContent = e.value + " dB"; sync(); }
+  else if(D.adddt != null){ T.tuning.se_add[+D.adddt].dt = Math.max(+e.value || 0, 0); sync(); }
+  else if(e.id === "m-se"){ T.tuning.master.se_gain_db = +e.value; $("#m-se-t").textContent = e.value + " dB"; sync(); }
+  else if(e.id === "m-bgm"){ T.tuning.master.bgm_gain_db = +e.value; $("#m-bgm-t").textContent = e.value + " dB"; sync(); }
+  else if(e.id === "flt"){ T.filter = e.value; const pos = e.selectionStart; render(); const n = $("#flt"); n.focus(); n.setSelectionRange(pos, pos); }
+});
+let _aud = null;
+async function playSe(stem, btn){
+  try{
+    if(_aud){ _aud.pause(); _aud = null; }
+    const f = T.seFiles.find(x => x.stem === stem); if(!f){ msg("この音は合成音なので、試聴できません", ""); return; }
+    const j = await api(rp(`/contents/${GH_DIR}/assets/audio/se/${encodeURIComponent(f.name)}${refQ()}`));
+    const mime = /\.wav$/i.test(f.name) ? "audio/wav" : "audio/mpeg";
+    const a = new Audio(URL.createObjectURL(new Blob([unb64(j.content)], {type: mime}))); _aud = a; await a.play();
+  }catch(e){ msg(e.message, "err"); }
+}
+
+// ── 保存・実行 ────────────────────────────────────────────────────────────
+function tuningOut(){   // 空の項目は書かない
+  const t = T.tuning, o = {};
+  if(Object.keys(t.master).length) o.master = t.master;
+  if(Object.keys(t.se).length) o.se = t.se;
+  if(t.se_add.length) o.se_add = t.se_add.filter(a => a.name);
+  if(Object.keys(t.bgm).length) o.bgm = t.bgm;
+  return o;
+}
+async function save(){
+  if(!ghReady()){ msg("先に、GitHubにつないでください", "err"); return false; }
+  msg("保存しています…"); $("#b-save").disabled = true;
+  try{
+    const path = `${GH_DIR}/data/tuning/${T.stem}.json`;
+    const cur = await readJson(path);   // 保存の直前に、最新の sha を読み直す
+    const body = {message: `${T.stem}: 動画の微調整（効果音${Object.keys(T.tuning.se).length}件・足した音${T.tuning.se_add.length}個・BGM${Object.keys(T.tuning.bgm).length}件）`,
+      content: b64(enc(JSON.stringify(tuningOut(), null, 1) + "\n")), branch: gh.branch};
+    if(cur) body.sha = cur.sha;
+    const r = await api(rp(`/contents/${path}`), {method: "PUT", body: JSON.stringify(body)});
+    T.sha = r.content.sha; T.saved = norm(T.tuning); sync(); msg("保存しました。「② 作って確認用にアップロード」で、反映した動画を作れます", "ok"); return true;
+  }catch(e){ msg(e.message, "err"); sync(); return false; }
+}
+async function dispatch(inputs, done){
+  await api(rp(`/actions/workflows/${WF}/dispatches`), {method: "POST", body: JSON.stringify({ref: gh.branch, inputs: {script: `data/scripts/${T.stem}.json`, ...inputs}})});
+  msg(done, "ok");
+}
+$("#b-save").onclick = save;
+$("#b-load").onclick = loadAll;
+$("#b-remix").onclick = async () => {
+  if(dirty() || !confirm("微調整を反映して、音を作り直します（約5分。アップロードはしません）。よろしいですか？")) return;
+  try{ await dispatch({mode: "remix"}, "作り直しを始めました（約5分）。できた動画は、GitHub の Actions の成果物 remix に入ります（7日間）"); }catch(e){ msg(e.message, "err"); }
+};
+$("#b-draft").onclick = async () => {
+  if(dirty() || !confirm("微調整を反映して作り直し、確認用に限定公開（リンクを知る人だけ）でアップロードします。YouTubeのアップロードの枠を1回ぶん使います（課金ではありません）。よろしいですか？")) return;
+  try{ await dispatch({mode: "draft"}, "作り直しを始めました（約5分）。終わると、確認用の動画のURLがDiscordに届きます。聞いて良ければ、下の「③ 予約公開にする」を押してください"); }catch(e){ msg(e.message, "err"); }
+};
+const vidOf = s => { s = String(s || "").trim(); const m = /(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/.exec(s); return m ? m[1] : (/^[\w-]{11}$/.test(s) ? s : ""); };
+const patIso = () => { const v = $("#pat").value; return v ? `${v.slice(0, 16)}:00+09:00` : ""; };   // 日本時間
+document.addEventListener("click", async ev => {
+  const id = ev.target.id; if(id !== "b-sched" && id !== "b-sched2") return;
+  if(dirty()){ msg("先に「① 保存」を押してください", "err"); return; }
+  const pat = patIso(), when = pat ? `${pat.replace("T", " ").slice(0, 16)}（日本時間）` : "視聴ピーク枠の次の空き";
+  try{
+    if(id === "b-sched"){
+      const v = vidOf($("#vid").value); if(!v){ msg("確認用の動画のURLかIDを入れてください", "err"); return; }
+      if(!confirm(`この動画を、予約公開にします（${when}）。公開日時になると、自動で公開されます。よろしいですか？\n動画ID: ${v}`)) return;
+      await dispatch({mode: "schedule_existing", video_id: v, publish_at: pat}, "予約公開の設定を始めました（約1分）。終わると、Discordに届きます");
+    }else{
+      if(!confirm(`微調整を反映して作り直し、そのまま予約公開でアップロードします（${when}）。確認用の動画は作りません。よろしいですか？`)) return;
+      await dispatch({mode: "schedule", publish_at: pat}, "作り直して予約公開する処理を始めました（約5〜8分）。終わると、Discordに届きます");
+    }
+  }catch(e){ msg(e.message, "err"); }
+});
+
+(async () => {
+  if(!ghReady()){ msg("先に、画像入れ替えコンソールの「⚙ 接続設定」で、GitHubにつないでください（同じブラウザなら、設定が共有されます）", "err"); return; }
+  try{ await loadList(); if($("#script").value) await loadAll(); }catch(e){ msg(e.message, "err"); }
+})();
+</script>
+</body>
+</html>
