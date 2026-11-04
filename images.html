@@ -162,7 +162,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 17:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 19:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -790,6 +790,46 @@ async function checkWhitening(s){
   }catch(e){ return ""; }
 }
 
+// ── ショートを作るとき、ロングで使った素材（クリップ動画・画像）を、この場面に使う（2026-11-04 社長「ショートを作るときにロングで使ったクリップ動画をコンソールで使えるように」）──────
+// ショート専用の台本（…-short.json）を開いているとき、場面カードの「ロングの素材」タブに、対になるロングの台本（…-long.json）の素材が出る。
+// 選ぶと、そのファイルを、この台本の素材として保存する（コピー。無料）。出典・AI動画の控え（_manual_picks.json）も引き継ぐ（白くなるAI動画は、切る秒数も同じ）
+const isShortScript = () => /-short\.json$/.test(S.name || "");
+const longStemOf = () => (S.stem || "").replace(/-short$/, "-long");
+async function repoBytes(path){
+  const r = await fetch(`https://api.github.com${repoPath(`/contents/${path.split("/").map(encodeURIComponent).join("/")}${refQ()}`)}`, {headers: {
+    "Accept": "application/vnd.github.raw+json", "X-GitHub-Api-Version": "2022-11-28", "Authorization": "Bearer " + gh.token}}).catch(() => null);
+  if(!r || !r.ok) throw new Error("ロングの素材をGitHubから取得できません");
+  return new Uint8Array(await r.arrayBuffer());
+}
+async function loadLongAssets(){
+  const L = S.lng = S.lng || {}; if(L.stem === longStemOf() && L.loaded) return L;
+  Object.assign(L, {stem: longStemOf(), loaded: false, err: "", clips: [], imgs: [], scenes: {}, order: [], picks: []});
+  try{
+    const [clips, imgs] = await Promise.all([listDir(`${GH_DIR}/assets/video_clips/${L.stem}`), listDir(`${GH_DIR}/assets/images/generated/${L.stem}`)]);
+    const f = await api(repoPath(`/contents/${GH_DIR}/data/scripts/${encodeURIComponent(L.stem + ".json")}${refQ()}`)).catch(() => null);
+    if(f){ const j = JSON.parse(dec(unb64(f.content))); (j.narrative_structure || []).forEach((r, i) => { L.scenes[r.id] = {n: String(i + 1).padStart(2, "0"), text: r.text || "", visual: r.visual || {}}; L.order.push(r.id); }); }
+    try{ const pj = await api(repoPath(`/contents/${GH_DIR}/assets/images/generated/${L.stem}/_manual_picks.json${refQ()}`)); L.picks = JSON.parse(dec(unb64(pj.content))); }catch{}
+    const idOf = n => n.replace(/\.[^.]+$/, ""), byOrder = (a, b) => (L.order.indexOf(a.id) < 0 ? 9999 : L.order.indexOf(a.id)) - (L.order.indexOf(b.id) < 0 ? 9999 : L.order.indexOf(b.id));
+    L.clips = clips.filter(i => /\.mp4$/i.test(i.name)).map(i => ({id: idOf(i.name), name: i.name, sha: i.sha, size: i.size, path: i.path || `${GH_DIR}/assets/video_clips/${L.stem}/${i.name}`})).sort(byOrder);
+    L.imgs = imgs.filter(i => /\.(png|jpe?g|webp)$/i.test(i.name)).map(i => ({id: idOf(i.name), name: i.name, sha: i.sha, size: i.size, path: i.path || `${GH_DIR}/assets/images/generated/${L.stem}/${i.name}`})).sort(byOrder);
+    L.loaded = true;
+  }catch(e){ L.err = e.message; }
+  return L;
+}
+// ロングの素材を、この場面に使う。クリップは stageClip、画像は stage。出典・AI動画の控えを引き継ぐ
+async function useLongAsset(s, it, kind){
+  const L = S.lng, pick = L.picks.find(p => p.scene === it.id) || {}, {scene: _sc, at: _at, ...rest} = pick, vis = (L.scenes[it.id] || {}).visual || {};
+  const bytes = await repoBytes(it.path);
+  const src = {...rest, type: rest.type || (kind === "clip" ? "long-clip" : "long-image"), id: rest.id || `${L.stem}/${it.id}`, credit: rest.credit || "", page: rest.page || "", from: `${L.stem}/${it.id}`};
+  if(kind === "clip"){
+    src.sec = rest.sec || vis.clip_sec || 6;
+    stageClip(s, bytes, src);
+    return await checkWhitening(s);    // 白くなるAI動画なら、使う長さを決める（それ以外は何もしない）
+  }
+  stage(s, await toPng(new Blob([bytes])), src);
+  return "";
+}
+
 // ── 映像の一括入れ（2026-11-01 社長指示）─────────────────────────────────────────
 // 画像がまだ無い場面に、NASA画像 → 動画クリップ（Pixabay）→ Pixabayの写真 の順で、場面の内容に合うものを探して入れる。すべて無料
 // （OpenAI・WaveSpeed は使わない）。動く図解の場面・ロック中・すでに画像がある場面には入れない。③保存を押すまで確定しない
@@ -1410,7 +1450,7 @@ function buildPanel(s){
   const q0 = (S.results[s.id] && S.results[s.id].q) || sceneQuery(s);
   p.innerHTML = `
     <div class="tabs">
-      ${(bgOk(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["upload", "アップロード"], ["nobg", "背景なし"], ["style", "文字の色"]] : needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["one", "🎬 AIで画像→動画（2回押し）"], ["clip", "動画クリップ（Pixabay）"], ["wsclip", "AI動画クリップ（WaveSpeed）"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]] : [["style", "文字の色"]])
+      ${(bgOk(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["upload", "アップロード"], ["nobg", "背景なし"], ["style", "文字の色"]] : needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["one", "🎬 AIで画像→動画（2回押し）"]].concat(isShortScript() ? [["long", "📼 ロングの素材"]] : []).concat([["clip", "動画クリップ（Pixabay）"], ["wsclip", "AI動画クリップ（WaveSpeed）"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]]) : [["style", "文字の色"]])
         .map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
     </div>
     <div id="tabbody"></div>`;
@@ -1491,6 +1531,52 @@ function buildPanel(s){
       if(!confirm("さっきの画像はそのままで、WaveSpeedで6秒の動画を作り直します（fast・約15円）。よろしいですか？")) return;
       oneRun(s, true);
     };
+  }else if(tab === "long"){
+    S.lngMsg = S.lngMsg || {};
+    const L = S.lng && S.lng.stem === longStemOf() ? S.lng : null;
+    if(!L || (!L.loaded && !L.err)){
+      body.innerHTML = `<div class="hint">ロングの素材（${esc(longStemOf())}）を読み込んでいます…</div>`;
+      loadLongAssets().then(() => render());
+    }else if(L.err){
+      body.innerHTML = `<div class="msg err">${esc(L.err)}</div><div class="row"><button id="lg-retry">もう一度読み込む</button></div>`;
+      body.querySelector("#lg-retry").onclick = () => { S.lng = null; render(); };
+    }else{
+      const row = (it, kind) => { const sc = L.scenes[it.id] || {}; return `<div class="res" style="display:block;margin-bottom:6px;padding:8px;border:1px solid var(--line);border-radius:8px">
+          <div class="row" style="margin:0"><b>ロング #${esc(sc.n || "—")}</b><span class="hint" style="flex:1 1 160px">${esc((sc.text || "").slice(0, 44))}${(sc.text || "").length > 44 ? "…" : ""}</span><span class="hint">${(it.size / 1048576).toFixed(1)}MB</span></div>
+          ${kind === "clip" ? `<div style="margin:6px 0"><video data-lpv="${esc(it.sha)}" data-noplay="1" muted loop playsinline controls preload="none" style="width:100%;max-height:200px;background:#05070d"></video></div>` : `<div style="margin:6px 0"><img data-limg="${esc(it.path)}" alt="" style="width:100%;max-height:200px;object-fit:contain;background:#05070d;display:none"></div>`}
+          <div class="row" style="margin:0"><button data-lshow="${esc(it.id)}:${kind}">${kind === "clip" ? "▶ 読み込んで見る" : "見る"}</button><button class="primary" data-luse="${esc(it.id)}:${kind}">この場面に使う（無料）</button></div></div>`; };
+      body.innerHTML = `
+        <div class="hint" style="margin-bottom:6px">ロングの動画（<b>${esc(L.stem)}</b>）で使った素材を、この場面に使います。コピーなので、無料です。AI動画の控え・出典も引き継ぎます。保存（③）まで、確定しません。</div>
+        <div style="font-weight:700;margin:6px 0">動画クリップ（${L.clips.length}本）</div>
+        ${L.clips.map(it => row(it, "clip")).join("") || '<div class="hint">ロングに、動画クリップがありません</div>'}
+        <details style="margin-top:8px"><summary style="cursor:pointer;font-weight:700">画像（${L.imgs.length}枚）</summary><div style="margin-top:6px">${L.imgs.map(it => row(it, "img")).join("") || '<div class="hint">ロングに、画像がありません</div>'}</div></details>
+        <div class="msg ${S.lngMsg[s.id] && S.lngMsg[s.id].err ? "err" : ""}" id="lg-msg" style="white-space:pre-wrap">${esc((S.lngMsg[s.id] || {}).t || "")}</div>`;
+      const find = key => { const [id, kind] = [key.slice(0, key.lastIndexOf(":")), key.slice(key.lastIndexOf(":") + 1)]; return [(kind === "clip" ? L.clips : L.imgs).find(x => x.id === id), kind]; };
+      body.querySelectorAll("[data-lshow]").forEach(b => b.onclick = async () => {
+        const [it, kind] = find(b.dataset.lshow); if(!it) return; b.disabled = true; b.textContent = "読み込んでいます…";
+        try{
+          if(kind === "clip"){
+            const v = body.querySelector(`video[data-lpv="${CSS.escape(it.sha)}"]`);
+            if(!pvBlobs.has(it.sha)){ const blob = await api(repoPath(`/git/blobs/${it.sha}`)); pvBlobs.set(it.sha, URL.createObjectURL(new Blob([unb64(blob.content)], {type: "video/mp4"}))); }
+            v.src = pvBlobs.get(it.sha); v.play().catch(() => {});
+          }else{
+            const im = body.querySelector(`img[data-limg="${CSS.escape(it.path)}"]`), bytes = await repoBytes(it.path);
+            im.src = URL.createObjectURL(new Blob([bytes])); im.style.display = "";
+          }
+          b.textContent = "読み込みました";
+        }catch(e){ b.disabled = false; b.textContent = "もう一度"; const m = body.querySelector("#lg-msg"); if(m){ m.className = "msg err"; m.textContent = e.message; } }
+      });
+      body.querySelectorAll("[data-luse]").forEach(b => b.onclick = async () => {
+        const [it, kind] = find(b.dataset.luse); if(!it) return;
+        const lastKind = kind === "clip" ? "動画クリップ" : "画像";
+        if(S.lngMsg) S.lngMsg[s.id] = {t: `${lastKind}を取り込んでいます…`, err: false}; b.disabled = true; const m = body.querySelector("#lg-msg"); if(m){ m.className = "msg"; m.textContent = S.lngMsg[s.id].t; }
+        try{
+          const note = await useLongAsset(s, it, kind);
+          S.lngMsg[s.id] = {t: `ロング #${(L.scenes[it.id] || {}).n || ""} の${lastKind}を、この場面に入れました。保存するには「③ 保存」を押してください${note ? "\n" + note : ""}`, err: false};
+        }catch(e){ S.lngMsg[s.id] = {t: e.message, err: true}; }
+        render();
+      });
+    }
   }else if(tab === "wsclip"){
     S.wsg = S.wsg || {};
     const g = S.wsg[s.id] || (S.wsg[s.id] = {busy: false, err: "", note: "", mode: S.assets[s.id] || s.staged ? "fast-i2v" : "std-t2v", prompts: {}, getUrl: "", outUrl: ""});
