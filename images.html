@@ -162,7 +162,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 15:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 16:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -649,8 +649,16 @@ async function wsImageDataUrl(s){
   const bmp = await createImageBitmap(blob);
   const w = Math.min(1280, bmp.width), h = Math.round(bmp.height * w / bmp.width);
   const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-  cv.getContext("2d").drawImage(bmp, 0, 0, w, h);
-  return cv.toDataURL("image/jpeg", 0.9);
+  const cx = cv.getContext("2d"); cx.drawImage(bmp, 0, 0, w, h);
+  // 真っ黒（0,0,0）の部分があると、AI動画（Hailuo）が、だんだん白く抜けやすい（2026-11-04 実測: シーン29・30は、真っ黒の宇宙の絵から、2.5秒ごろから白くなり、5秒で真っ白）。
+  // 黒を少し持ち上げて（0→14）、ごく弱い粒状感を足してから渡す。見た目はほとんど変わらない
+  const im = cx.getImageData(0, 0, w, h), d = im.data;
+  for(let i = 0; i < d.length; i += 4){
+    const n = (Math.random() - 0.5) * 4;
+    d[i] = Math.min(255, 14 + d[i] * (241 / 255) + n); d[i + 1] = Math.min(255, 14 + d[i + 1] * (241 / 255) + n); d[i + 2] = Math.min(255, 14 + d[i + 2] * (241 / 255) + n);
+  }
+  cx.putImageData(im, 0, 0);
+  return cv.toDataURL("image/jpeg", 0.92);
 }
 async function wsReq(url, opt){
   let r;
@@ -735,10 +743,48 @@ async function oneRun(s, videoOnly){
     tick("② 画像から6秒の動画を作っています…（約80秒）");
     const wg = {mode: "fast-i2v", prompts: {"fast-i2v": (g.motion || WS_MOTION).trim()}, getUrl: "", outUrl: ""};
     const bytes = await wsGenerate(s, wg, tick);
-    g.wg = wg; g.note = "できました。気に入れば「③ 保存」を押してください。違えば、案を選び直すか、「動画だけ作り直す」を押せます";
+    g.wg = wg; const okNote = "できました。気に入れば「③ 保存」を押してください。違えば、案を選び直すか、「動画だけ作り直す」を押せます";
+    g.note = okNote;
     stageClip(s, bytes, {type: "wavespeed", id: m.model, credit: "", page: "", sec: WS_SEC});
+    tick("明るさを確かめています…"); const wn = await checkWhitening(s); g.note = okNote + (wn ? "\n" + wn : "");
   }catch(e){ g.err = e.message + (g.img ? "（画像はできています。「動画だけ作り直す」で、動画だけやり直せます）" : ""); }
   g.busy = false; render();
+}
+
+// ── AI動画の「だんだん白くなる」を、ブラウザで見つける（2026-11-04 社長「だんだん白くなって最後は真っ白」。src/clip_check.py と同じ考え方）──────────
+// 動画を0.1秒ごとに止めて、小さく縮めた画面の平均の明るさを測る。最初の0.8秒の中央値より22以上明るくなり、そのまま戻らない最初の時刻が「白くなり始め」。
+// その0.3秒手前（最低1.5秒）までを使う。台本の visual.clip_trim_end（切る秒数）に保存され、動画づくりが同じだけ末尾を切る。確認用の再生も、その位置で最初に戻る
+async function clipBrightness(url){
+  const v = document.createElement("video"); v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = url;
+  await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error("動画を読み込めません")); setTimeout(() => rej(new Error("時間切れ")), 15000); });
+  const dur = v.duration || 0, cv = document.createElement("canvas"); cv.width = 64; cv.height = 36; const cx = cv.getContext("2d", {willReadFrequently: true}), out = [];
+  for(let t = 0; t < dur - 0.05; t += 0.1){
+    v.currentTime = t;
+    await new Promise(res => { v.onseeked = res; setTimeout(res, 1500); });
+    cx.drawImage(v, 0, 0, 64, 36); const d = cx.getImageData(0, 0, 64, 36).data; let sum = 0;
+    for(let i = 0; i < d.length; i += 4) sum += d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+    out.push([t, sum / (d.length / 4)]);
+  }
+  return {dur, curve: out};
+}
+function whiteningStart(curve, rise = 22, baseSec = 0.8){
+  if(curve.length < 8) return null;
+  const head = curve.filter(p => p[0] <= baseSec).map(p => p[1]).sort((a, b) => a - b), base = head.length ? head[Math.floor((head.length - 1) / 2)] : curve[0][1];
+  for(let i = 0; i < curve.length; i++){
+    if(curve[i][1] >= base + rise && curve.slice(i).every(p => p[1] >= base + rise * 0.7)) return curve[i][0];
+  }
+  return null;
+}
+// 場面の AI動画を調べて、白くなる動画なら、使う長さ（keep）を決める。結果は stagedClip.source に入れる
+async function checkWhitening(s){
+  if(!s.stagedClip || s.stagedClip.source.type !== "wavespeed") return "";
+  try{
+    const {dur, curve} = await clipBrightness(s.stagedClip.url), ws0 = whiteningStart(curve);
+    const src = s.stagedClip.source; src.dur = Math.round(dur * 100) / 100;
+    if(ws0 == null){ delete src.keep; delete src.whiten_at; return "明るさは、最後まで安定しています。"; }
+    src.whiten_at = Math.round(ws0 * 10) / 10; src.keep = Math.round(Math.max(ws0 - 0.3, 1.5) * 10) / 10;
+    return `⚠ ${src.whiten_at}秒から、だんだん白くなっています。${src.keep}秒までを使います（自動で切ります。保存すると、動画づくりも同じだけ切ります）。確認用の再生も、そこで最初に戻ります。`;
+  }catch(e){ return ""; }
 }
 
 // ── 映像の一括入れ（2026-11-01 社長指示）─────────────────────────────────────────
@@ -1126,7 +1172,7 @@ function render(){
     el.dataset.sid = s.id;
     el.className = "card" + (isChg(s) ? " changed" : "") + (S.open === s.id ? " open" : "") + (s.locked ? " locked" : "");
     el.innerHTML = `
-      <div class="thumb">${hasBg(s) && !motionOf(s) && !s.stagedClip ? bgTextThumb(s) : motionOf(s) && !s.stagedClip && (!s.staged || bgOk(s)) ? motionThumb(s) : s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : cur.clip && cur.clip.sha ? `<video data-pv="1" data-noplay="1" data-sha="${esc(cur.clip.sha)}" muted loop playsinline controls preload="none" style="width:100%;height:100%;object-fit:contain;background:#05070d"></video><span class="ph">動画クリップを読み込み中…</span>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
+      <div class="thumb">${hasBg(s) && !motionOf(s) && !s.stagedClip ? bgTextThumb(s) : motionOf(s) && !s.stagedClip && (!s.staged || bgOk(s)) ? motionThumb(s) : s.stagedClip ? `<video src="${esc(s.stagedClip.url)}" ${s.stagedClip.source.keep ? `data-keep="${s.stagedClip.source.keep}" ontimeupdate="if(this.currentTime>+this.dataset.keep){this.currentTime=0}"` : ""} muted loop playsinline controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>` : cur.clip && cur.clip.sha ? `<video data-pv="1" data-noplay="1" data-sha="${esc(cur.clip.sha)}" muted loop playsinline controls preload="none" style="width:100%;height:100%;object-fit:contain;background:#05070d"></video><span class="ph">動画クリップを読み込み中…</span>` : approx ? approxHtml(s) : cur.url ? `<img src="${esc(cur.url)}" alt="">` : cur.asset ? `<img data-asset="${esc(cur.asset.path)}" data-size="${cur.asset.size}" alt="" style="visibility:hidden"><span class="ph">読み込み中…</span>` : esc(cur.label || "")}
         <span class="badge ${isChg(s) ? "ch" : ""}" title="場面ID: ${esc(s.id)}">${s.locked ? "🔒 " : ""}${esc(numOf(s.id))} · ${esc(kindOf(s))}${motionOf(s) && !s.stagedClip && !s.staged ? " · 🎬動く図解" : approx ? (isStale(s) ? " · この文字で表示（目安・確認画像は未更新）" : " · この文字で表示（目安）") : cur.label && (cur.url || cur.asset || s.stagedClip) ? " · " + esc(cur.label) : ""}</span></div>
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>${s.opening ? `<div class="q" style="color:var(--warn)">全動画共通のオープニング動画（assets/brand/opening.mp4）が、必ず使われます${S.brandOpening ? "" : "（まだ置かれていません）"}</div>` : ""}
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
@@ -1419,7 +1465,7 @@ function buildPanel(s){
         <div class="row"><select id="oq" style="width:auto" title="画質。low は安く（約2円）、medium は細部がきれいです（約10円）"><option value="low">画質 low（安い・約2円）</option><option value="medium">画質 medium（約10円）</option></select>
           <button class="primary" id="o2" ${g.busy || g.pick < 0 ? "disabled" : ""}>② この案で、画像→動画をつくる（${cost}）</button>
           ${g.img ? `<button id="o3" ${g.busy ? "disabled" : ""} title="さっきの画像はそのままで、動画だけ作り直します（約15円）">動画だけ作り直す（約15円）</button>` : ""}</div>` : ""}
-      <div class="msg ${g.err ? "err" : ""}" id="omsg">${esc(g.err || g.note)}</div>`;
+      <div class="msg ${g.err ? "err" : ""}" id="omsg" style="white-space:pre-wrap">${esc(g.err || g.note)}</div>`;
     const oq = body.querySelector("#oq"); if(oq){ oq.value = g.quality; oq.onchange = e => { g.quality = e.target.value; render(); }; }
     const omo = body.querySelector("#omo"); if(omo) omo.oninput = e => g.motion = e.target.value;
     body.querySelectorAll('input[name="opt"]').forEach(r => r.onchange = () => { g.pick = +r.value; render(); });
@@ -1454,13 +1500,13 @@ function buildPanel(s){
       <div class="field"><label>${g.mode === "std-t2v" ? "どんな動画か（英語）" : "動かし方（英語。標準はフック動画と同じです）"}</label><textarea id="wp">${esc(g.prompts[g.mode])}</textarea></div>
       <div class="row"><select id="wm" style="width:auto">${Object.entries(WS_MODES).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("")}</select>
         <button class="primary" id="wgo" ${g.busy ? "disabled" : ""}>${g.busy ? "作っています…" : "AIで動画クリップを作る（課金）"}</button></div>
-      <div class="msg ${g.err ? "err" : ""}" id="wmsg">${esc(g.err || g.note)}</div>
+      <div class="msg ${g.err ? "err" : ""}" id="wmsg" style="white-space:pre-wrap">${esc(g.err || g.note)}</div>
       ${g.getUrl && !g.busy && g.err ? `<div class="row"><button id="wfetch">結果を取りに行く（再課金なし）</button>${g.outUrl ? `<a href="${esc(g.outUrl)}" target="_blank" rel="noopener">動画を開く</a>` : ""}</div>` : ""}
       ${s.stagedClip && s.stagedClip.source.type === "wavespeed" ? `<div class="hint">できたクリップが、上のこの場面の画面に出ています。気に入らなければ、もう一度作れます。</div>` : ""}`;
     body.querySelector("#wm").value = g.mode;
     body.querySelector("#wm").onchange = e => { g.mode = e.target.value; render(); };
     body.querySelector("#wp").oninput = e => g.prompts[g.mode] = e.target.value;
-    const done = bytes => { g.busy = false; g.err = ""; g.note = "できました。保存するには「③ 保存」を押してください"; stageClip(s, bytes, {type: "wavespeed", id: m.model, credit: "", page: "", sec: WS_SEC}); };
+    const done = async bytes => { g.busy = false; g.err = ""; g.note = "できました。保存するには「③ 保存」を押してください"; stageClip(s, bytes, {type: "wavespeed", id: m.model, credit: "", page: "", sec: WS_SEC}); const wn = await checkWhitening(s); if(wn){ g.note += "\n" + wn; render(); } };
     const fail = e => { g.busy = false; g.err = e.message; render(); };
     const tick = t => { const e = body.querySelector("#wmsg"); if(e){ e.className = "msg"; e.textContent = t; } };
     body.querySelector("#wgo").onclick = async () => {
@@ -1468,10 +1514,10 @@ function buildPanel(s){
       if(!(g.prompts[g.mode] || "").trim()){ g.err = "どんな動画かを書いてください"; render(); return; }
       if(!confirm(`WaveSpeed で${WS_SEC}秒の動画クリップを1本作ります。\n\n${m.label}\n\n課金されます（約$${m.usd.toFixed(2)}）。よろしいですか？`)) return;
       g.busy = true; g.err = ""; g.note = ""; g.getUrl = ""; g.outUrl = ""; render();
-      try{ done(await wsGenerate(s, g, tick)); }catch(e){ fail(e); }
+      try{ await done(await wsGenerate(s, g, tick)); }catch(e){ fail(e); }
     };
     const wf = body.querySelector("#wfetch");
-    if(wf) wf.onclick = async () => { g.busy = true; g.err = ""; render(); try{ done(await wsWait(g, tick)); }catch(e){ fail(e); } };
+    if(wf) wf.onclick = async () => { g.busy = true; g.err = ""; render(); try{ await done(await wsWait(g, tick)); }catch(e){ fail(e); } };
   }else if(tab === "openai"){
     const g = S.gens[s.id] || (S.gens[s.id] = {cands: [], busy: false, err: "", style: "photo", prompt: "", quality: ["low", "medium"].includes(oa.quality) ? oa.quality : "medium"});
     if(!g.quality) g.quality = "medium";
@@ -1602,6 +1648,9 @@ async function saveAll(){
       if(S.clips[s.id] && S.clips[s.id].name !== `${s.id}.mp4`) changes.push({path: `${clipBase}/${S.clips[s.id].name}`, bytes: null});
       raw.visual = raw.visual || {};
       raw.visual.kind = "clip"; raw.visual.clip_sec = s.stagedClip.source.sec || raw.visual.clip_sec || 8; delete raw.visual.real;
+      // 白くなるAI動画は、使う長さ（keep）までにする。切る秒数を台本に残す（src/produce_longform.py _mark_ai_clip_trim が、これ以上は切る）
+      if(s.stagedClip.source.type === "wavespeed" && s.stagedClip.source.keep) raw.visual.clip_trim_end = Math.max(Math.round(((s.stagedClip.source.dur || raw.visual.clip_sec) - s.stagedClip.source.keep) * 100) / 100, 0);
+      else delete raw.visual.clip_trim_end;
       if(!raw.visual.prompt_en) raw.visual.prompt_en = raw.visual.image_prompt_en || raw.visual.subject || "";   // 動画クリップの場面には、英語の主題（検索語）が要る（台本の点検が警告する）
       jsonChanged = true;
       picks.push({scene: s.id, ...s.stagedClip.source});
