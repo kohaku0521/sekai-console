@@ -107,6 +107,10 @@ a{color:#7fb0ff}
 .field{margin-bottom:12px} .field label{display:block;font-size:12px;color:var(--dim);margin-bottom:4px}
 .hint{font-size:11px;color:var(--dim)}
 .empty{text-align:center;padding:60px 16px;color:var(--dim)}
+.vtitle{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent,#4f9cf9);border-radius:6px;padding:8px 12px;margin-bottom:12px;line-height:1.5}
+.vtitle .k{font-size:11px;color:var(--dim)}
+.vtitle .t{font-size:15px;font-weight:700;user-select:text;word-break:break-all}
+.vtitle .f{font-size:11px;color:var(--dim);word-break:break-all}
 .note{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:6px;padding:10px 12px;font-size:12px;color:var(--dim);margin-bottom:12px}
 </style>
 </head>
@@ -137,6 +141,7 @@ a{color:#7fb0ff}
     <b>Pixabay / NASA / OpenAI</b> から選び直す → ③「保存」→ ④「生成を開始」。
     画像はここで決めてから動画を作るので、作り直し（二重生成）になりません。OpenAIで描くときだけ、1枚ごとに課金されます。
   </div>
+  <div id="vtitle" class="vtitle" style="display:none"></div>
   <div id="stats" class="stats"></div>
   <div id="lockbar" class="lockbar"></div>
   <div id="filters" class="filters"></div>
@@ -156,7 +161,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 08:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 09:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -991,6 +996,9 @@ function jumpUnlocked(dir){
 function render(){
   const has = !!S.json;
   $("#empty").style.display = has ? "none" : "";
+  { const vt = $("#vtitle"), t = has && S.json && String(S.json.title || "").trim();
+    if(t){ vt.style.display = ""; vt.innerHTML = `<div class="k">動画のタイトル${S.json.date ? "（公開 " + esc(S.json.date) + "）" : ""}</div><div class="t">${esc(t)}</div><div class="f">${esc(S.name)}</div>`; }
+    else { vt.style.display = "none"; vt.innerHTML = ""; } }
   $("#grid").innerHTML = ""; if(!has){ $("#stats").innerHTML = ""; $("#filters").innerHTML = ""; $("#pages").innerHTML = ""; return; }
   const need = S.scenes.filter(inRange).filter(needsReview);   // 表示範囲の中の、画像を使う場面
   const noImg = need.filter(s => !S.assets[s.id] && !S.clips[s.id] && !s.staged);
