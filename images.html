@@ -162,7 +162,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 14:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 15:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -629,10 +629,12 @@ const WS_MODES = {
   "std-t2v": {model: "minimax/hailuo-02/standard", needImage: false, usd: 0.28, label: "standard・文章から作る（画像が無い場面用・約42円・約150秒）"},
 };
 // フック動画（generate_hook.py）と同じ、動かし方の指定。画像の中身は変えず、動きだけを渡す
-// 2026-11-04 社長「AI動画生成をすると、動画の最後の方に必ず白い靄がかかる」: 以前の指定「atmospheric haze drifts, light shifts gently, particles float」が、靄・光・粒子を頼んでいた（原因）。
-// 靄・光の語を外し、「明るさ・色を最後まで変えない」を足す。WS_GUARD は、どんな動かし方の指定にも、必ず後ろに付ける
-const WS_MOTION = "slow cinematic push in, subtle natural camera drift, the scene stays sharp and clear";
-const WS_GUARD = "Keep the brightness, contrast and colors constant from the first frame to the last frame. No fog, no haze, no mist, no glow, no bloom, no light leak, no fade to white, no flash, no overexposure.";
+// 2026-11-04 社長「AI動画生成をすると、動画の最後の方に必ず白い靄がかかる」→「だんだん白くなって、最後は真っ白になる」。
+// 1回目: 以前の指定「atmospheric haze drifts, light shifts gently, particles float」が、靄・光・粒子を頼んでいた（原因の1つ）。
+// 2回目: 靄・光の語を外して「No fog, no haze … fade to white」と打ち消しを並べたが、直らなかった。画像・動画のAIは「No ○○」を読み取れず、○○の語そのものに引っ張られる
+// （「白」「靄」の語が、かえって白さを呼ぶ）。**悪い語は、打ち消しでも書かない。** 良い状態だけを言葉にする（明るさ・色・暗さが、最初から最後まで同じ）
+const WS_MOTION = "slow cinematic push in, subtle natural camera drift";
+const WS_GUARD = "Consistent exposure, lighting, color and contrast from the first frame to the last frame; the scene keeps its original tones and stays sharp and clear.";
 const WS_SEC = 6;
 // 動かす元の画像（このあと保存する画像があればそれ、無ければリポジトリの画像）を、小さい JPEG の data URL にする
 async function wsImageDataUrl(s){
@@ -677,10 +679,17 @@ async function wsWait(g, onTick){
 }
 async function wsGenerate(s, g, onTick){
   const m = WS_MODES[g.mode];
-  const payload = {prompt: `${String(g.prompts[g.mode] || "").trim().replace(/[.。]?$/, ".")} ${WS_GUARD}`, duration: WS_SEC};
+  // enable_prompt_expansion: false … WaveSpeed/Hailuo が、こちらの指示を自動で「雰囲気たっぷり」に書き換えて、光や靄を足すのを止める（受け付けない場合は、付けずにやり直す）
+  const payload = {prompt: `${String(g.prompts[g.mode] || "").trim().replace(/[.。]?$/, ".")} ${WS_GUARD}`, duration: WS_SEC, enable_prompt_expansion: false};
   if(m.needImage){ onTick("元の画像を用意しています…"); payload.image = await wsImageDataUrl(s); }
   onTick("WaveSpeed に依頼しています…");
-  const j = await wsReq(`${WS_BASE}/${m.model}`, {method: "POST", body: JSON.stringify(payload)});
+  let j;
+  try{ j = await wsReq(`${WS_BASE}/${m.model}`, {method: "POST", body: JSON.stringify(payload)}); }
+  catch(e){   // 受け付けない項目（400・422）なら、その項目を外して、もう一度（受け付けられなかった依頼は、課金されない）
+    if(!/WaveSpeed (400|422)/.test(e.message)) throw e;
+    delete payload.enable_prompt_expansion;
+    j = await wsReq(`${WS_BASE}/${m.model}`, {method: "POST", body: JSON.stringify(payload)});
+  }
   const u = j && j.data && j.data.urls && j.data.urls.get;
   if(!u) throw new Error("WaveSpeed の応答に受付番号がありません");
   g.getUrl = u;
