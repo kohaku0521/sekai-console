@@ -162,7 +162,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 13:30</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 14:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -629,7 +629,10 @@ const WS_MODES = {
   "std-t2v": {model: "minimax/hailuo-02/standard", needImage: false, usd: 0.28, label: "standard・文章から作る（画像が無い場面用・約42円・約150秒）"},
 };
 // フック動画（generate_hook.py）と同じ、動かし方の指定。画像の中身は変えず、動きだけを渡す
-const WS_MOTION = "slow cinematic push in, atmospheric haze drifts, light shifts gently, particles float";
+// 2026-11-04 社長「AI動画生成をすると、動画の最後の方に必ず白い靄がかかる」: 以前の指定「atmospheric haze drifts, light shifts gently, particles float」が、靄・光・粒子を頼んでいた（原因）。
+// 靄・光の語を外し、「明るさ・色を最後まで変えない」を足す。WS_GUARD は、どんな動かし方の指定にも、必ず後ろに付ける
+const WS_MOTION = "slow cinematic push in, subtle natural camera drift, the scene stays sharp and clear";
+const WS_GUARD = "Keep the brightness, contrast and colors constant from the first frame to the last frame. No fog, no haze, no mist, no glow, no bloom, no light leak, no fade to white, no flash, no overexposure.";
 const WS_SEC = 6;
 // 動かす元の画像（このあと保存する画像があればそれ、無ければリポジトリの画像）を、小さい JPEG の data URL にする
 async function wsImageDataUrl(s){
@@ -674,7 +677,7 @@ async function wsWait(g, onTick){
 }
 async function wsGenerate(s, g, onTick){
   const m = WS_MODES[g.mode];
-  const payload = {prompt: g.prompts[g.mode], duration: WS_SEC};
+  const payload = {prompt: `${String(g.prompts[g.mode] || "").trim().replace(/[.。]?$/, ".")} ${WS_GUARD}`, duration: WS_SEC};
   if(m.needImage){ onTick("元の画像を用意しています…"); payload.image = await wsImageDataUrl(s); }
   onTick("WaveSpeed に依頼しています…");
   const j = await wsReq(`${WS_BASE}/${m.model}`, {method: "POST", body: JSON.stringify(payload)});
