@@ -161,7 +161,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 09:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 10:00</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -719,7 +719,7 @@ async function fillOne(s, topic, st){
       if(ok && sc >= (real.title_has ? 1 : need) && sc > bs){ best = it; bs = sc; }
     }
     if(best){
-      stage(s, await toPng(await fetchBlob(await nasaFull(best.nasaId), "NASA")), best.source);
+      stage(s, await toPng(await nasaBlob(best.nasaId, best.thumb)), best.source);
       st.nasa++; return `NASA画像「${best.title}」`;
     }
   }catch(e){ /* NASA に届かないときは、次へ */ }
@@ -784,13 +784,28 @@ async function nasaSearch(q){
     source: {type: "nasa", id: i.data[0].nasa_id, page: `https://images.nasa.gov/details/${encodeURIComponent(i.data[0].nasa_id)}`, credit: i.data[0].center || i.data[0].photographer || "NASA"},
   }));
 }
-async function nasaFull(nasaId){
+// 使える画像のURLを、大きいほうから順に並べる（large → medium → small → orig → 検索の縮小画像）。1つ目が取れなくても、次を試す（2026-11-04 Callisto の画像が取り込めなかった件）
+async function nasaCandidates(nasaId, thumb){
   const r = await fetch(`https://images-api.nasa.gov/asset/${encodeURIComponent(nasaId)}`);
   if(!r.ok) throw new Error(`NASA ${r.status}`);
   const hrefs = ((await r.json()).collection.items || []).map(i => i.href).filter(h => /\.jpe?g$|\.png$/i.test(h));
-  const pick = ["~large", "~medium", "~orig", "~small"].map(k => hrefs.find(h => h.includes(k))).find(Boolean) || hrefs[0];
-  if(!pick) throw new Error("この NASA 画像は、使える大きさの画像がありません");
-  return pick.replace(/^http:/, "https:");
+  const out = [];
+  for(const k of ["~large", "~medium", "~small", "~orig"]){ const h = hrefs.find(x => x.includes(k)); if(h) out.push(h); }
+  hrefs.forEach(h => { if(!out.includes(h) && !/~thumb/.test(h)) out.push(h); });
+  if(thumb) out.push(thumb);
+  const uniq = [...new Set(out.map(h => h.replace(/^http:/, "https:")))];
+  if(!uniq.length) throw new Error("この NASA 画像は、使える大きさの画像がありません");
+  return uniq;
+}
+async function nasaFull(nasaId){ return (await nasaCandidates(nasaId))[0]; }
+// 候補を順に試して、取れた最初の画像を返す
+async function nasaBlob(nasaId, thumb){
+  const list = await nasaCandidates(nasaId, thumb); let last = null;
+  for(const u of list){
+    try{ const r = await fetch(u); if(!r.ok){ last = new Error(`NASA の画像を取得できません（${r.status}）`); continue; } return await r.blob(); }
+    catch(e){ last = new Error(`NASA の画像を取得できません（通信を確認してください: ${u.split("/").pop().slice(0, 40)}）`); }
+  }
+  throw last || new Error("NASA の画像を取得できません");
 }
 
 // ── Wikimedia Commons（公開画像。2026-10-28 絶滅した生物たち用）────────────────
@@ -1318,8 +1333,7 @@ function buildPanel(s){
             stageClip(s, bytes, {...it.source, size: picked.size || bytes.length});
             return;
           }
-          const url = tab === "nasa" ? await nasaFull(it.nasaId) : it.full;
-          const png = await toPng(await fetchBlob(url, tab === "nasa" ? "NASA" : tab === "commons" ? "Commons" : "Pixabay"));
+          const png = await toPng(tab === "nasa" ? await nasaBlob(it.nasaId, it.thumb) : await fetchBlob(it.full, tab === "commons" ? "Commons" : "Pixabay"));
           stage(s, png, it.source);
         }catch(e){ rm.className = "msg err"; rm.textContent = e.message; }
       };
