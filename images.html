@@ -165,7 +165,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 3案ボタン</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 3案ボタン2</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -1478,7 +1478,7 @@ function buildPanel(s){
   const q0 = (S.results[s.id] && S.results[s.id].q) || sceneQuery(s);
   p.innerHTML = `
     <div class="tabs">
-      ${(bgOk(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["upload", "アップロード"], ["nobg", "背景なし"], ["style", "文字の色"]] : needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["one", "🎬 AIで画像→動画（2回押し）"]].concat(isShortScript() ? [["long", "📼 ロングの素材"]] : []).concat([["clip", "動画クリップ（Pixabay）"], ["wsclip", "AI動画クリップ（WaveSpeed）"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]]) : [["style", "文字の色"]])
+      ${(bgOk(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["upload", "アップロード"], ["nobg", "背景なし"], ["style", "文字の色"]] : needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["one", "🎬 AIで画像→動画（3案）"]].concat(isShortScript() ? [["long", "📼 ロングの素材"]] : []).concat([["clip", "動画クリップ（Pixabay）"], ["wsclip", "AI動画クリップ（WaveSpeed）"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]]) : [["style", "文字の色"]])
         .map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
     </div>
     <div id="tabbody"></div>`;
@@ -1528,10 +1528,11 @@ function buildPanel(s){
     const cost = g.quality === "low" ? "約17円" : "約25円";
     body.innerHTML = `
       <div class="hint" style="margin-bottom:6px"><b>3つの案（A・B・C）のうち、気に入った案のボタンを押す</b>と、その案で、画像（OpenAI）と、6秒の動画（WaveSpeed fast）を作ります。案は、台本を書くときに付けた、迫力と臨場感のある案です（無料。台本に無いときは、台本の画像プロンプトか、AIが考えます）。<b>${cost}</b>（画像 ${g.quality === "low" ? "約2円" : "約10円"}＋動画 約15円）。保存（③）まで、確定しません。</div>
-      <div class="row"><button id="o1" ${g.busy ? "disabled" : ""} title="OpenAIの文章AI（gpt-4o-mini）が、ナレーションを読んで3案を考え直します">${g.opts.length ? "別の案を、AIに考えてもらう（1円未満）" : "場面の案を、AIに考えてもらう（1円未満）"}</button>
+      <div class="row"><button id="o1" class="${g.opts.length ? "" : "primary"}" ${g.busy ? "disabled" : ""} title="OpenAIの文章AI（gpt-4o-mini）が、ナレーションを読んで3案を考え直します">${g.opts.length ? "別の案を、AIに考えてもらう（1円未満）" : "場面の案を、AIに考えてもらう（1円未満）"}</button>
         ${g.opts.length && g.opts[0].from ? `<button id="o0" ${g.busy ? "disabled" : ""} title="台本に書いてある案に戻します（無料）">台本の案に戻す</button>` : ""}</div>
       ${g.opts.length ? `<div class="row"><select id="oq" style="width:auto" title="画質。low は安く（約2円）、medium は細部がきれいです（約10円）"><option value="low">画質 low（安い・約2円）</option><option value="medium">画質 medium（約10円）</option></select>
         ${g.img ? `<button id="o3" ${g.busy ? "disabled" : ""} title="さっきの画像はそのままで、動画だけ作り直します（約15円）">動画だけ作り直す（約15円）</button>` : ""}</div>` : ""}
+      ${g.opts.length ? "" : `<div class="hint" style="margin-top:6px">この場面には、台本に書いた案がありません。上の「場面の案を、AIに考えてもらう」を押すと、3つの案（案A・B・C）が出ます。気に入った案のボタンを押すと、画像→動画を作ります。</div>`}
       <div id="oopts" style="margin-top:8px">${g.opts.map((o, i) => `<div class="res" style="display:block;margin-bottom:8px;padding:8px;border:1px solid ${g.pick === i ? "var(--accent)" : "var(--line)"};border-radius:8px">
         <b>案${"ABC"[i] || i + 1}　${esc(o.title)}</b>${o.from === "script" ? ` <span class="hint">（台本の案・無料）</span>` : o.from ? ` <span class="hint">（台本の画像プロンプト）</span>` : ""}
         <div class="hint" style="margin-top:2px;user-select:text">${esc(o.desc)}</div>
