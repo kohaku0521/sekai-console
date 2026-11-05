@@ -165,9 +165,10 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
   <label class="hint" style="display:flex;align-items:center;gap:6px;cursor:pointer" title="外すと、切り抜きショート（長尺の宣伝用の2本）は作らず、予約もしません"><input type="checkbox" id="c-shorts" checked> 切り抜きショートも作る</label>
   <label id="l-art" class="hint" style="display:none;align-items:center;gap:6px" title="サムネの背景の絵（OpenAI）の画質。low は安く、medium は細部がきれいです。描いてある絵は描き直しません"><span>サムネの絵</span><select id="s-art" style="width:auto"><option value="low">low（安い）</option><option value="medium">medium</option></select></label>
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
+  <button id="b-videos" title="生成した動画（mp4）を、スマホ・PCに保存します。CapCutなどで編集できます">📥 動画を端末に保存</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 端末に保存</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 動画を保存ボタン</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -2475,6 +2476,7 @@ async function openSfx(sceneId){
   if(SX.only){ const e = $("#x-scenes"); if(e) e.scrollIntoView({block: "start"}); }   // 場面のカードから開いたときは、その場面の設定の位置へ
 }
 $("#b-sfx").onclick = () => openSfx();
+$("#b-videos").onclick = () => { location.href = "videos.html"; };
 $("#x-all").onclick = () => { SX.only = null; renderSfx(); };
 $("#x-addsrc").innerHTML = SE_SRC.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
 $("#x-addfile").onchange = e => {

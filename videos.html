@@ -40,6 +40,11 @@ a{color:#79a8f0}
     <b>「共有（CapCutなどへ）」</b>は、スマホの共有のメニューが開くので、CapCut を選べば、そのまま読み込めます（対応していない端末・ブラウザでは、「端末に保存」を使ってください）。
     動画が大きい（長尺は数百MB）ときは、保存に時間がかかります。通信は、Wi-Fi がおすすめです。
   </div>
+  <div class="card" id="runs-card">
+    <h3>まだ保存されていない生成を、保存する</h3>
+    <div class="hint">保存の仕組みを入れる前に始めた生成や、保存に失敗した生成の動画は、ここから保存できます（生成が終わってから<b>7日間</b>だけ。動画は作り直しません。外部の課金APIは使いません。約2〜5分）。保存できると、下の一覧に出ます（Discordにも届きます）。</div>
+    <div id="runs"></div>
+  </div>
   <div class="msg" id="msg"></div>
   <div id="list"></div>
 </main>
@@ -108,8 +113,33 @@ async function fetchAsset(key, mode){
     box.innerHTML = `<div class="hint" style="color:var(--err)">${esc(e.message || e)}　（「リンクで開く」を使ってください）</div>`;
   }
 }
-$("#b-reload").onclick = load;
-load();
+// 生成（trend-auto-studio-produce-long）の一覧と、「この生成の動画を保存」（ワークフロー trend-auto-studio-save-video）
+const WF_SAVE = "trend-auto-studio-save-video.yml";
+async function loadRuns(){
+  if(!ghReady()) return;
+  try{
+    const j = await api(`/repos/${gh.owner}/${gh.repo}/actions/workflows/trend-auto-studio-produce-long.yml/runs?per_page=8`);
+    const runs = (j.workflow_runs || []).filter(r => r.event === "workflow_dispatch");
+    $("#runs").innerHTML = runs.map(r => {
+      const done = r.status === "completed", ok = r.conclusion === "success";
+      const first = String((r.head_commit && r.head_commit.message) || "").split("\n")[0].slice(0, 60);
+      return `<div class="asset"><div><b>${esc(when(r.created_at))}</b>　<span class="hint">実行 ${r.id}　${esc(first)}</span></div>
+        <div class="row" style="margin-top:4px"><span class="hint">${done ? (ok ? "✅ 終わりました" : "⚠ 失敗または中止") : "⏳ 生成中（終わってから押せます）"}</span>
+        <button data-saverun="${r.id}" ${done && ok ? "" : "disabled"}>この生成の動画を保存する</button></div></div>`;
+    }).join("") || `<div class="hint">最近の生成が見つかりません</div>`;
+    document.querySelectorAll("[data-saverun]").forEach(b => b.onclick = async () => {
+      if(!confirm("この生成の動画を、取り出して、リリースに保存します（動画は作り直しません。約2〜5分）。保存できたら、下の一覧に出て、Discordにも届きます。よろしいですか？")) return;
+      b.disabled = true;
+      try{
+        const r = await fetch(`https://api.github.com/repos/${gh.owner}/${gh.repo}/actions/workflows/${WF_SAVE}/dispatches`, {method: "POST", headers: {...AUTH, "Authorization": "Bearer " + gh.token}, body: JSON.stringify({ref: gh.branch || "main", inputs: {run_id: String(b.dataset.saverun), artifact: "longform"}})});
+        if(!r.ok){ const e = await r.json().catch(() => ({})); throw new Error(`GitHub ${r.status}: ${e.message || r.statusText}`); }
+        msg("保存を始めました（約2〜5分）。終わったら「読み込み直す」を押してください（Discordにも届きます）", "ok");
+      }catch(e){ msg(e.message, "err"); b.disabled = false; }
+    });
+  }catch(e){ $("#runs").innerHTML = `<div class="hint" style="color:var(--err)">${esc(e.message)}</div>`; }
+}
+$("#b-reload").onclick = () => { load(); loadRuns(); };
+load(); loadRuns();
 </script>
 </body>
 </html>
