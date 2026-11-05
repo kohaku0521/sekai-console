@@ -165,7 +165,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 3案ボタン3</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 動き強化</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -639,7 +639,7 @@ const WS_MODES = {
 //   → 「No ○○」は読み取られず、○○の語（fade to white・flash・overexposure…）に引っ張られた。**悪い語は、打ち消しでも書かない。**
 // 2回目の直しの「明るさ・色が一定」の文も、明るさの語を増やすので、やめた。動きの指定だけの、最小の形にする（WS_GUARD は空）。
 // 保存される控え（_manual_picks.json）に、実際に送った指示（prompt）と、このコンソールの版（ver）を残す。あとで、どの指示で白くなったか、突き合わせられる
-const WS_MOTION = "slow cinematic push in, subtle natural camera drift";
+const WS_MOTION = "[Push in] The camera moves steadily forward with clear parallax between the foreground and the background, and loose dust blows across the ground.";   // 2026-11-05: 「slow … subtle」だけでは、ほとんど動かなかった（社長）。カメラの指示は [ ] で書き、動くものを具体的に書く
 const WS_GUARD = "";
 const WS_SEC = 6;
 // 動かす元の画像（このあと保存する画像があればそれ、無ければリポジトリの画像）を、小さい JPEG の data URL にする
@@ -733,17 +733,17 @@ function scriptOneOptions(s){
   const subj = (sceneQuery(s) || String(enOf(s) || "").slice(0, 140)).trim();
   if(!subj) return [];
   const T = [
-    ["A 広い全景", "迫力のある広い画。低い位置から、手前・中景・奥の奥行きで見せる", `${subj}, epic wide establishing shot, low camera angle, foreground rocks and sand, subject in the midground, vast horizon, strong directional sunlight, long shadows, ultra detailed, photorealistic`, "fast forward dolly through the scene, strong parallax between foreground and background, steady cinematic camera"],
-    ["B クローズアップ", "ぐっと寄った細部。質感と手ざわり", `${subj}, dramatic extreme close-up, rich surface texture, shallow depth of field, sharp foreground detail, cinematic lighting, ultra detailed, photorealistic`, "slow lateral tracking along the surface, gentle focus shift from foreground to background"],
-    ["C 人の視点", "宇宙飛行士の目線。その場にいる臨場感", `${subj}, first-person point of view of an astronaut, gloved hands and helmet edge at the frame border, boots kicking up dust, handheld feel, dramatic light, ultra detailed, photorealistic`, "handheld first-person walk forward, gentle natural camera shake, dust drifting past the lens"],
+    ["A 広い全景", "迫力のある広い画。低い位置から、手前・中景・奥の奥行きで見せる", `${subj}, epic wide establishing shot, low camera angle, foreground rocks and sand, subject in the midground, vast horizon, strong directional sunlight, long shadows, ultra detailed, photorealistic`, "[Push in, Shake] The camera surges forward through the scene with strong parallax between the foreground and the background. Wind whips loose dust across the ground in fast streaks."],
+    ["B クローズアップ", "ぐっと寄った細部。質感と手ざわり", `${subj}, dramatic extreme close-up, rich surface texture, shallow depth of field, sharp foreground detail, cinematic lighting, ultra detailed, photorealistic`, "[Truck left] The camera glides quickly along the surface. Loose grains tumble and slide across it, focus pulling from the foreground to the background."],
+    ["C 人の視点", "宇宙飛行士の目線。その場にいる臨場感", `${subj}, first-person point of view of an astronaut, gloved hands and helmet edge at the frame border, boots kicking up dust, handheld feel, dramatic light, ultra detailed, photorealistic`, "[Push in, Shake] The astronaut strides forward quickly, boots kicking up bursts of dust, the scene ahead growing larger. The camera sways with every step."],
   ];
   return T.map(([title, desc, pr, mo]) => ({title, desc, prompt: withTail(pr), motion: mo, free: true, from: "template"}));
 }
 async function oneLlmOptions(s){
   if(!oa.apiKey) throw new Error("OpenAI のAPIキーが未設定です（⚙ 接続設定）");
   const sys = "You plan ONE still image for a Japanese YouTube space-explainer video. The image will be generated, then animated into a 6-second clip. Given the narration and visual constraints, propose exactly 3 clearly different scene concepts that fit what the narration says (e.g. wide establishing view / close detail / human-scale or mechanism view). "
-    + "For each give: title_ja (Japanese, 14 characters or fewer), desc_ja (one Japanese sentence: what the viewer sees), prompt_en (English image prompt, 25-45 words, concrete physical nouns, composition and lighting; do NOT repeat the fixed constraints, they are appended automatically). "
-    + "Rules: no text or letters in the image; no recognizable real people; respect the visual constraints strictly (astronomical accuracy). Output JSON only: {\"options\":[{\"title_ja\":\"\",\"desc_ja\":\"\",\"prompt_en\":\"\"},{...},{...}]}";
+    + "For each give: title_ja (Japanese, 14 characters or fewer), desc_ja (one Japanese sentence: what the viewer sees), prompt_en (English image prompt, 25-45 words, concrete physical nouns, composition and lighting, and a subject caught mid-action such as striding, falling or spinning; do NOT repeat the fixed constraints, they are appended automatically), motion_en (English video motion prompt, 1-2 sentences: start with 1-2 camera commands in square brackets chosen from [Push in] [Pull out] [Truck left] [Truck right] [Pan left] [Pan right] [Pedestal up] [Pedestal down] [Tilt up] [Tilt down] [Tracking shot] [Shake], then say concretely what moves and how fast, e.g. The astronaut strides forward quickly, boots kicking up dust; never use the words haze, mist, fog, glow, bloom, flash, flare, smoke, steam, white). "
+    + "Rules: no text or letters in the image; no recognizable real people; respect the visual constraints strictly (astronomical accuracy). Output JSON only: {\"options\":[{\"title_ja\":\"\",\"desc_ja\":\"\",\"prompt_en\":\"\",\"motion_en\":\"\"},{...},{...}]}";
   const user = `Narration (Japanese): ${s.text}\n${enOf(s) ? "Narration (English): " + enOf(s) + "\n" : ""}Subject hint: ${sceneQuery(s) || "(none)"}\nVisual constraints (Japanese): ${(s.raw && s.raw.visual_instruction) || "(none)"}`;
   const r = await fetch("https://api.openai.com/v1/chat/completions", {method: "POST", headers: {"Content-Type": "application/json", "Authorization": "Bearer " + oa.apiKey},
     body: JSON.stringify({model: "gpt-4o-mini", temperature: 0.8, response_format: {type: "json_object"}, messages: [{role: "system", content: sys}, {role: "user", content: user}]})})
@@ -753,7 +753,7 @@ async function oneLlmOptions(s){
   let o; try{ o = JSON.parse(j.choices[0].message.content).options; }catch{ throw new Error("案を読み取れませんでした。もう一度押してください"); }
   if(!Array.isArray(o) || o.length < 2) throw new Error("案が足りませんでした。もう一度押してください");
   const suf = oneSuffix(s);
-  return o.slice(0, 3).map(x => ({title: String(x.title_ja || "案").slice(0, 20), desc: String(x.desc_ja || ""), prompt: `${String(x.prompt_en || "").trim()}, photorealistic, ${ASPECT_WORD()}, ${suf}`, free: false}));
+  return o.slice(0, 3).map(x => ({title: String(x.title_ja || "案").slice(0, 20), desc: String(x.desc_ja || ""), prompt: `${String(x.prompt_en || "").trim()}, photorealistic, ${ASPECT_WORD()}, ${suf}`, motion: String(x.motion_en || "").replace(BAD_MOTION, "").replace(/\s{2,}/g, " ").trim(), free: false}));
 }
 // 選んだ案で、画像（OpenAI）→動画（WaveSpeed fast）。画像ができた時点で場面に入れる（動画が失敗しても、画像は残る）
 async function oneRun(s, videoOnly){
