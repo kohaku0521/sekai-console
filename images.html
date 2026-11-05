@@ -165,7 +165,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 縦型ショート2</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 3案ボタン</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -718,6 +718,18 @@ async function wsGenerate(s, g, onTick){
 const ONE_FALLBACK_NEG = "no text, no letters, no watermark, no recognizable real faces";
 const oneState = s => { S.one = S.one || {}; return S.one[s.id] || (S.one[s.id] = {opts: [], pick: -1, busy: false, err: "", note: "", quality: "low", motion: WS_MOTION, img: null, src: ""}); };
 const oneSuffix = s => { const p = (ipOf(s)[0] || {}).prompt || ""; const m = /(?:16:9|9:16 vertical),\s*(.+)$/.exec(p); return m ? m[1] : ONE_FALLBACK_NEG; };
+// 台本に書いてある案（video_prompts。台本を書くときに、場面にふさわしい迫力と臨場感のある案を3つ付ける。2026-11-05 社長指示）。無料（AIを使わない）。
+// 無い台本は、image_prompts（3パターン）を案として使う。動かし方（motion_en）は案ごと。靄・光・白に関わる語は取り除く（白くなる原因。2026-11-04）
+const BAD_MOTION = /\b(haze|hazy|mist|misty|fog|foggy|glow|glowing|bloom|flash|flare|fade[sd]? to white|overexposed?|overexposure|white-?out|light leak|smoke|steam)\b/gi;
+function scriptOneOptions(s){
+  const raw = s.raw || {}, suf = oneSuffix(s), asp = ASPECT_WORD();
+  const fixAsp = x => String(x || "").replace(/16:9|9:16 vertical/g, asp);
+  const withTail = x => { x = fixAsp(x).trim(); if(!/\b(16:9|9:16)/.test(x)) x += `, ${asp}`; if(!/no text/i.test(x)) x += `, ${suf}`; return x; };
+  const vp = (raw.video_prompts || []).filter(o => o && (o.image_en || o.prompt));
+  if(vp.length) return vp.slice(0, 3).map((o, i) => ({title: String(o.label || o.title || "案" + (i + 1)).slice(0, 20), desc: String(o.desc_ja || o.desc || ""),
+    prompt: withTail(o.image_en || o.prompt), motion: String(o.motion_en || o.motion || "").replace(BAD_MOTION, "").replace(/\s{2,}/g, " ").trim(), free: true, from: "script"}));
+  return ipOf(s).slice(0, 3).map((o, i) => ({title: String(o.label || "案" + (i + 1)).slice(0, 20), desc: "台本の画像プロンプト", prompt: fixAsp(o.prompt), motion: "", free: true, from: "image_prompts"}));
+}
 async function oneLlmOptions(s){
   if(!oa.apiKey) throw new Error("OpenAI のAPIキーが未設定です（⚙ 接続設定）");
   const sys = "You plan ONE still image for a Japanese YouTube space-explainer video. The image will be generated, then animated into a 6-second clip. Given the narration and visual constraints, propose exactly 3 clearly different scene concepts that fit what the narration says (e.g. wide establishing view / close detail / human-scale or mechanism view). "
@@ -748,7 +760,8 @@ async function oneRun(s, videoOnly){
     if(!g.img) throw new Error("動画にする元の画像がありません。先に②を押してください");
     stage(s, g.img, {type: "openai", id: `one/${g.quality} ${new Date().toLocaleTimeString("ja-JP")}`, credit: "OpenAI", page: ""});   // 画像を場面に入れる（動画の元にもなる）
     tick("② 画像から6秒の動画を作っています…（約80秒）");
-    const wg = {mode: "fast-i2v", prompts: {"fast-i2v": (g.motion || WS_MOTION).trim()}, getUrl: "", outUrl: ""};
+    const po = g.opts[g.pick] || {}, mot = ((g.motionEdited ? g.motion : (po.motion || g.motion)) || WS_MOTION).trim();   // 動かし方: 手で直したもの＞案の動かし方＞標準
+    const wg = {mode: "fast-i2v", prompts: {"fast-i2v": mot}, getUrl: "", outUrl: ""};
     const bytes = await wsGenerate(s, wg, tick);
     g.wg = wg; const okNote = "できました。気に入れば「③ 保存」を押してください。違えば、案を選び直すか、「動画だけ作り直す」を押せます";
     g.note = okNote;
@@ -1514,19 +1527,23 @@ function buildPanel(s){
     const g = oneState(s);
     const cost = g.quality === "low" ? "約17円" : "約25円";
     body.innerHTML = `
-      <div class="hint" style="margin-bottom:6px"><b>ボタンは2回</b>。①場面の案を3つ出す → 気に入った案を選ぶ → ②その案で、画像（OpenAI）と、6秒の動画（WaveSpeed fast）を作ります。<b>${cost}</b>（画像 ${g.quality === "low" ? "約2円" : "約10円"}＋動画 約15円）。保存（③）まで、確定しません。</div>
-      <div class="row"><button class="primary" id="o1" ${g.busy ? "disabled" : ""}>${g.opts.length ? "① 案を考え直す（AI・1円未満）" : "① 場面の案を3つ出す（AIが考える・1円未満）"}</button></div>
-      <div id="oopts" style="margin-top:8px">${g.opts.map((o, i) => `<label class="res" style="display:block;cursor:pointer;margin-bottom:6px;padding:8px;border:1px solid ${g.pick === i ? "var(--accent)" : "var(--line)"};border-radius:8px">
-        <input type="radio" name="opt" value="${i}" ${g.pick === i ? "checked" : ""} style="width:18px;height:18px;vertical-align:middle"> <b>${esc(o.title)}</b>
-        <div class="hint" style="margin-top:2px;user-select:text">${esc(o.desc)}</div></label>`).join("")}</div>
-      ${g.opts.length ? `<div class="field"><label>動かし方（英語。標準でよければ、そのまま）</label><textarea id="omo" style="min-height:48px">${esc(g.motion)}</textarea></div>
-        <div class="row"><select id="oq" style="width:auto" title="画質。low は安く（約2円）、medium は細部がきれいです（約10円）"><option value="low">画質 low（安い・約2円）</option><option value="medium">画質 medium（約10円）</option></select>
-          <button class="primary" id="o2" ${g.busy || g.pick < 0 ? "disabled" : ""}>② この案で、画像→動画をつくる（${cost}）</button>
-          ${g.img ? `<button id="o3" ${g.busy ? "disabled" : ""} title="さっきの画像はそのままで、動画だけ作り直します（約15円）">動画だけ作り直す（約15円）</button>` : ""}</div>` : ""}
+      <div class="hint" style="margin-bottom:6px"><b>3つの案（A・B・C）のうち、気に入った案のボタンを押す</b>と、その案で、画像（OpenAI）と、6秒の動画（WaveSpeed fast）を作ります。案は、台本を書くときに付けた、迫力と臨場感のある案です（無料。台本に無いときは、台本の画像プロンプトか、AIが考えます）。<b>${cost}</b>（画像 ${g.quality === "low" ? "約2円" : "約10円"}＋動画 約15円）。保存（③）まで、確定しません。</div>
+      <div class="row"><button id="o1" ${g.busy ? "disabled" : ""} title="OpenAIの文章AI（gpt-4o-mini）が、ナレーションを読んで3案を考え直します">${g.opts.length ? "別の案を、AIに考えてもらう（1円未満）" : "場面の案を、AIに考えてもらう（1円未満）"}</button>
+        ${g.opts.length && g.opts[0].from ? `<button id="o0" ${g.busy ? "disabled" : ""} title="台本に書いてある案に戻します（無料）">台本の案に戻す</button>` : ""}</div>
+      ${g.opts.length ? `<div class="row"><select id="oq" style="width:auto" title="画質。low は安く（約2円）、medium は細部がきれいです（約10円）"><option value="low">画質 low（安い・約2円）</option><option value="medium">画質 medium（約10円）</option></select>
+        ${g.img ? `<button id="o3" ${g.busy ? "disabled" : ""} title="さっきの画像はそのままで、動画だけ作り直します（約15円）">動画だけ作り直す（約15円）</button>` : ""}</div>` : ""}
+      <div id="oopts" style="margin-top:8px">${g.opts.map((o, i) => `<div class="res" style="display:block;margin-bottom:8px;padding:8px;border:1px solid ${g.pick === i ? "var(--accent)" : "var(--line)"};border-radius:8px">
+        <b>案${"ABC"[i] || i + 1}　${esc(o.title)}</b>${o.from === "script" ? ` <span class="hint">（台本の案・無料）</span>` : o.from ? ` <span class="hint">（台本の画像プロンプト）</span>` : ""}
+        <div class="hint" style="margin-top:2px;user-select:text">${esc(o.desc)}</div>
+        ${o.motion ? `<div class="hint" style="user-select:text">動かし方: ${esc(o.motion)}</div>` : ""}
+        <details><summary class="hint" style="cursor:pointer">画像のプロンプト（英語）</summary><div class="hint" style="user-select:text">${esc(o.prompt)}</div></details>
+        <div class="row" style="margin-top:6px"><button class="primary" data-orun="${i}" ${g.busy ? "disabled" : ""}>案${"ABC"[i] || i + 1}で、画像→動画をつくる（${cost}）</button></div></div>`).join("")}</div>
+      ${g.opts.length ? `<details><summary class="hint" style="cursor:pointer">動かし方を、手で直す（英語。直すと、全部の案でこれを使います）</summary><div class="field"><textarea id="omo" style="min-height:48px">${esc(g.motion)}</textarea></div></details>` : ""}
       <div class="msg ${g.err ? "err" : ""}" id="omsg" style="white-space:pre-wrap">${esc(g.err || g.note)}</div>`;
     const oq = body.querySelector("#oq"); if(oq){ oq.value = g.quality; oq.onchange = e => { g.quality = e.target.value; render(); }; }
-    const omo = body.querySelector("#omo"); if(omo) omo.oninput = e => g.motion = e.target.value;
-    body.querySelectorAll('input[name="opt"]').forEach(r => r.onchange = () => { g.pick = +r.value; render(); });
+    const omo = body.querySelector("#omo"); if(omo) omo.oninput = e => { g.motion = e.target.value; g.motionEdited = e.target.value.trim() !== WS_MOTION; };
+    if(!g.opts.length && !g.scriptTried){ g.scriptTried = true; g.opts = scriptOneOptions(s); if(g.opts.length){ body.innerHTML = ""; render(); return; } }
+    const o0 = body.querySelector("#o0"); if(o0) o0.onclick = () => { g.opts = scriptOneOptions(s); g.pick = -1; g.note = ""; render(); };
     const setOpts = async (fn, label, costTxt) => {
       if(costTxt && !confirm(`${label}\n\nOpenAIの文章AI（gpt-4o-mini）を1回使います（${costTxt}）。よろしいですか？`)) return;
       g.busy = true; g.err = ""; g.note = "案を考えています…"; render();
@@ -1534,13 +1551,13 @@ function buildPanel(s){
       g.busy = false; render();
     };
     body.querySelector("#o1").onclick = () => setOpts(() => oneLlmOptions(s), "ナレーションに合う案を、3つ考えます。", "1円未満");
-    const o2 = body.querySelector("#o2"); if(o2) o2.onclick = () => {
-      if(g.pick < 0) return;
+    body.querySelectorAll("[data-orun]").forEach(b => b.onclick = () => {
+      g.pick = +b.dataset.orun;
       if(!ws.apiKey){ g.err = "WaveSpeed のAPIキーが未設定です（⚙ 接続設定）"; render(); return; }
       if(!oa.apiKey){ g.err = "OpenAI のAPIキーが未設定です（⚙ 接続設定）"; render(); return; }
       if(!confirm(`この案で、画像と動画を作ります。\n\n「${g.opts[g.pick].title}」\n① OpenAIで画像を1枚（画質 ${g.quality}・${g.quality === "low" ? "約2円" : "約10円"}）\n② WaveSpeedで6秒の動画を1本（fast・約15円）\n\n合計 ${cost} の課金です。よろしいですか？`)) return;
       oneRun(s, false);
-    };
+    });
     const o3 = body.querySelector("#o3"); if(o3) o3.onclick = () => {
       if(!ws.apiKey){ g.err = "WaveSpeed のAPIキーが未設定です（⚙ 接続設定）"; render(); return; }
       if(!confirm("さっきの画像はそのままで、WaveSpeedで6秒の動画を作り直します（fast・約15円）。よろしいですか？")) return;
