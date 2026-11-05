@@ -162,7 +162,7 @@ a{color:#7fb0ff}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/04 19:00</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 縦型ショート</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -547,11 +547,11 @@ async function loadAssets(){
 async function toPng(blob){
   const bmp = await createImageBitmap(blob);
   let w = bmp.width, h = bmp.height;
-  const target = 16 / 9;
+  const target = isShortScript() ? 9 / 16 : 16 / 9;   // ショート専用の台本は縦型（9:16）で作る（2026-11-05 社長指示）
   let sx = 0, sy = 0, sw = w, sh = h;
   if(w / h > target){ sw = Math.round(h * target); sx = Math.round((w - sw) / 2); }
   else { sh = Math.round(w / target); sy = Math.round((h - sh) / 2); }
-  const scale = Math.min(1, 2560 / sw);
+  const scale = Math.min(1, 2560 / Math.max(sw, sh));
   const cw = Math.round(sw * scale), ch = Math.round(sh * scale);
   const cv = document.createElement("canvas"); cv.width = cw; cv.height = ch;
   cv.getContext("2d").drawImage(bmp, sx, sy, sw, sh, 0, 0, cw, ch);
@@ -649,7 +649,7 @@ async function wsImageDataUrl(s){
     blob = await r.blob();
   }else throw new Error("この場面には動かす元の画像がありません。先に画像を選ぶか、動画の種類を「standard・文章から作る」にしてください");
   const bmp = await createImageBitmap(blob);
-  const w = Math.min(1280, bmp.width), h = Math.round(bmp.height * w / bmp.width);
+  const k = Math.min(1, 1280 / Math.max(bmp.width, bmp.height)), w = Math.round(bmp.width * k), h = Math.round(bmp.height * k);   // 長い辺を1280以下に（縦型も同じ）
   const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
   const cx = cv.getContext("2d"); cx.drawImage(bmp, 0, 0, w, h);
   // 真っ黒（0,0,0）の部分があると、AI動画（Hailuo）が、だんだん白く抜けやすい（2026-11-04 実測: シーン29・30は、真っ黒の宇宙の絵から、2.5秒ごろから白くなり、5秒で真っ白）。
@@ -713,7 +713,7 @@ async function wsGenerate(s, g, onTick){
 // ② 選んだ案で、OpenAIの画像（low 約2円）→ WaveSpeed Hailuo 02 fast で6秒の動画（約15円）。合計 約17円。画質を medium にすると約25円
 const ONE_FALLBACK_NEG = "no text, no letters, no watermark, no recognizable real faces";
 const oneState = s => { S.one = S.one || {}; return S.one[s.id] || (S.one[s.id] = {opts: [], pick: -1, busy: false, err: "", note: "", quality: "low", motion: WS_MOTION, img: null, src: ""}); };
-const oneSuffix = s => { const p = (ipOf(s)[0] || {}).prompt || ""; const m = /16:9,\s*(.+)$/.exec(p); return m ? m[1] : ONE_FALLBACK_NEG; };
+const oneSuffix = s => { const p = (ipOf(s)[0] || {}).prompt || ""; const m = /(?:16:9|9:16 vertical),\s*(.+)$/.exec(p); return m ? m[1] : ONE_FALLBACK_NEG; };
 async function oneLlmOptions(s){
   if(!oa.apiKey) throw new Error("OpenAI のAPIキーが未設定です（⚙ 接続設定）");
   const sys = "You plan ONE still image for a Japanese YouTube space-explainer video. The image will be generated, then animated into a 6-second clip. Given the narration and visual constraints, propose exactly 3 clearly different scene concepts that fit what the narration says (e.g. wide establishing view / close detail / human-scale or mechanism view). "
@@ -728,7 +728,7 @@ async function oneLlmOptions(s){
   let o; try{ o = JSON.parse(j.choices[0].message.content).options; }catch{ throw new Error("案を読み取れませんでした。もう一度押してください"); }
   if(!Array.isArray(o) || o.length < 2) throw new Error("案が足りませんでした。もう一度押してください");
   const suf = oneSuffix(s);
-  return o.slice(0, 3).map(x => ({title: String(x.title_ja || "案").slice(0, 20), desc: String(x.desc_ja || ""), prompt: `${String(x.prompt_en || "").trim()}, photorealistic, 16:9, ${suf}`, free: false}));
+  return o.slice(0, 3).map(x => ({title: String(x.title_ja || "案").slice(0, 20), desc: String(x.desc_ja || ""), prompt: `${String(x.prompt_en || "").trim()}, photorealistic, ${ASPECT_WORD()}, ${suf}`, free: false}));
 }
 // 選んだ案で、画像（OpenAI）→動画（WaveSpeed fast）。画像ができた時点で場面に入れる（動画が失敗しても、画像は残る）
 async function oneRun(s, videoOnly){
@@ -794,6 +794,7 @@ async function checkWhitening(s){
 // ショート専用の台本（…-short.json）を開いているとき、場面カードの「ロングの素材」タブに、対になるロングの台本（…-long.json）の素材が出る。
 // 選ぶと、そのファイルを、この台本の素材として保存する（コピー。無料）。出典・AI動画の控え（_manual_picks.json）も引き継ぐ（白くなるAI動画は、切る秒数も同じ）
 const isShortScript = () => /-short\.json$/.test(S.name || "");
+const ASPECT_WORD = () => isShortScript() ? "9:16 vertical" : "16:9";   // ショート専用の台本は縦型
 const longStemOf = () => (S.stem || "").replace(/-short$/, "-long");
 async function repoBytes(path){
   const r = await fetch(`https://api.github.com${repoPath(`/contents/${path.split("/").map(encodeURIComponent).join("/")}${refQ()}`)}`, {headers: {
@@ -988,13 +989,13 @@ async function commonsSearch(q, allowBy){
 
 // ── OpenAI ───────────────────────────────────────────────────────────────
 const STYLES = {
-  photo: "A realistic documentary-style photograph, natural lighting, 16:9 composition, no text, no logos, no watermarks, no recognizable faces. Subject: ",
-  science: "A realistic science-documentary visual (telescope-image look or museum-quality reconstruction), 16:9 composition, no text, no logos, no watermarks, no recognizable faces. Subject: ",
-  anime: "A Japanese anime-style illustration, clean line art, vivid cel-shaded colors, cinematic lighting, 16:9 composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
-  illust: "A flat modern vector-style illustration, simple shapes, limited harmonious color palette, soft shading, 16:9 composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
-  manga: "A black-and-white Japanese manga-style drawing, bold ink lines, screentone shading, dramatic composition, 16:9 composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
-  cg: "A polished 3D CG render, soft studio lighting, clean materials, shallow depth of field, 16:9 composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
-  watercolor: "A soft watercolor painting, gentle brush texture, muted colors, paper grain, 16:9 composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
+  photo: "A realistic documentary-style photograph, natural lighting, @ASPECT@ composition, no text, no logos, no watermarks, no recognizable faces. Subject: ",
+  science: "A realistic science-documentary visual (telescope-image look or museum-quality reconstruction), @ASPECT@ composition, no text, no logos, no watermarks, no recognizable faces. Subject: ",
+  anime: "A Japanese anime-style illustration, clean line art, vivid cel-shaded colors, cinematic lighting, @ASPECT@ composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
+  illust: "A flat modern vector-style illustration, simple shapes, limited harmonious color palette, soft shading, @ASPECT@ composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
+  manga: "A black-and-white Japanese manga-style drawing, bold ink lines, screentone shading, dramatic composition, @ASPECT@ composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
+  cg: "A polished 3D CG render, soft studio lighting, clean materials, shallow depth of field, @ASPECT@ composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
+  watercolor: "A soft watercolor painting, gentle brush texture, muted colors, paper grain, @ASPECT@ composition, no text, no logos, no watermarks, no recognizable real faces. Subject: ",
   raw: "",
 };
 // 画風の選択肢（OpenAIの絵。2026-10-29 社長指示）
@@ -1004,7 +1005,7 @@ async function openaiGenerate(prompt, quality){
   const call = async model => {
     const r = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST", headers: {"Content-Type": "application/json", "Authorization": "Bearer " + oa.apiKey},
-      body: JSON.stringify({model, prompt, size: "1536x1024", quality: quality || oa.quality || "medium", n: 1}),
+      body: JSON.stringify({model, prompt, size: isShortScript() ? "1024x1536" : "1536x1024", quality: quality || oa.quality || "medium", n: 1}),
     }).catch(() => { throw new Error("OpenAIに接続できません（通信状態・ブラウザの拡張機能を確認してください）"); });
     const j = await r.json().catch(() => null);
     if(!r.ok) throw new Error(`OpenAI ${r.status}: ${(j && j.error && j.error.message || r.statusText).slice(0, 200)}`);
@@ -1649,7 +1650,7 @@ function buildPanel(s){
       if(!confirm(`OpenAIで画像を1枚描きます（画質 ${g.quality}。課金されます）。よろしいですか？`)) return;
       g.busy = true; g.err = ""; render();
       try{
-        const blob = await openaiGenerate(STYLES[g.style] + g.prompt.trim(), g.quality);
+        const blob = await openaiGenerate(STYLES[g.style].replace("@ASPECT@", ASPECT_WORD()) + g.prompt.trim(), g.quality);
         g.cands.unshift({blob, url: URL.createObjectURL(blob), note: `${g.style}/${g.quality} ${new Date().toLocaleTimeString("ja-JP")}`});
       }catch(e){ g.err = e.message; }
       g.busy = false; render();
@@ -1657,7 +1658,7 @@ function buildPanel(s){
   }else if(tab === "upload"){
     const up = S.up[s.id] || (S.up[s.id] = {credit: "", err: ""});
     body.innerHTML = `
-      <div class="hint" style="margin-bottom:6px">自分で用意した画像（スマホの写真・パソコンの画像）を、この場面に使います。16:9に切り出して、保存すると動画に使われます。</div>
+      <div class="hint" style="margin-bottom:6px">自分で用意した画像（スマホの写真・パソコンの画像）を、この場面に使います。${isShortScript() ? "縦型（9:16）" : "横型（16:9）"}に切り出して、保存すると動画に使われます。</div>
       <div class="field"><label>出典・権利（任意。入れると、概要欄の「映像・画像の出典」に載ります）</label>
         <input type="text" id="up-credit" value="${esc(up.credit)}" placeholder="例: 自分で撮影／NHKのウェブサイト（引用）／○○さん提供"></div>
       <div class="row"><label class="chip" style="cursor:pointer"><input type="file" id="up-file" accept="image/*" style="display:none">📁 画像を選ぶ（アップロード）</label>
