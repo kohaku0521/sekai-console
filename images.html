@@ -165,7 +165,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 3案ボタン2</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 3案ボタン3</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -728,7 +728,16 @@ function scriptOneOptions(s){
   const vp = (raw.video_prompts || []).filter(o => o && (o.image_en || o.prompt));
   if(vp.length) return vp.slice(0, 3).map((o, i) => ({title: String(o.label || o.title || "案" + (i + 1)).slice(0, 20), desc: String(o.desc_ja || o.desc || ""),
     prompt: withTail(o.image_en || o.prompt), motion: String(o.motion_en || o.motion || "").replace(BAD_MOTION, "").replace(/\s{2,}/g, " ").trim(), free: true, from: "script"}));
-  return ipOf(s).slice(0, 3).map((o, i) => ({title: String(o.label || "案" + (i + 1)).slice(0, 20), desc: "台本の画像プロンプト", prompt: fixAsp(o.prompt), motion: "", free: true, from: "image_prompts"}));
+  if(ipOf(s).length) return ipOf(s).slice(0, 3).map((o, i) => ({title: String(o.label || "案" + (i + 1)).slice(0, 20), desc: "台本の画像プロンプト", prompt: fixAsp(o.prompt), motion: "", free: true, from: "image_prompts"}));
+  // 台本に案が無い場面は、この場面の主題（英語）から、構図とカメラの違う3案を自動で作る（無料。AIは使わない）
+  const subj = (sceneQuery(s) || String(enOf(s) || "").slice(0, 140)).trim();
+  if(!subj) return [];
+  const T = [
+    ["A 広い全景", "迫力のある広い画。低い位置から、手前・中景・奥の奥行きで見せる", `${subj}, epic wide establishing shot, low camera angle, foreground rocks and sand, subject in the midground, vast horizon, strong directional sunlight, long shadows, ultra detailed, photorealistic`, "fast forward dolly through the scene, strong parallax between foreground and background, steady cinematic camera"],
+    ["B クローズアップ", "ぐっと寄った細部。質感と手ざわり", `${subj}, dramatic extreme close-up, rich surface texture, shallow depth of field, sharp foreground detail, cinematic lighting, ultra detailed, photorealistic`, "slow lateral tracking along the surface, gentle focus shift from foreground to background"],
+    ["C 人の視点", "宇宙飛行士の目線。その場にいる臨場感", `${subj}, first-person point of view of an astronaut, gloved hands and helmet edge at the frame border, boots kicking up dust, handheld feel, dramatic light, ultra detailed, photorealistic`, "handheld first-person walk forward, gentle natural camera shake, dust drifting past the lens"],
+  ];
+  return T.map(([title, desc, pr, mo]) => ({title, desc, prompt: withTail(pr), motion: mo, free: true, from: "template"}));
 }
 async function oneLlmOptions(s){
   if(!oa.apiKey) throw new Error("OpenAI のAPIキーが未設定です（⚙ 接続設定）");
@@ -1527,14 +1536,14 @@ function buildPanel(s){
     const g = oneState(s);
     const cost = g.quality === "low" ? "約17円" : "約25円";
     body.innerHTML = `
-      <div class="hint" style="margin-bottom:6px"><b>3つの案（A・B・C）のうち、気に入った案のボタンを押す</b>と、その案で、画像（OpenAI）と、6秒の動画（WaveSpeed fast）を作ります。案は、台本を書くときに付けた、迫力と臨場感のある案です（無料。台本に無いときは、台本の画像プロンプトか、AIが考えます）。<b>${cost}</b>（画像 ${g.quality === "low" ? "約2円" : "約10円"}＋動画 約15円）。保存（③）まで、確定しません。</div>
+      <div class="hint" style="margin-bottom:6px"><b>3つの案（A・B・C）のうち、気に入った案のボタンを押す</b>と、その案で、画像（OpenAI）と、6秒の動画（WaveSpeed fast）を作ります。案は、台本に書いた案（無ければ、この場面の主題から自動で作った、広い全景・クローズアップ・人の視点の3案）です。どちらも無料です。AIに考え直してもらうこともできます。<b>${cost}</b>（画像 ${g.quality === "low" ? "約2円" : "約10円"}＋動画 約15円）。保存（③）まで、確定しません。</div>
       <div class="row"><button id="o1" class="${g.opts.length ? "" : "primary"}" ${g.busy ? "disabled" : ""} title="OpenAIの文章AI（gpt-4o-mini）が、ナレーションを読んで3案を考え直します">${g.opts.length ? "別の案を、AIに考えてもらう（1円未満）" : "場面の案を、AIに考えてもらう（1円未満）"}</button>
-        ${g.opts.length && g.opts[0].from ? `<button id="o0" ${g.busy ? "disabled" : ""} title="台本に書いてある案に戻します（無料）">台本の案に戻す</button>` : ""}</div>
+        ${g.opts.length && g.opts[0].from ? `<button id="o0" ${g.busy ? "disabled" : ""} title="台本に書いてある案に戻します（無料）">最初の3案に戻す</button>` : ""}</div>
       ${g.opts.length ? `<div class="row"><select id="oq" style="width:auto" title="画質。low は安く（約2円）、medium は細部がきれいです（約10円）"><option value="low">画質 low（安い・約2円）</option><option value="medium">画質 medium（約10円）</option></select>
         ${g.img ? `<button id="o3" ${g.busy ? "disabled" : ""} title="さっきの画像はそのままで、動画だけ作り直します（約15円）">動画だけ作り直す（約15円）</button>` : ""}</div>` : ""}
-      ${g.opts.length ? "" : `<div class="hint" style="margin-top:6px">この場面には、台本に書いた案がありません。上の「場面の案を、AIに考えてもらう」を押すと、3つの案（案A・B・C）が出ます。気に入った案のボタンを押すと、画像→動画を作ります。</div>`}
+      ${g.opts.length ? "" : `<div class="hint" style="margin-top:6px">この場面には、案を作る材料（主題・英訳）がありません。上の「場面の案を、AIに考えてもらう」を押すと、3つの案（案A・B・C）が出ます。</div>`}
       <div id="oopts" style="margin-top:8px">${g.opts.map((o, i) => `<div class="res" style="display:block;margin-bottom:8px;padding:8px;border:1px solid ${g.pick === i ? "var(--accent)" : "var(--line)"};border-radius:8px">
-        <b>案${"ABC"[i] || i + 1}　${esc(o.title)}</b>${o.from === "script" ? ` <span class="hint">（台本の案・無料）</span>` : o.from ? ` <span class="hint">（台本の画像プロンプト）</span>` : ""}
+        <b>案${"ABC"[i] || i + 1}　${esc(o.title)}</b>${o.from === "script" ? ` <span class="hint">（台本の案・無料）</span>` : o.from === "template" ? ` <span class="hint">（自動の案・無料）</span>` : o.from ? ` <span class="hint">（台本の画像プロンプト）</span>` : ""}
         <div class="hint" style="margin-top:2px;user-select:text">${esc(o.desc)}</div>
         ${o.motion ? `<div class="hint" style="user-select:text">動かし方: ${esc(o.motion)}</div>` : ""}
         <details><summary class="hint" style="cursor:pointer">画像のプロンプト（英語）</summary><div class="hint" style="user-select:text">${esc(o.prompt)}</div></details>
