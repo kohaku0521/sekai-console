@@ -3794,7 +3794,15 @@ $("#b-run").addEventListener("click", async () => {
 // ── サムネイル ───────────────────────────────────────────────────
 // ブラウザ内で合成する。背景は「無地／生成した画像／スライド」から選べる。
 // 縮小表示でも読めるよう、文字は太く大きく、影を敷いて背景から浮かせる
-const TH_W = 1280, TH_H = 720;
+// ショート専用の台本（…-short.json）は縦（1080x1920。2026-11-05 社長「サムネイルも縦型に」）。ほかは横 1280x720
+let TH_W = 1280, TH_H = 720, TH_V = false;
+function thSetSize(){
+  TH_V = /-short\.json$/i.test(state.name || "");
+  TH_W = TH_V ? 1080 : 1280; TH_H = TH_V ? 1920 : 720;
+  const c = $("#th-canvas");
+  if(c.width !== TH_W || c.height !== TH_H){ c.width = TH_W; c.height = TH_H; }
+  c.style.width = TH_V ? "min(100%, 340px)" : "100%"; c.style.margin = TH_V ? "10px auto 0" : "10px 0 0";
+}
 
 function thBackgrounds(){
   const out = [{value:"plain", label:"無地（ブランド色のグラデーション）"}];
@@ -3999,7 +4007,42 @@ $("#th-px-query").addEventListener("keydown", e => {
 const TH_RED = "#ff2d2d";
 const TH_YELLOW = "#ffe14d";
 
+// 縦（9:16）用: 見出しを2〜3行に割って、画面の幅に収まる大きさで描く。位置は中央（上寄り）／下寄せ。赤字の語は、行をまたがないものだけ赤
+function thDrawTextV(ctx, main, sub, pos, highlight){
+  const pad = 70, maxW = TH_W - pad * 2;
+  const font = px => `900 ${px}px system-ui, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif`;
+  let lines = main.split(/\n/).map(s => s.trim()).filter(Boolean);
+  if(lines.length < 2 && main.length > 7){
+    const n = main.length > 14 ? 3 : 2, per = Math.ceil(main.length / n);
+    lines = []; for(let i = 0; i < main.length; i += per) lines.push(main.slice(i, i + per));
+  }
+  if(!lines.length) lines = [main];
+  let size = 190;
+  ctx.font = font(size);
+  const widest = Math.max(...lines.map(l => ctx.measureText(l).width));
+  if(widest > maxW) size = Math.floor(size * maxW / widest);
+  ctx.font = font(size); ctx.lineJoin = "round"; ctx.strokeStyle = "rgba(0,0,0,.85)"; ctx.lineWidth = size * 0.2;
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  const lh = size * 1.18, blockH = lh * lines.length + (sub ? size * 0.6 : 0);
+  let y = (pos === "bottom" ? TH_H - 260 - blockH : TH_H * 0.5 - blockH / 2) + size;
+  for(const l of lines){
+    const hit = highlight && l.includes(highlight) ? l.indexOf(highlight) : -1;
+    const segs = hit < 0 ? [{t: l, c: "#ffffff"}] : [
+      {t: l.slice(0, hit), c: "#ffffff"}, {t: highlight, c: TH_RED}, {t: l.slice(hit + highlight.length), c: "#ffffff"}].filter(s => s.t);
+    const total = segs.reduce((w, s) => w + ctx.measureText(s.t).width, 0);
+    let x = TH_W / 2 - total / 2; ctx.textAlign = "left";
+    for(const s of segs){ ctx.strokeText(s.t, x, y); ctx.fillStyle = s.c; ctx.fillText(s.t, x, y); x += ctx.measureText(s.t).width; }
+    y += lh;
+  }
+  if(sub){
+    const s2 = Math.round(Math.min(size * 0.42, 86));
+    ctx.font = `700 ${s2}px system-ui, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif`; ctx.lineWidth = s2 * 0.2; ctx.textAlign = "center";
+    ctx.strokeText(sub, TH_W / 2, y + s2 * 0.2); ctx.fillStyle = TH_YELLOW; ctx.fillText(sub, TH_W / 2, y + s2 * 0.2);
+  }
+}
+
 function thDrawText(ctx, main, sub, pos, highlight){
+  if(TH_V) return thDrawTextV(ctx, main, sub, pos, highlight);
   const pad = 72;
   // 1行あたりの文字数から字の大きさを決める（詰め込みすぎを防ぐ）
   const size = main.length <= 8 ? 132 : main.length <= 12 ? 104 : main.length <= 16 ? 84 : 68;
@@ -4052,7 +4095,7 @@ function thDrawBadge(ctx, text){
   const padX = 28, padY = 16;
   const w = ctx.measureText(text).width + padX * 2;
   const h = size + padY * 2;
-  const x = TH_W - w - 40, y = 40;
+  const x = TH_W - w - 40, y = TH_V ? 140 : 40;   // 縦は、上のYouTubeの表示にかからない位置
   const r = 10;
   ctx.fillStyle = TH_RED;
   ctx.beginPath();
@@ -4071,6 +4114,7 @@ function thDrawBadge(ctx, text){
 }
 
 async function thRender(){
+  thSetSize();
   const c = $("#th-canvas"), ctx = c.getContext("2d");
   const [kind, id] = ($("#th-bg").value || "plain").split(":");
 
@@ -4099,7 +4143,7 @@ async function thRender(){
   }
   // ブランドの縦棒（本編のスライドと揃える）
   ctx.fillStyle = BRAND.accent;
-  ctx.fillRect(64, 56, 8, 40);
+  ctx.fillRect(64, TH_V ? 150 : 56, 8, 40);
 
   thDrawText(ctx, $("#th-main").value.trim() || (state.script?.thumbnail_text || ""),
              $("#th-sub").value.trim(), $("#th-pos").value, $("#th-highlight").value.trim());
