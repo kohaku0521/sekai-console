@@ -165,7 +165,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 動き調整</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 重ね解除</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -1130,7 +1130,7 @@ function motionOf(s){
 // 動く図解（図・グラフ・スライド）の場面でも、画像を背景に敷ける（2026-11-01 社長指示）。台本の visual.bg に入り、場面の画像ファイルを、図の後ろに暗くして敷く
 // 背景の画像を敷ける場面: 動く図解（data・slide）／動かない文字スライド（kind=slide）／「文字を重ねる」にした画像の場面（photo・generated。台本の visual.bg が真、または s.bgMode）
 // （2026-11-03 社長指示「動かない文字に背景画像を差し込みたい」。生成側は src/produce_longform.py _fill_slides・slide_render.py の _bg）
-const textBg = s => !!vis(s).bg || !!s.bgMode;
+const textBg = s => !s.unbg && (!!vis(s).bg || !!s.bgMode);   // s.unbg＝「文字の重ねを解除」を押した（保存で、台本の visual.bg を外す）
 const bgOk = s => (!!motionOf(s) && ["data", "slide"].includes(kindOf(s))) || kindOf(s) === "slide" || (["photo", "generated", "clip"].includes(kindOf(s)) && textBg(s));
 const hasBg = s => bgOk(s) && s.action !== "nobg" && (!!s.staged || (!!vis(s).bg && !!S.assets[s.id]));
 const motionLabel = s => { const m = motionOf(s); return m ? (MOTION_TYPES[m.type] || m.type) : ""; };
@@ -1162,7 +1162,7 @@ function toggleLock(sc){
   setLock(sc, !sc.locked); render();
 }
 function updateSaveBtn(){ const n = changedScenes().length; $("#b-save").textContent = S.local ? `③ 保存（台本を新規追加＋${n}件の変更）` : `③ 保存（${n}件の変更）`; $("#b-save").disabled = !n && !S.local; }
-const isChg = s => !!(s.staged || s.stagedClip || s.action || s.styleDirty || s.lockDirty || s.bgMode);
+const isChg = s => !!(s.staged || s.stagedClip || s.action || s.styleDirty || s.lockDirty || s.bgMode || s.unbg);
 const LOCKED_MSG = "この場面はロック中です。変更するには、🔒を押して、ロックを外してください";
 const changedScenes = () => S.scenes.filter(isChg);
 
@@ -1258,6 +1258,7 @@ function render(){
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
         <div class="row" style="margin:0"><button class="lockbtn" data-lock="${esc(s.id)}" title="${s.locked ? "ロック中。押すと、ロックを外します" : "押すと、この場面をロックします（一括の変更も、手での変更も、受け付けなくなります）"}">${s.locked ? "🔒" : "🔓"}</button><label class="mpick" title="チェックを入れて、上の「🎬 チェックした場面に動きをつける」を押すと、この場面にふさわしい動きを提案します" style="display:inline-flex;align-items:center;gap:4px;margin-right:6px;cursor:pointer"><input type="checkbox" data-mpick="${esc(s.id)}" ${M.pick.has(s.id) ? "checked" : ""} ${s.locked ? "disabled" : ""} style="width:18px;height:18px">🎬</label>${motionOf(s) && CH.previewWf ? `<button data-pvone="${esc(s.id)}" title="この場面の動きのプレビューだけ、作り直します（約2〜3分・課金なし）。台本を保存してから押してください">▶ 動きを作る</button>` : ""}<button data-open="${esc(s.id)}" ${s.locked ? "disabled" : ""}>${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : bgOk(s) ? "背景の画像・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}${s.locked ? ' <span class="hint">ロック中</span>' : ""}
         ${isChg(s) ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
+        ${!s.locked && !s.opening && ["photo", "generated", "clip"].includes(kindOf(s)) && !s.unbg && !!vis(s).bg ? `<button data-unbg="${esc(s.id)}" title="文字を重ねるのをやめて、画像（または動画）を全面に出す場面に戻します。いまの画像は残ります。戻すと、「🎬 AIで画像→動画」などのタブも使えます">文字の重ねを解除</button>` : ""}
         ${!s.locked && !s.opening && ["photo", "generated", "clip"].includes(kindOf(s)) && !bgOk(s) ? `<button data-bgmode="${esc(s.id)}" title="この場面を、画像を背景にして、ナレーションの文字を重ねる場面にします（画像は暗くなります）。画像は、このあと「画像を選ぶ」で選ぶか、すでにある画像がそのまま背景になります">文字を重ねる</button>` : ""}
         ${enOf(s) ? `<button data-copyen="${esc(s.id)}" title="この場面のナレーションの英訳をコピーします">英語のナレーションをコピー</button>` : `<button data-makeen="${esc(s.id)}" title="OpenAIで、この場面のナレーションを英訳します（1円未満）">英訳を作る</button>`}
         <button data-copyja="${esc(s.id)}" title="この場面のナレーション（日本語）をコピーします">本文をコピー</button>${ipButtons(s)}</div></div>`;
@@ -1272,11 +1273,12 @@ function render(){
   grid.querySelectorAll("[data-makeen]").forEach(b => b.onclick = () => makeEn(S.scenes.find(x => x.id === b.dataset.makeen), b));
   grid.querySelectorAll("[data-copyja]").forEach(b => b.onclick = () => copyText(S.scenes.find(x => x.id === b.dataset.copyja).text, b));
   grid.querySelectorAll("[data-copyip]").forEach(b => b.onclick = () => { const [id, i] = b.dataset.copyip.split(":"); const sc = S.scenes.find(x => x.id === id); const p = sc && ipOf(sc)[Number(i)]; if(p) copyText(p.prompt, b); });
+  grid.querySelectorAll("[data-unbg]").forEach(b => b.onclick = () => { const s = S.scenes.find(x => x.id === b.dataset.unbg); if(!s || s.locked) return; s.unbg = true; s.bgMode = false; s.tab = null; render(); dockMsg(`#${numOf(s.id)}: 文字の重ねを解除しました（画像は残ります）。動画にしたいときは、「画像を選ぶ」→「🎬 AIで画像→動画（3案）」。決めたら「③ 保存」を押してください`, "ok"); });
   grid.querySelectorAll("[data-bgmode]").forEach(b => b.onclick = () => { const s = S.scenes.find(x => x.id === b.dataset.bgmode); if(!s || s.locked) return; s.bgMode = true; render(); dockMsg(kindOf(s) === "clip" ? `#${numOf(s.id)}: 文字を重ねる場面にしました（動画クリップは外れます）。背景にする画像を「画像を選ぶ」で選んで、「③ 保存」を押してください` : `#${numOf(s.id)}: 文字を重ねる場面にしました。背景にする画像を「画像を選ぶ」で選ぶか、このまま「③ 保存」を押すと、いまの画像が背景になります`, "ok"); });
   grid.querySelectorAll("[data-undo]").forEach(b => b.onclick = () => {
     const s = S.scenes.find(x => x.id === b.dataset.undo);
     if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url);
-    if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; s.staged = null; s.action = null; s.bgMode = false; s.style = JSON.parse(JSON.stringify(s.raw.slide_style || {})); s.edits = {}; s.styleDirty = false; s.locked = !!s.raw.locked; s.lockDirty = false; render();
+    if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; s.staged = null; s.action = null; s.bgMode = false; s.unbg = false; s.style = JSON.parse(JSON.stringify(s.raw.slide_style || {})); s.edits = {}; s.styleDirty = false; s.locked = !!s.raw.locked; s.lockDirty = false; render();
   });
   observeImages();
   const n = ch.length;
@@ -1756,6 +1758,7 @@ async function saveAll(){
     const raw = rawById(json, s.id); if(!raw) continue;
     if(s.lockDirty){ if(s.locked) raw.locked = true; else delete raw.locked; jsonChanged = true; }
     if(s.locked) continue;   // ロック中の場面は、ほかの変更を書かない
+    if(s.unbg && raw.visual){ delete raw.visual.bg; jsonChanged = true; }   // 「文字の重ねを解除」: 画像は残して、文字を重ねる設定だけ外す
     if(s.styleDirty){   // 文字の色（slide_style）。空なら消す
       const st = s.style || {}, clean = {};
       if(st.color) clean.color = st.color;
@@ -1818,7 +1821,7 @@ async function saveAll(){
   try{
     await commitMany(changes, `${S.stem}: ${S.local ? "台本を追加・" : ""}画像を入れ替え（${ch.length}場面・画像入れ替えコンソール）`);
     S.local = false;
-    ch.forEach(s => { s.bgMode = false; if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; s.lockDirty = false; });
+    ch.forEach(s => { s.bgMode = false; s.unbg = false; if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; s.lockDirty = false; });
     if(jsonChanged) adoptJson(json);
     await loadAssets(); render();
     dockMsg(`保存しました（${ch.length}場面）。続けて「④ 生成を開始」を押せます${S.mergedNote || ""}`, "ok");
