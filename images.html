@@ -165,7 +165,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
   <button id="b-run" class="warn" title="長尺の台本: 動画を作ってアップロードし、台本の日付の20時に予約公開します。ショート専用の台本（…-short.json）: ショートだけを作って予約投稿します">④ 生成を開始</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 重ね解除</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/05 場面の効果音</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -264,7 +264,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
 </div>
 <div id="sfx" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);overflow:auto">
   <div style="max-width:760px;margin:14px auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 14px 90px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:15px">効果音を場面に合わせる</b><span class="spacer"></span><button id="x-close">閉じる</button></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:15px" id="x-title">効果音を場面に合わせる</b><span class="spacer"></span><button id="x-close">閉じる</button></div>
     <div class="hint" style="margin-bottom:10px">場面ごとに効果音を選ぶと、<b>その場面の頭で1回</b>鳴ります。<b>鳴らす時刻を自分で決めたいとき</b>は、場面の「＋ この場面に、効果音を足す」で、音と<b>場面の頭からの秒</b>を決めます（1場面に何個でも。決めた時刻のとおりに鳴ります）。頭の音や図解の音を止めたいときは、上の選択で「自動の音を、鳴らさない」を選びます。選ばない場面は、章の頭（chapter）と、台本が指名した場面（accent など）だけが、これまでどおり鳴ります。動く図解の場面には、図解の種類ごとの音（<code>config.yaml</code> の <code>se_by_template</code>）も別に鳴ります。保存した台本の<b>次の生成から</b>反映されます。</div>
     <div class="msg" id="x-info" style="margin-bottom:6px"></div>
     <div style="font-weight:700;margin:8px 0 4px">① 効果音の一覧（▶で試聴）</div>
@@ -280,6 +280,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
       <div class="msg" id="x-addmsg" style="margin-top:6px"></div>
     </details>
     <div style="font-weight:700;margin:14px 0 4px">② 場面ごと</div>
+    <div class="row" style="margin-bottom:6px"><button id="x-all" style="display:none">全場面の効果音を表示</button></div>
     <div id="x-scenes"></div>
     <div class="row"><button id="x-more" style="display:none">さらに表示</button></div>
     <div style="position:sticky;bottom:0;background:var(--panel);padding:10px 0 0;margin-top:10px;border-top:1px solid var(--line)">
@@ -1257,6 +1258,7 @@ function render(){
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>${s.opening ? `<div class="q" style="color:var(--warn)">全動画共通のオープニング動画（assets/brand/opening.mp4）が、必ず使われます${S.brandOpening ? "" : "（まだ置かれていません）"}</div>` : ""}
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
         <div class="row" style="margin:0"><button class="lockbtn" data-lock="${esc(s.id)}" title="${s.locked ? "ロック中。押すと、ロックを外します" : "押すと、この場面をロックします（一括の変更も、手での変更も、受け付けなくなります）"}">${s.locked ? "🔒" : "🔓"}</button><label class="mpick" title="チェックを入れて、上の「🎬 チェックした場面に動きをつける」を押すと、この場面にふさわしい動きを提案します" style="display:inline-flex;align-items:center;gap:4px;margin-right:6px;cursor:pointer"><input type="checkbox" data-mpick="${esc(s.id)}" ${M.pick.has(s.id) ? "checked" : ""} ${s.locked ? "disabled" : ""} style="width:18px;height:18px">🎬</label>${motionOf(s) && CH.previewWf ? `<button data-pvone="${esc(s.id)}" title="この場面の動きのプレビューだけ、作り直します（約2〜3分・課金なし）。台本を保存してから押してください">▶ 動きを作る</button>` : ""}<button data-open="${esc(s.id)}" ${s.locked ? "disabled" : ""}>${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : bgOk(s) ? "背景の画像・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}${s.locked ? ' <span class="hint">ロック中</span>' : ""}
+        <button data-sfx="${esc(s.id)}" title="この場面の効果音を選ぶ・足す・消す（鳴らす時刻も決められます）。ロック中の場面でも変えられます">${(s.raw.se || (s.raw.se_cues || []).length) ? "🔊 効果音（指定あり）" : "🔊 効果音"}</button>
         ${isChg(s) ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
         ${!s.locked && !s.opening && ["photo", "generated", "clip"].includes(kindOf(s)) && !s.unbg && !!vis(s).bg ? `<button data-unbg="${esc(s.id)}" title="文字を重ねるのをやめて、画像（または動画）を全面に出す場面に戻します。いまの画像は残ります。戻すと、「🎬 AIで画像→動画」などのタブも使えます">文字の重ねを解除</button>` : ""}
         ${!s.locked && !s.opening && ["photo", "generated", "clip"].includes(kindOf(s)) && !bgOk(s) ? `<button data-bgmode="${esc(s.id)}" title="この場面を、画像を背景にして、ナレーションの文字を重ねる場面にします（画像は暗くなります）。画像は、このあと「画像を選ぶ」で選ぶか、すでにある画像がそのまま背景になります">文字を重ねる</button>` : ""}
@@ -1273,6 +1275,7 @@ function render(){
   grid.querySelectorAll("[data-makeen]").forEach(b => b.onclick = () => makeEn(S.scenes.find(x => x.id === b.dataset.makeen), b));
   grid.querySelectorAll("[data-copyja]").forEach(b => b.onclick = () => copyText(S.scenes.find(x => x.id === b.dataset.copyja).text, b));
   grid.querySelectorAll("[data-copyip]").forEach(b => b.onclick = () => { const [id, i] = b.dataset.copyip.split(":"); const sc = S.scenes.find(x => x.id === id); const p = sc && ipOf(sc)[Number(i)]; if(p) copyText(p.prompt, b); });
+  grid.querySelectorAll("[data-sfx]").forEach(b => b.onclick = () => openSfx(b.dataset.sfx));
   grid.querySelectorAll("[data-unbg]").forEach(b => b.onclick = () => { const s = S.scenes.find(x => x.id === b.dataset.unbg); if(!s || s.locked) return; s.unbg = true; s.bgMode = false; s.tab = null; render(); dockMsg(`#${numOf(s.id)}: 文字の重ねを解除しました（画像は残ります）。動画にしたいときは、「画像を選ぶ」→「🎬 AIで画像→動画（3案）」。決めたら「③ 保存」を押してください`, "ok"); });
   grid.querySelectorAll("[data-bgmode]").forEach(b => b.onclick = () => { const s = S.scenes.find(x => x.id === b.dataset.bgmode); if(!s || s.locked) return; s.bgMode = true; render(); dockMsg(kindOf(s) === "clip" ? `#${numOf(s.id)}: 文字を重ねる場面にしました（動画クリップは外れます）。背景にする画像を「画像を選ぶ」で選んで、「③ 保存」を押してください` : `#${numOf(s.id)}: 文字を重ねる場面にしました。背景にする画像を「画像を選ぶ」で選ぶか、このまま「③ 保存」を押すと、いまの画像が背景になります`, "ok"); });
   grid.querySelectorAll("[data-undo]").forEach(b => b.onclick = () => {
@@ -2337,7 +2340,7 @@ $("#g-save").onclick = async () => {
 // ── 効果音を場面に合わせる／追加する（2026-11-02 社長「コンソールで効果音を追加できるようにして」）──────────────
 // 台本の場面の se（効果音の名前＝assets/audio/se のファイル名の拡張子なし。accent・chapter・transition は、無ければ自前の合成音）。
 // その場面の頭で1回鳴る。追加した音は、ブラウザで WAV に変えて、ピークを −28 dB にそろえて保存する（src/audio_mix.py find_se が、.wav・.mp3 を探す）
-const SX = {items: [], vals: {}, cues: {}, shown: 25, loaded: false, audio: null, url: null, token: 0, playing: "", loading: "", meta: {}};
+const SX = {items: [], vals: {}, cues: {}, only: null, shown: 25, loaded: false, audio: null, url: null, token: 0, playing: "", loading: "", meta: {}};
 const SE_DIR = "assets/audio/se", SE_PEAK_DB = -6;
 const SE_BUILTIN = [["accent", "accent（驚き・強調）"], ["chapter", "chapter（章の頭）"], ["transition", "transition（場面の切り替え）"]];
 const SE_FIG = {fig_rise: "グラフが伸びる", fig_pop: "数字・比較・カード・まとめ", fig_tick: "ノード図・構造図", fig_step: "進行ステップ", fig_sweep: "太陽系・粒子と磁場", fig_thud: "クレーター・論文", fig_pin: "地図の点"};
@@ -2422,13 +2425,16 @@ function renderSfx(){
   }).join("");
   tb.querySelectorAll("[data-xplay]").forEach(b => b.onclick = () => sxPlay(b));
   const sc = $("#x-scenes"); sc.innerHTML = "";
-  S.scenes.slice(0, SX.shown).forEach(s => {
+  const shownScenes = SX.only ? S.scenes.filter(x => x.id === SX.only) : S.scenes.slice(0, SX.shown);
+  const ttl = $("#x-title"); if(ttl) ttl.textContent = SX.only ? `#${numOf(SX.only)} の効果音` : "効果音を場面に合わせる";
+  const allb = $("#x-all"); if(allb) allb.style.display = SX.only ? "" : "none";
+  shownScenes.forEach(s => {
     const v = SX.vals[s.id] || "", el = document.createElement("div"); el.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px";
     const ch = s.raw && s.raw.chapter_label;
     el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc("#" + numOf(s.id))}</b>　${esc(s.text.slice(0, 40))}${s.text.length > 40 ? "…" : ""}${ch ? `　<span style="color:var(--warn)">章の頭（chapter が自動で鳴る）</span>` : ""}${s.opening ? `　<span style="color:var(--warn)">オープニング（decision37 が必ず鳴る）</span>` : ""}${s.text.trim().startsWith("毎週、宇宙の話を") ? `　<span style="color:var(--warn)">チャンネル登録の案内（decision35 が必ず鳴る）</span>` : ""}${s.text.trim().startsWith("決まりです。あなたの家は") ? `　<span style="color:var(--warn)">家が決まる場面（decision53 が鳴る）</span>` : ""}${s.text.trim().startsWith("では、あなたが失敗する、ゲームオーバーの条件") ? `　<span style="color:var(--warn)">ゲームオーバーの章の頭（warning2 が鳴る。chapter の代わり）</span>` : ""}</div>
       ${(() => { const k = sxMotionKey(s); if(!k) return ""; const a = SE_BY_TPL[k], lab = (typeof MOTION_TYPES !== "undefined" && MOTION_TYPES[k]) || k;
         return `<div class="hint" style="margin-bottom:4px;color:var(--ok, #6c6)">🎬 <b>動く図解</b>（${esc(lab)}）　${a ? `自動の音：<b>${esc(a)}</b>（${esc(SE_FIG[a] || "")}）。この音を止めるには、下で「自動の音を、鳴らさない」を選びます` : "自動の音：なし（この型は鳴らさない設定）"}</div>`; })()}
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><select data-xs="${esc(s.id)}" style="flex:1 1 160px;width:auto;min-width:0;max-width:100%">${sxOptions(v)}</select></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><select data-xs="${esc(s.id)}" style="flex:1 1 160px;width:auto;min-width:0;max-width:100%">${sxOptions(v)}</select>${SX.items.some(x => x.stem === v) ? `<button data-xplay="${esc(v)}">▶ 試聴</button>` : ""}</div>
       ${sxCueRows(s)}`;
     sc.appendChild(el);
   });
@@ -2451,20 +2457,23 @@ function renderSfx(){
   });
   sc.querySelectorAll("[data-xcx]").forEach(b => b.onclick = () => { const [id, i] = cueOf(b.dataset.xcx); (SX.cues[id] || []).splice(i, 1); if(!(SX.cues[id] || []).length) delete SX.cues[id]; renderSfx(); });
   sc.querySelectorAll("[data-xplay]").forEach(b => b.onclick = () => sxPlay(b));
-  $("#x-more").style.display = S.scenes.length > SX.shown ? "" : "none";
+  $("#x-more").style.display = !SX.only && S.scenes.length > SX.shown ? "" : "none";
   $("#x-more").textContent = `さらに表示（残り${S.scenes.length - SX.shown}場面）`;
   $("#x-save").disabled = !sxDirty();
   sxMsg(sxDirty() ? "変更があります。保存を押してください" : "");
 }
-async function openSfx(){
+async function openSfx(sceneId){
   if(!S.json){ setMsg("先に台本を読み込んでください", "err"); return; }
+  SX.only = typeof sceneId === "string" ? sceneId : null;   // 場面のカードの「🔊 効果音」から開いたときは、その場面だけを出す
   $("#sfx").style.display = ""; document.body.style.overflow = "hidden"; sxMsg("");
   try{ await loadSfx(); }catch(e){ sxMsg(e.message, "err"); return; }
   SX.vals = {}; SX.cues = {}; S.scenes.forEach(s => { if(s.raw.se) SX.vals[s.id] = s.raw.se; const c = sxCuesOf(s); if(c.length) SX.cues[s.id] = c; }); SX.shown = 25;
   $("#x-info").textContent = `効果音 ${SX.items.length}本（標準の合成音 3種のほかに置いたもの）。`;
   renderSfx();
+  if(SX.only){ const e = $("#x-scenes"); if(e) e.scrollIntoView({block: "start"}); }   // 場面のカードから開いたときは、その場面の設定の位置へ
 }
-$("#b-sfx").onclick = openSfx;
+$("#b-sfx").onclick = () => openSfx();
+$("#x-all").onclick = () => { SX.only = null; renderSfx(); };
 $("#x-addsrc").innerHTML = SE_SRC.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
 $("#x-addfile").onchange = e => {
   const f = e.target.files && e.target.files[0]; $("#x-addfname").textContent = f ? `${f.name}（${(f.size / 1048576).toFixed(2)}MB）` : "（未選択）";
@@ -2525,7 +2534,7 @@ $("#x-more").onclick = () => { SX.shown += 25; renderSfx(); };
 $("#x-close").onclick = () => {
   sxStop();
   if(SX.loaded && S.json && sxDirty() && !confirm("保存していない変更があります。閉じますか？")) return;
-  $("#sfx").style.display = "none"; document.body.style.overflow = "";
+  $("#sfx").style.display = "none"; document.body.style.overflow = ""; render();   // 場面のカードの「🔊 効果音（指定あり）」の表示を更新
 };
 $("#x-save").onclick = async () => {
   if(!ghReady()){ sxMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
