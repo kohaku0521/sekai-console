@@ -168,7 +168,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
   <button id="b-videos" title="生成した動画（mp4）を、スマホ・PCに保存します。CapCutなどで編集できます">📥 動画を端末に保存</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/07 図解を解除ボタン</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/07 効果音のリピート</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -2382,10 +2382,11 @@ const SE_SRC = [["効果音ラボ", "効果音ラボ（商用利用無料・ク�
 const sxMsg = (t, cls = "") => { const e = $("#x-msg"); e.textContent = t || ""; e.className = "msg " + cls; };
 const SE_FILE = i => i.type === "file" && /\.(mp3|wav|m4a|ogg)$/i.test(i.name);
 // 時刻を決めた効果音（台本の se_cues: [{name, at}]。at は場面の頭からの秒。2026-11-04 社長「効果音を私のタイミングで配置できるように」）
-const sxCuesOf = s => ((s.raw && s.raw.se_cues) || []).filter(c => c && c.name).map(c => ({name: String(c.name), at: Math.max(+c.at || 0, 0)}));
-const sxCuesNow = s => (SX.cues[s.id] || []).filter(c => c.name).map(c => ({name: c.name, at: Math.round(Math.max(+c.at || 0, 0) * 100) / 100}));
+// loop: true なら、その音が場面より短いとき、場面が終わるまで繰り返す（2026-11-07 社長「シーン内で効果音が短いときにシーンが終わるまで効果音をリピートする機能が欲しい」）
+const sxCuesOf = s => ((s.raw && s.raw.se_cues) || []).filter(c => c && c.name).map(c => ({name: String(c.name), at: Math.max(+c.at || 0, 0), ...(c.loop ? {loop: true} : {})}));
+const sxCuesNow = s => (SX.cues[s.id] || []).filter(c => c.name).map(c => ({name: c.name, at: Math.round(Math.max(+c.at || 0, 0) * 100) / 100, ...(c.loop ? {loop: true} : {})}));
 const sxEst = s => Math.max(2, Math.round((String(s.text || "").replace(/\s/g, "").length / 4.9 + 0.7) * 10) / 10);   // 場面の長さの目安（読み上げ 約295字/分＋余白）
-const sxDirty = () => S.scenes.some(s => (SX.vals[s.id] || "") !== (s.raw.se || "") || JSON.stringify(sxCuesNow(s)) !== JSON.stringify(sxCuesOf(s)));
+const sxDirty = () => S.scenes.some(s => (SX.vals[s.id] || "") !== (s.raw.se || "") || !!(SX.loops || {})[s.id] !== !!s.raw.se_loop || JSON.stringify(sxCuesNow(s)) !== JSON.stringify(sxCuesOf(s)));
 const sxNames = () => [...SE_BUILTIN.map(x => x[0]), ...SX.items.map(x => x.stem).filter(n => !SE_BUILTIN.some(b => b[0] === n))];
 async function loadSfx(){
   const byName = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
@@ -2438,6 +2439,7 @@ function sxCueRows(s){
       <span class="hint">⏱</span><select data-xcn="${esc(s.id)}:${i}" style="flex:1 1 150px;width:auto;min-width:0">${sxOptions(c.name, true)}</select>
       <input type="number" data-xct="${esc(s.id)}:${i}" min="0" step="0.1" value="${c.at}" style="width:78px"><span class="hint">秒</span>
       <input type="range" data-xcr="${esc(s.id)}:${i}" min="0" max="${Math.max(est + 1, c.at).toFixed(1)}" step="0.1" value="${c.at}" style="flex:1 1 140px;min-width:100px">
+      <label class="hint" style="display:flex;gap:4px;align-items:center" title="この音が、場面の終わりまでより短いとき、場面が終わるまで同じ音を繰り返します（場面の終わりで切れて、最後の0.2秒はフェードアウト）"><input type="checkbox" data-xcl="${esc(s.id)}:${i}" ${c.loop ? "checked" : ""}>場面の終わりまで繰り返す</label>
       ${hasFile ? `<button data-xplay="${esc(c.name)}">▶ 試聴</button>` : ""}<button data-xcx="${esc(s.id)}:${i}" title="この効果音を消す">×</button></div>`;
   }).join("");
   return `<div style="margin-top:4px">${rows}<button data-xadd="${esc(s.id)}" style="margin-top:6px">＋ この場面に、効果音を足す（鳴らす時刻を決める）</button>${cues.length ? `<span class="hint">　場面の長さは約${est}秒（目安）。時刻は場面の頭から。ここで決めた時刻は、そのとおりに鳴ります（全体の2秒の遅れは足しません）</span>` : ""}</div>`;
@@ -2461,7 +2463,7 @@ function renderSfx(){
     el.innerHTML = `<div class="hint" style="margin-bottom:4px"><b>${esc("#" + numOf(s.id))}</b>　${esc(s.text.slice(0, 40))}${s.text.length > 40 ? "…" : ""}${ch ? `　<span style="color:var(--warn)">章の頭（chapter が自動で鳴る）</span>` : ""}${s.opening ? `　<span style="color:var(--warn)">オープニング（decision37 が必ず鳴る）</span>` : ""}${s.text.trim().startsWith("毎週、宇宙の話を") ? `　<span style="color:var(--warn)">チャンネル登録の案内（decision35 が必ず鳴る）</span>` : ""}${s.text.trim().startsWith("決まりです。あなたの家は") ? `　<span style="color:var(--warn)">家が決まる場面（decision53 が鳴る）</span>` : ""}${s.text.trim().startsWith("では、あなたが失敗する、ゲームオーバーの条件") ? `　<span style="color:var(--warn)">ゲームオーバーの章の頭（warning2 が鳴る。chapter の代わり）</span>` : ""}</div>
       ${(() => { const k = sxMotionKey(s); if(!k) return ""; const a = SE_BY_TPL[k], lab = (typeof MOTION_TYPES !== "undefined" && MOTION_TYPES[k]) || k;
         return `<div class="hint" style="margin-bottom:4px;color:var(--ok, #6c6)">🎬 <b>動く図解</b>（${esc(lab)}）　${a ? `自動の音：<b>${esc(a)}</b>（${esc(SE_FIG[a] || "")}）。この音を止めるには、下で「自動の音を、鳴らさない」を選びます` : "自動の音：なし（この型は鳴らさない設定）"}</div>`; })()}
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><select data-xs="${esc(s.id)}" style="flex:1 1 160px;width:auto;min-width:0;max-width:100%">${sxOptions(v)}</select>${SX.items.some(x => x.stem === v) ? `<button data-xplay="${esc(v)}">▶ 試聴</button>` : ""}</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><select data-xs="${esc(s.id)}" style="flex:1 1 160px;width:auto;min-width:0;max-width:100%">${sxOptions(v)}</select>${SX.items.some(x => x.stem === v) ? `<button data-xplay="${esc(v)}">▶ 試聴</button>` : ""}${v && v !== "none" ? `<label class="hint" style="display:flex;gap:4px;align-items:center" title="場面の頭の音が、場面の終わりまでより短いとき、場面が終わるまで同じ音を繰り返します（場面の終わりで切れて、最後の0.2秒はフェードアウト）"><input type="checkbox" data-xlp="${esc(s.id)}" ${(SX.loops || {})[s.id] ? "checked" : ""}>場面の終わりまで繰り返す</label>` : ""}</div>
       ${sxCueRows(s)}`;
     sc.appendChild(el);
   });
@@ -2483,6 +2485,8 @@ function renderSfx(){
     const t = sc.querySelector(`[data-xct="${el.dataset.xcr}"]`); if(t) t.value = c.at; dirtyNow();
   });
   sc.querySelectorAll("[data-xcx]").forEach(b => b.onclick = () => { const [id, i] = cueOf(b.dataset.xcx); (SX.cues[id] || []).splice(i, 1); if(!(SX.cues[id] || []).length) delete SX.cues[id]; renderSfx(); });
+  sc.querySelectorAll("[data-xlp]").forEach(el => el.onchange = () => { SX.loops = SX.loops || {}; if(el.checked) SX.loops[el.dataset.xlp] = true; else delete SX.loops[el.dataset.xlp]; dirtyNow(); });   // 場面の頭の音を、場面の終わりまで繰り返す
+  sc.querySelectorAll("[data-xcl]").forEach(el => el.onchange = () => { const [, , c] = cueOf(el.dataset.xcl); if(!c) return; if(el.checked) c.loop = true; else delete c.loop; dirtyNow(); });   // 時刻を決めた音を、場面の終わりまで繰り返す
   sc.querySelectorAll("[data-xplay]").forEach(b => b.onclick = () => sxPlay(b));
   $("#x-more").style.display = !SX.only && S.scenes.length > SX.shown ? "" : "none";
   $("#x-more").textContent = `さらに表示（残り${S.scenes.length - SX.shown}場面）`;
@@ -2494,7 +2498,7 @@ async function openSfx(sceneId){
   SX.only = typeof sceneId === "string" ? sceneId : null;   // 場面のカードの「🔊 効果音」から開いたときは、その場面だけを出す
   $("#sfx").style.display = ""; document.body.style.overflow = "hidden"; sxMsg("");
   try{ await loadSfx(); }catch(e){ sxMsg(e.message, "err"); return; }
-  SX.vals = {}; SX.cues = {}; S.scenes.forEach(s => { if(s.raw.se) SX.vals[s.id] = s.raw.se; const c = sxCuesOf(s); if(c.length) SX.cues[s.id] = c; }); SX.shown = 25;
+  SX.vals = {}; SX.cues = {}; SX.loops = {}; S.scenes.forEach(s => { if(s.raw.se) SX.vals[s.id] = s.raw.se; if(s.raw.se && s.raw.se_loop) SX.loops[s.id] = true; const c = sxCuesOf(s); if(c.length) SX.cues[s.id] = c; }); SX.shown = 25;
   $("#x-info").textContent = `効果音 ${SX.items.length}本（標準の合成音 3種のほかに置いたもの）。`;
   renderSfx();
   if(SX.only){ const e = $("#x-scenes"); if(e) e.scrollIntoView({block: "start"}); }   // 場面のカードから開いたときは、その場面の設定の位置へ
@@ -2572,6 +2576,7 @@ $("#x-save").onclick = async () => {
     const sc = S.scenes.find(x => x.id === raw.id); if(!sc) return;
     const v = SX.vals[sc.id];   // 効果音は、画像のロックに関係なく保存する
     if(v){ raw.se = v; n++; } else delete raw.se;
+    if(v && v !== "none" && (SX.loops || {})[sc.id]) raw.se_loop = true; else delete raw.se_loop;   // 場面の頭の音を、場面の終わりまで繰り返す
     const cs = sxCuesNow(sc); if(cs.length){ raw.se_cues = cs; nc += cs.length; } else delete raw.se_cues;
   });
   $("#x-save").disabled = true; sxMsg("保存しています…");
