@@ -72,10 +72,10 @@ a{color:#7fb0ff}
 .thumb{position:relative;aspect-ratio:16/9;background:#1d2128;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:12px}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 /* ショート専用の台本は縦型（9:16）。場面の絵・動画も縦の枠で見せる（横の枠だと、縦の絵の上下が切れて、横型に見える。2026-11-05） */
-body.vshort .thumb{aspect-ratio:9/16;max-width:230px;margin:0 auto}
+body.vshort .thumb{aspect-ratio:9/16;width:100%;max-width:230px;margin:0 auto}   /* width:100% が無いと、画像の無い場面（文字で表示）の枠が幅0につぶれ、バッジの文字が縦に割れてナレーションに重なった（2026-11-09 社長指摘） */
 body.vshort .thumb video{object-fit:contain!important;background:#05070d}
 .thumb .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--dim);padding:8px;text-align:center}
-.badge{position:absolute;left:6px;top:6px;background:rgba(0,0,0,.7);border:1px solid var(--line);border-radius:4px;padding:1px 7px;font-size:11px}
+.badge{position:absolute;left:6px;top:6px;max-width:calc(100% - 12px);background:rgba(0,0,0,.7);border:1px solid var(--line);border-radius:4px;padding:1px 7px;font-size:11px;white-space:normal;overflow-wrap:anywhere}
 .badge.ch{background:var(--warn);color:#111;border-color:var(--warn)}
 .badge.tx{background:#555;color:#fff}
 .meta{padding:8px 10px 10px;display:flex;flex-direction:column;gap:6px;flex:1}
@@ -168,7 +168,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
   <button id="b-videos" title="生成した動画（mp4）を、スマホ・PCに保存します。CapCutなどで編集できます">📥 動画を端末に保存</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/08 頭の音の時刻</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/09 下の余白と場面タブ</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -3068,6 +3068,17 @@ $("#m-save").onclick = async () => {
   }catch(e){ mMsg(e.message, "err"); }
   M.busy = false; mRefresh();
 };
+
+// 下の固定の操作欄（dock）の高さに合わせて、本文の下の余白を取る（2026-11-09 社長「これ以上スクロールできず、場面のタブが見えない」）。
+// 操作欄は、スマホの幅や、ボタン・メッセージの数で2〜4段になる。固定の余白（280px）では足りず、最後の場面タブが操作欄の裏に隠れた
+(function fitDockPadding(){
+  const dock = document.querySelector(".dock"), main = document.querySelector("main");
+  if(!dock || !main) return;
+  const fit = () => { main.style.paddingBottom = (dock.offsetHeight + 40) + "px"; };
+  fit();
+  window.addEventListener("resize", fit);
+  if(window.ResizeObserver) new ResizeObserver(fit).observe(dock);
+})();
 
 window.addEventListener("beforeunload", e => { if(changedScenes().length || sxDirty() || S.local){ e.preventDefault(); e.returnValue = ""; } });
 
