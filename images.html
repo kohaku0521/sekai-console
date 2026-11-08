@@ -168,7 +168,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
   <button id="b-videos" title="生成した動画（mp4）を、スマホ・PCに保存します。CapCutなどで編集できます">📥 動画を端末に保存</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/09 下の余白と場面タブ</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/09 新しい版の案内</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -3078,6 +3078,23 @@ $("#m-save").onclick = async () => {
   fit();
   window.addEventListener("resize", fit);
   if(window.ResizeObserver) new ResizeObserver(fit).observe(dock);
+})();
+
+// 画面が古いままのときに知らせる（2026-11-09 社長「修正しても直らない」。GitHub Pages の画面は、ブラウザに古い版が残ることがある）。
+// 起動のとき、自分自身をキャッシュなしで読み直し、「版」の表示が違えば、上に案内を出す（押すと、新しい版で開き直す）
+(async function checkNewVersion(){
+  try{
+    const r = await fetch(location.pathname + "?nc=" + Date.now(), {cache: "no-store"});
+    if(!r.ok) return;
+    const m = /id="ver"[^>]*>([^<]*)</.exec(await r.text());
+    const cur = ($("#ver") || {}).textContent;
+    if(!m || !cur || m[1].trim() === cur.trim()) return;
+    const bar = document.createElement("div");
+    bar.style.cssText = "position:sticky;top:0;z-index:70;background:#e0a33a;color:#111;padding:8px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap";
+    bar.innerHTML = `<b>新しい版があります</b><span>（いまの画面: ${esc(cur.trim())} → 新: ${esc(m[1].trim())}）</span><button id="nv-go" class="primary" style="padding:4px 12px">新しい版で開き直す</button>`;
+    document.body.prepend(bar);
+    $("#nv-go").onclick = () => { location.href = location.pathname + "?v=" + Date.now() + location.hash; };
+  }catch{ /* 手元で開いたとき（file://）などは、何もしない */ }
 })();
 
 window.addEventListener("beforeunload", e => { if(changedScenes().length || sxDirty() || S.local){ e.preventDefault(); e.returnValue = ""; } });
