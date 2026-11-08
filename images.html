@@ -168,7 +168,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
   <button id="b-videos" title="生成した動画（mp4）を、スマホ・PCに保存します。CapCutなどで編集できます">📥 動画を端末に保存</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/07 効果音のリピート</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/08 効果音をまとめて保存</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -490,6 +490,7 @@ async function adoptScript(name, json, local){
   const ns = json.narrative_structure;
   S.local = !!local;
   S.name = name; S.stem = name.replace(/\.json$/i, ""); S.json = json;
+  try{ SX.key = null; }catch{}   // 台本を替えたら、効果音の未保存の変更は持ち越さない（2026-11-08）
   document.body.classList.toggle("vshort", isShortScript());
   S.scenes = ns.map((raw, i) => ({
     raw, idx: i, id: raw.id || `scene_${String(i + 1).padStart(2, "0")}`,
@@ -1176,7 +1177,11 @@ function toggleLock(sc){
   if(!sc.locked && (sc.staged || sc.stagedClip || sc.action || sc.styleDirty) && !confirm("この場面の、保存前の変更は、ロックすると破棄されます。ロックしますか？")) return;
   setLock(sc, !sc.locked); render();
 }
-function updateSaveBtn(){ const n = changedScenes().length; $("#b-save").textContent = S.local ? `③ 保存（台本を新規追加＋${n}件の変更）` : `③ 保存（${n}件の変更）`; $("#b-save").disabled = !n && !S.local; }
+function updateSaveBtn(){
+  const n = changedScenes().length, x = sxPendingIds().size;   // x: 効果音だけ直した場面（画像などの変更と同じ「③ 保存」でまとめて保存する）
+  const tail = x ? `＋効果音${x}場面` : "";
+  $("#b-save").textContent = S.local ? `③ 保存（台本を新規追加＋${n}件の変更${tail}）` : `③ 保存（${n}件の変更${tail}）`; $("#b-save").disabled = !n && !x && !S.local;
+}
 const isChg = s => !!(s.staged || s.stagedClip || s.action || s.styleDirty || s.lockDirty || s.bgMode || s.unbg || s.undiag);
 const LOCKED_MSG = "この場面はロック中です。変更するには、🔒を押して、ロックを外してください";
 const changedScenes = () => S.scenes.filter(isChg);
@@ -1272,7 +1277,7 @@ function render(){
       <div class="meta"><div class="no">${esc(s.chapter)}</div><div class="nar">${esc(s.text)}</div>${s.opening ? `<div class="q" style="color:var(--warn)">全動画共通のオープニング動画（assets/brand/opening.mp4）が、必ず使われます${S.brandOpening ? "" : "（まだ置かれていません）"}</div>` : ""}
         <div class="q">検索語: ${esc(sceneQuery(s) || "（なし）")}</div>
         <div class="row" style="margin:0"><button class="lockbtn" data-lock="${esc(s.id)}" title="${s.locked ? "ロック中。押すと、ロックを外します" : "押すと、この場面をロックします（一括の変更も、手での変更も、受け付けなくなります）"}">${s.locked ? "🔒" : "🔓"}</button><label class="mpick" title="チェックを入れて、上の「🎬 チェックした場面に動きをつける」を押すと、この場面にふさわしい動きを提案します" style="display:inline-flex;align-items:center;gap:4px;margin-right:6px;cursor:pointer"><input type="checkbox" data-mpick="${esc(s.id)}" ${M.pick.has(s.id) ? "checked" : ""} ${s.locked ? "disabled" : ""} style="width:18px;height:18px">🎬</label>${motionOf(s) && CH.previewWf ? `<button data-pvone="${esc(s.id)}" title="この場面の動きのプレビューだけ、作り直します（約2〜3分・課金なし）。台本を保存してから押してください">▶ 動きを作る</button>` : ""}<button data-open="${esc(s.id)}" ${s.locked ? "disabled" : ""}>${S.open === s.id ? "閉じる" : needsReview(s) ? "画像を選ぶ・文字の色" : bgOk(s) ? "背景の画像・文字の色" : "文字の色"}</button>${hasStyle(s) ? ' <span class="hint">色の指定あり</span>' : ""}${s.locked ? ' <span class="hint">ロック中</span>' : ""}
-        <button data-sfx="${esc(s.id)}" title="この場面の効果音を選ぶ・足す・消す（鳴らす時刻も決められます）。ロック中の場面でも変えられます">${(s.raw.se || (s.raw.se_cues || []).length) ? "🔊 効果音（指定あり）" : "🔊 効果音"}</button>
+        <button data-sfx="${esc(s.id)}" title="この場面の効果音を選ぶ・足す・消す（鳴らす時刻も決められます）。ロック中の場面でも変えられます">${sxPendingIds().has(s.id) ? "🔊 効果音（未保存）" : (s.raw.se || (s.raw.se_cues || []).length) ? "🔊 効果音（指定あり）" : "🔊 効果音"}</button>
         ${isChg(s) ? `<button data-undo="${esc(s.id)}">元に戻す</button>` : ""}
         ${!s.locked && !s.opening && ["photo", "generated", "clip"].includes(kindOf(s)) && !s.unbg && !!vis(s).bg ? `<button data-unbg="${esc(s.id)}" title="文字を重ねるのをやめて、画像（または動画）を全面に出す場面に戻します。いまの画像は残ります。戻すと、「🎬 AIで画像→動画」などのタブも使えます">文字の重ねを解除</button>` : ""}
         ${!s.locked && !s.opening && !s.undiag && ["data", "slide"].includes(kindOf(s)) ? `<button data-undiag="${esc(s.id)}" title="この場面の図解（動く図解・文字スライド）をやめて、画像（または動画）の場面にします。「画像を選ぶ」や「🎬 AIで画像→動画」が使えるようになります。「③ 保存」までは、「元に戻す」で戻せます">図解を解除</button>` : ""}
@@ -1774,7 +1779,7 @@ function buildPanel(s){
 // ── 保存（1コミット）──────────────────────────────────────────────────────
 async function saveAll(){
   if(screenOld){ dockMsg(OLD_SCREEN_MSG, "err"); return; }   // 古い画面からは、保存しない
-  const ch = changedScenes(); if(!ch.length && !S.local) return;
+  const ch = changedScenes(), sxd = sxDirtyScenes(); if(!ch.length && !sxd.length && !S.local) return;
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
   if(S.local && !confirm(`台本をリポジトリに新しく追加します。\n\n・場所: ${GH_DIR}/data/scripts/${S.name}\n・公開日（date）: ${S.json.date}\n・題名: ${S.json.title || ""}\n\n追加しても、動画は作られません（作るのは④です）。よろしいですか？`)) return;
   const base = `${GH_DIR}/assets/images/generated/${S.stem}`;
@@ -1841,20 +1846,22 @@ async function saveAll(){
       picks.push({scene: s.id, type: "text-slide"});
     }
   }
+  const sxCnt = {n: 0, nc: 0};
+  sxd.forEach(sc => { const raw = rawById(json, sc.id); if(raw){ sxApply(raw, sc, sxCnt); jsonChanged = true; } });   // 効果音の未保存の変更も、同じコミットで保存する
   if(jsonChanged) changes.push({path: `${GH_DIR}/data/scripts/${S.name}`, bytes: enc(JSON.stringify(json, null, 2) + "\n")});
   // 出典の控え（NASAの機関名・Pixabayの投稿者・OpenAI）
   let old = [];
   try{ const f = await api(repoPath(`/contents/${base}/_manual_picks.json${refQ()}`)); old = JSON.parse(dec(unb64(f.content))); }catch{}
   const merged = old.filter(o => !picks.some(p => p.scene === o.scene)).concat(picks.map(p => ({...p, at: new Date().toISOString()})));
   changes.push({path: `${base}/_manual_picks.json`, bytes: enc(JSON.stringify(merged, null, 2) + "\n")});
-  $("#b-save").disabled = true; dockMsg(`保存しています…（${ch.length}場面）`);
+  $("#b-save").disabled = true; dockMsg(`保存しています…（${ch.length}場面${sxd.length ? `・効果音${sxd.length}場面` : ""}）`);
   try{
-    await commitMany(changes, `${S.stem}: ${S.local ? "台本を追加・" : ""}画像を入れ替え（${ch.length}場面・画像入れ替えコンソール）`);
+    await commitMany(changes, `${S.stem}: ${S.local ? "台本を追加・" : ""}画像を入れ替え（${ch.length}場面${sxd.length ? `・効果音${sxd.length}場面` : ""}・画像入れ替えコンソール）`);
     S.local = false;
     ch.forEach(s => { s.bgMode = false; s.unbg = false; s.undiag = false; s.undiagBackup = null; if(s.stagedClip && s.stagedClip.url) URL.revokeObjectURL(s.stagedClip.url); s.stagedClip = null; if(s.staged && s.staged.url) URL.revokeObjectURL(s.staged.url); s.staged = null; s.action = null; s.styleDirty = false; s.lockDirty = false; });
     if(jsonChanged) adoptJson(json);
     await loadAssets(); render();
-    dockMsg(`保存しました（${ch.length}場面）。続けて「④ 生成を開始」を押せます${S.mergedNote || ""}`, "ok");
+    dockMsg(`保存しました（${ch.length}場面${sxd.length ? `・効果音${sxd.length}場面` : ""}）。続けて「④ 生成を開始」を押せます${S.mergedNote || ""}`, "ok");
   }catch(e){ dockMsg(e.message, "err"); $("#b-save").disabled = false; }
 }
 
@@ -1878,7 +1885,7 @@ async function runProduce(){
   if(!S.json) return;
   if(S.local){ dockMsg("この台本は、まだリポジトリにありません。先に「③ 保存」で追加してください", "err"); return; }
   if(!ghReady()){ dockMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
-  if(changedScenes().length){ dockMsg("未保存の変更があります。先に「③ 保存」を押してください", "err"); return; }
+  if(changedScenes().length || sxDirty()){ dockMsg("未保存の変更があります。先に「③ 保存」を押してください", "err"); return; }
   // ショート専用の台本（…-short.json）は、④でショートだけを作って予約する（2026-10-29 社長指示「⑤は消して。ショートも台本を読み込んで、画像を選んで、④を押す」）。
   // 長尺は作らず・アップロードせず、台本の shorts[] の場面だけ、音声と映像を作る（workflow の short_only）
   if(S.json.standalone_short){
@@ -2367,7 +2374,7 @@ $("#g-save").onclick = async () => {
 // ── 効果音を場面に合わせる／追加する（2026-11-02 社長「コンソールで効果音を追加できるようにして」）──────────────
 // 台本の場面の se（効果音の名前＝assets/audio/se のファイル名の拡張子なし。accent・chapter・transition は、無ければ自前の合成音）。
 // その場面の頭で1回鳴る。追加した音は、ブラウザで WAV に変えて、ピークを −28 dB にそろえて保存する（src/audio_mix.py find_se が、.wav・.mp3 を探す）
-const SX = {items: [], vals: {}, cues: {}, only: null, shown: 25, loaded: false, audio: null, url: null, token: 0, playing: "", loading: "", meta: {}};
+const SX = {key: null, items: [], vals: {}, cues: {}, loops: {}, only: null, shown: 25, loaded: false, audio: null, url: null, token: 0, playing: "", loading: "", meta: {}};
 const SE_DIR = "assets/audio/se", SE_PEAK_DB = -6;
 const SE_BUILTIN = [["accent", "accent（驚き・強調）"], ["chapter", "chapter（章の頭）"], ["transition", "transition（場面の切り替え）"]];
 const SE_FIG = {fig_rise: "グラフが伸びる", fig_pop: "数字・比較・カード・まとめ", fig_tick: "ノード図・構造図", fig_step: "進行ステップ", fig_sweep: "太陽系・粒子と磁場", fig_thud: "クレーター・論文", fig_pin: "地図の点"};
@@ -2386,7 +2393,21 @@ const SE_FILE = i => i.type === "file" && /\.(mp3|wav|m4a|ogg)$/i.test(i.name);
 const sxCuesOf = s => ((s.raw && s.raw.se_cues) || []).filter(c => c && c.name).map(c => ({name: String(c.name), at: Math.max(+c.at || 0, 0), ...(c.loop ? {loop: true} : {})}));
 const sxCuesNow = s => (SX.cues[s.id] || []).filter(c => c.name).map(c => ({name: c.name, at: Math.round(Math.max(+c.at || 0, 0) * 100) / 100, ...(c.loop ? {loop: true} : {})}));
 const sxEst = s => Math.max(2, Math.round((String(s.text || "").replace(/\s/g, "").length / 4.9 + 0.7) * 10) / 10);   // 場面の長さの目安（読み上げ 約295字/分＋余白）
-const sxDirty = () => S.scenes.some(s => (SX.vals[s.id] || "") !== (s.raw.se || "") || !!(SX.loops || {})[s.id] !== !!s.raw.se_loop || JSON.stringify(sxCuesNow(s)) !== JSON.stringify(sxCuesOf(s)));
+// 効果音の未保存の変更は、パネルを閉じても残す。場面を替えて何場面ぶん直したあと、メインの「③ 保存」か、効果音パネルの「保存」で、まとめて1回で保存する
+// （2026-11-08 社長「効果音の保存はまとめて保存できるようにして、1シーンずつ保存しなければならないのは面倒です」）
+const sxSceneDirty = s => (SX.vals[s.id] || "") !== (s.raw.se || "") || !!(SX.loops || {})[s.id] !== !!(s.raw.se && s.raw.se_loop) || JSON.stringify(sxCuesNow(s)) !== JSON.stringify(sxCuesOf(s));
+const sxDirtyScenes = () => (SX.key && SX.key === S.name) ? S.scenes.filter(sxSceneDirty) : [];
+const sxDirty = () => sxDirtyScenes().length > 0;
+// 効果音の変更を、台本の場面（raw）に書く。n: 指名した場面、nc: 時刻を決めた音の数を数える
+function sxApply(raw, sc, cnt){
+  const v = SX.vals[sc.id];   // 効果音は、画像のロックに関係なく保存する
+  if(v){ raw.se = v; cnt.n++; } else delete raw.se;
+  if(v && v !== "none" && (SX.loops || {})[sc.id]) raw.se_loop = true; else delete raw.se_loop;   // 場面の頭の音を、場面の終わりまで繰り返す
+  const cs = sxCuesNow(sc); if(cs.length){ raw.se_cues = cs; cnt.nc += cs.length; } else delete raw.se_cues;
+}
+// 場面のカードの表示用（SX がまだ無いときも安全に）
+function sxPendingIds(){ try{ return new Set(sxDirtyScenes().map(s => s.id)); }catch{ return new Set(); } }
+const sxDirtyMsg = () => { const d = sxDirtyScenes(); return d.length ? `未保存の変更が${d.length}場面あります（${d.slice(0, 8).map(s => "#" + numOf(s.id)).join("・")}${d.length > 8 ? "…" : ""}）。ここの「保存」か、メインの「③ 保存」で、まとめて保存できます` : ""; };
 const sxNames = () => [...SE_BUILTIN.map(x => x[0]), ...SX.items.map(x => x.stem).filter(n => !SE_BUILTIN.some(b => b[0] === n))];
 async function loadSfx(){
   const byName = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
@@ -2469,7 +2490,7 @@ function renderSfx(){
   });
   sc.querySelectorAll("[data-xs]").forEach(el => el.onchange = () => { if(el.value) SX.vals[el.dataset.xs] = el.value; else delete SX.vals[el.dataset.xs]; renderSfx(); });
   const cueOf = key => { const [id, i] = [key.slice(0, key.lastIndexOf(":")), +key.slice(key.lastIndexOf(":") + 1)]; return [id, i, (SX.cues[id] || [])[i]]; };
-  const dirtyNow = () => { $("#x-save").disabled = !sxDirty(); sxMsg(sxDirty() ? "変更があります。保存を押してください" : ""); };
+  const dirtyNow = () => { $("#x-save").disabled = !sxDirty(); sxMsg(sxDirtyMsg()); updateSaveBtn(); };
   sc.querySelectorAll("[data-xadd]").forEach(b => b.onclick = () => {
     const id = b.dataset.xadd, s = S.scenes.find(x => x.id === id);
     const first = (SX.items.find(x => !SE_BUILTIN.some(y => y[0] === x.stem) && !SE_FIG[x.stem]) || SX.items[0] || {stem: "accent"}).stem;
@@ -2491,14 +2512,18 @@ function renderSfx(){
   $("#x-more").style.display = !SX.only && S.scenes.length > SX.shown ? "" : "none";
   $("#x-more").textContent = `さらに表示（残り${S.scenes.length - SX.shown}場面）`;
   $("#x-save").disabled = !sxDirty();
-  sxMsg(sxDirty() ? "変更があります。保存を押してください" : "");
+  sxMsg(sxDirtyMsg()); updateSaveBtn();
 }
 async function openSfx(sceneId){
   if(!S.json){ setMsg("先に台本を読み込んでください", "err"); return; }
   SX.only = typeof sceneId === "string" ? sceneId : null;   // 場面のカードの「🔊 効果音」から開いたときは、その場面だけを出す
   $("#sfx").style.display = ""; document.body.style.overflow = "hidden"; sxMsg("");
   try{ await loadSfx(); }catch(e){ sxMsg(e.message, "err"); return; }
-  SX.vals = {}; SX.cues = {}; SX.loops = {}; S.scenes.forEach(s => { if(s.raw.se) SX.vals[s.id] = s.raw.se; if(s.raw.se && s.raw.se_loop) SX.loops[s.id] = true; const c = sxCuesOf(s); if(c.length) SX.cues[s.id] = c; }); SX.shown = 25;
+  if(SX.key !== S.name){   // はじめて開くときだけ、台本から作る。2回目からは、さっきまでの未保存の変更をそのまま使う
+    SX.vals = {}; SX.cues = {}; SX.loops = {}; S.scenes.forEach(s => { if(s.raw.se) SX.vals[s.id] = s.raw.se; if(s.raw.se && s.raw.se_loop) SX.loops[s.id] = true; const c = sxCuesOf(s); if(c.length) SX.cues[s.id] = c; });
+    SX.key = S.name;
+  }
+  SX.shown = 25;
   $("#x-info").textContent = `効果音 ${SX.items.length}本（標準の合成音 3種のほかに置いたもの）。`;
   renderSfx();
   if(SX.only){ const e = $("#x-scenes"); if(e) e.scrollIntoView({block: "start"}); }   // 場面のカードから開いたときは、その場面の設定の位置へ
@@ -2565,26 +2590,20 @@ $("#x-addgo").onclick = async () => {
 $("#x-more").onclick = () => { SX.shown += 25; renderSfx(); };
 $("#x-close").onclick = () => {
   sxStop();
-  if(SX.loaded && S.json && sxDirty() && !confirm("保存していない変更があります。閉じますか？")) return;
   $("#sfx").style.display = "none"; document.body.style.overflow = ""; render();   // 場面のカードの「🔊 効果音（指定あり）」の表示を更新
 };
 $("#x-save").onclick = async () => {
   if(!ghReady()){ sxMsg("先に「⚙ 接続設定」でGitHubにつないでください", "err"); return; }
+  const dirty = sxDirtyScenes(); if(!dirty.length) return;
   let json; try{ json = await freshScript(); }catch(e){ sxMsg(e.message, "err"); return; }
-  let n = 0, nc = 0;
-  json.narrative_structure.forEach(raw => {
-    const sc = S.scenes.find(x => x.id === raw.id); if(!sc) return;
-    const v = SX.vals[sc.id];   // 効果音は、画像のロックに関係なく保存する
-    if(v){ raw.se = v; n++; } else delete raw.se;
-    if(v && v !== "none" && (SX.loops || {})[sc.id]) raw.se_loop = true; else delete raw.se_loop;   // 場面の頭の音を、場面の終わりまで繰り返す
-    const cs = sxCuesNow(sc); if(cs.length){ raw.se_cues = cs; nc += cs.length; } else delete raw.se_cues;
-  });
+  const cnt = {n: 0, nc: 0};
+  dirty.forEach(sc => { const raw = rawById(json, sc.id); if(raw) sxApply(raw, sc, cnt); });   // 直した場面だけ書く（ほかの場面は、最新の台本のまま）
   $("#x-save").disabled = true; sxMsg("保存しています…");
   try{
     await commitMany([{path: `${GH_DIR}/data/scripts/${S.name}`, bytes: enc(JSON.stringify(json, null, 2) + "\n")}],
-      `${S.stem}: 効果音を場面に合わせる（指名${n}場面・時刻を決めた音${nc}個・画像入れ替えコンソール）`);
+      `${S.stem}: 効果音を場面に合わせる（${dirty.length}場面・指名${cnt.n}場面・時刻を決めた音${cnt.nc}個・画像入れ替えコンソール）`);
     adoptJson(json);
-    renderSfx(); sxMsg(`保存しました（指名${n}場面・時刻を決めた音${nc}個）。次の生成から反映されます`, "ok");
+    renderSfx(); sxMsg(`保存しました（${dirty.length}場面・指名${cnt.n}場面・時刻を決めた音${cnt.nc}個）。次の生成から反映されます`, "ok");
   }catch(e){ sxMsg(e.message, "err"); $("#x-save").disabled = false; }
 };
 
@@ -3025,7 +3044,7 @@ $("#m-save").onclick = async () => {
   M.busy = false; mRefresh();
 };
 
-window.addEventListener("beforeunload", e => { if(changedScenes().length || S.local){ e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", e => { if(changedScenes().length || sxDirty() || S.local){ e.preventDefault(); e.returnValue = ""; } });
 
 // この画面が古い版のままでないかを、GitHubの最新の画面（console/images.html）と比べて確かめる。
 // 古い画面で保存すると、新しい変更を上書きする恐れがあるため、古いときは大きく警告し、保存を止める（2026-11-01 実際に、古い画面からの保存で、Claudeが入れた変更が2度消えた）
