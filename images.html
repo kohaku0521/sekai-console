@@ -168,7 +168,7 @@ body.vshort .thumb video{object-fit:contain!important;background:#05070d}
   <button id="b-videos" title="生成した動画（mp4）を、スマホ・PCに保存します。CapCutなどで編集できます">📥 動画を端末に保存</button>
   <span id="dock-msg" class="msg" style="margin:0"></span>
   <span class="spacer"></span>
-  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/09 新しい版の案内</span>
+  <span class="hint" id="ver" title="この画面の版です。古いままのときは、アドレスの最後に ?v=2 のように付けて開き直してください">版 11/10 JAXA画像のタブ</span>
   <a id="run-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px">実行状況を開く</a>
 </div></div>
 
@@ -996,6 +996,51 @@ async function nasaBlob(nasaId, thumb){
   throw last || new Error("NASA の画像を取得できません");
 }
 
+// <jaxa>
+// ── JAXA（宇宙科学研究所 ISAS）の画像ギャラリー（2026-11-10 社長「コンソールでJAXAから画像を検索、埋め込みできるようにして」）─────────
+// 一覧表 data/jaxa_images/index.json（src/jaxa_index.py が作る）を、題名・説明・特集名で検索する。サムネイルは ISAS のサイトから直接表示する。
+// 画像の取り込みは、ブラウザからは CORS で取れないので、ワークフロー trend-auto-studio-jaxa-fetch が data/jaxa_images/files/ に置いてから、そこを読む。
+// 利用条件: https://www.isas.jaxa.jp/imagepolicy/（「ISAS/JAXA」と出典を明示すれば、届け出なしで利用・加工できる。ロゴ・パッチ・顔写真・他機関の画像は対象外）
+const JAXA_DIR = "CMO/YouTube/trend-auto-studio/data/jaxa_images", JAXA_WF = "trend-auto-studio-jaxa-fetch.yml";
+const JAXA_SYN = {ryugu: "リュウグウ", hayabusa: "はやぶさ", hayabusa2: "はやぶさ2", akatsuki: "あかつき", venus: "金星", asteroid: "小惑星", moon: "月", lunar: "月", slim: "SLIM", bepicolombo: "みお", mio: "みお", mercury: "水星", mars: "火星", touchdown: "タッチダウン", sample: "サンプル", capsule: "カプセル", crater: "クレーター", rocket: "ロケット", earth: "地球", sun: "太陽", comet: "彗星", jupiter: "木星", aurora: "オーロラ"};
+const jaxaState = {items: null, err: ""};
+async function jaxaIndex(){
+  if(jaxaState.items) return jaxaState.items;
+  let bytes; try{ bytes = await repoBytes(`${JAXA_DIR}/index.json`); }catch{ throw new Error("JAXA画像の一覧表（data/jaxa_images/index.json）が、まだありません。Actions の trend-auto-studio-jaxa-fetch を rebuild_index=true で動かして作ってください"); }
+  jaxaState.items = JSON.parse(dec(bytes)).items || []; return jaxaState.items;
+}
+function jaxaDefaultQuery(s){
+  const subj = ((s.visual || {}).subject || "").trim();
+  return subj || sceneQuery(s).split(/\s+/).map(w => JAXA_SYN[w.toLowerCase()] || "").filter(Boolean).slice(0, 3).join(" ");
+}
+async function jaxaSearch(q){
+  const items = await jaxaIndex();
+  const toks = q.split(/[\s　,、]+/).filter(Boolean).map(t => JAXA_SYN[t.toLowerCase()] || t);
+  const hit = items.map(r => {
+    const blob = (r.title + " " + (r.desc || "") + " " + r.feature).toLowerCase();
+    if(!toks.every(t => blob.includes(t.toLowerCase()))) return null;
+    return {r, score: toks.reduce((a, t) => a + (r.title.toLowerCase().includes(t.toLowerCase()) ? 3 : 1), 0)};
+  }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 40);
+  return hit.map(({r}) => ({thumb: r.thumb, title: r.title, jaxaId: r.id, rec: r,
+    source: {type: "jaxa", id: r.id, page: r.page, credit: `${r.credit || "JAXA"}／ISAS/JAXA`}}));
+}
+const jaxaFileName = (id, file) => id.replace(/[^0-9A-Za-z_-]+/g, "_").replace(/^_+|_+$/g, "") + ((file.match(/\.[A-Za-z0-9]+$/) || [".jpg"])[0].toLowerCase());
+// 取り込み済みならすぐ。無ければ、ワークフローで取り込んでから（最大3分）読む
+async function jaxaBlob(it, say){
+  const path = `${JAXA_DIR}/files/${jaxaFileName(it.jaxaId, it.rec.file)}`;
+  try{ return new Blob([await repoBytes(path)]); }catch{}
+  say("JAXA の画像を、GitHub に取り込んでいます（1〜2分かかります）…");
+  await api(repoPath(`/actions/workflows/${JAXA_WF}/dispatches`), {method: "POST", body: JSON.stringify({ref: gh.branch, inputs: {ids: it.jaxaId, rebuild_index: "false"}})});
+  const t0 = Date.now();
+  while(Date.now() - t0 < 180000){
+    await new Promise(r => setTimeout(r, 7000));
+    say(`JAXA の画像を、GitHub に取り込んでいます…（${Math.round((Date.now() - t0) / 1000)}秒）`);
+    try{ return new Blob([await repoBytes(path)]); }catch{}
+  }
+  throw new Error("JAXA の画像の取り込みが、3分で終わりませんでした。しばらくしてから、もう一度その画像を押してください（Actions の trend-auto-studio-jaxa-fetch を確認）");
+}
+
+// </jaxa>
 // ── Wikimedia Commons（公開画像。2026-10-28 絶滅した生物たち用）────────────────
 // 既定ではパブリックドメイン／CC0 だけを出す。CC BY・CC BY-SA は、チェックを入れたときだけ（使うと出典の表示が要る。BY-SA は動画全体が継承の対象になる恐れ）
 const PD_RE = /^(public domain|pd[- ]|cc0|cc-zero)/i;
@@ -1520,22 +1565,22 @@ function buildPanel(s){
   const ASTRO = /\b(stars?|planets?|galax(y|ies)|nebula|supernova|moon|sun|mars|jupiter|saturn|venus|mercury|neptune|uranus|pluto|comet|asteroid|meteor|telescope|spacecraft|rocket|satellite|orbit|solar|milky|exoplanet|cosmos|universe|eclipse|aurora)\b/i;
   const tab = (!needsReview(s) && !bgOk(s)) ? "style" : (S.tabs[s.id] || CH.defaultTab || (ASTRO.test(sceneQuery(s)) ? "nasa" : "pixabay"));
   const p = document.createElement("div"); p.className = "panel";
-  const q0 = (S.results[s.id] && S.results[s.id].q) || sceneQuery(s);
+  const q0 = (S.results[s.id] && S.results[s.id].q) || (tab === "jaxa" ? jaxaDefaultQuery(s) : sceneQuery(s));
   p.innerHTML = `
     <div class="tabs">
-      ${(bgOk(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["upload", "アップロード"], ["nobg", "背景なし"], ["style", "文字の色"]] : needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["openai", "OpenAIで描く"], ["one", "🎬 AIで画像→動画（3案）"]].concat(isShortScript() ? [["long", "📼 ロングの素材"]] : []).concat([["clip", "動画クリップ（Pixabay）"], ["wsclip", "AI動画クリップ（WaveSpeed）"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]]) : [["style", "文字の色"]])
+      ${(bgOk(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["jaxa", "JAXA画像"], ["openai", "OpenAIで描く"], ["upload", "アップロード"], ["nobg", "背景なし"], ["style", "文字の色"]] : needsReview(s) ? [["commons", "公開画像（Commons）"], ["pixabay", "Pixabay"], ["nasa", "NASA画像"], ["jaxa", "JAXA画像"], ["openai", "OpenAIで描く"], ["one", "🎬 AIで画像→動画（3案）"]].concat(isShortScript() ? [["long", "📼 ロングの素材"]] : []).concat([["clip", "動画クリップ（Pixabay）"], ["wsclip", "AI動画クリップ（WaveSpeed）"], ["upload", "アップロード"], ["text", "文字・図にする"], ["style", "文字の色"]]) : [["style", "文字の色"]])
         .map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
     </div>
     <div id="tabbody"></div>`;
   const body = p.querySelector("#tabbody");
   p.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { S.tabs[s.id] = b.dataset.tab; render(); });
   const res = S.results[s.id] || {};
-  if(tab === "pixabay" || tab === "nasa" || tab === "commons" || tab === "clip"){
+  if(tab === "pixabay" || tab === "nasa" || tab === "commons" || tab === "clip" || tab === "jaxa"){
     body.innerHTML = `
-      <div class="row"><input type="text" id="q" value="${esc(q0)}" placeholder="英語の検索語（例: observatory telescope night）">
+      <div class="row"><input type="text" id="q" value="${esc(q0)}" placeholder="${tab === "jaxa" ? "日本語の検索語（例: リュウグウ タッチダウン）。スペースで区切ると、すべてを含む画像だけ" : "英語の検索語（例: observatory telescope night）"}">
         <button class="primary" id="go">検索</button></div>
       ${tab === "commons" ? `<label class="hint" style="display:block;margin-bottom:6px"><input type="checkbox" id="by" ${res.by ? "checked" : ""}> CC BY・CC BY-SA の画像も出す（使うと出典の表示が要ります。BY-SA は避けてください）</label>` : ""}
-      <div class="hint" style="margin-bottom:6px">${tab === "clip" ? "Pixabay の無料の動画クリップです（再生は動画のこの場面だけ。長い動画は、冒頭の数秒が使われます）。選ぶと、この場面は動画クリップになります。" : tab === "commons" ? "Wikimedia Commons の画像です。パブリックドメイン／CC0 だけを出しています。作者・年・権利は各画像の下に出ます。1929年より前の図や写真でも、原産国の条件は画像のページで確認してください。" : tab === "nasa" ? "NASAの画像は公的な素材ですが、画像ごとに出典（機関名）が付きます。" : "Pixabayの写真は、検索語と意味が合うか、見て選んでください。"}</div>
+      <div class="hint" style="margin-bottom:6px">${tab === "clip" ? "Pixabay の無料の動画クリップです（再生は動画のこの場面だけ。長い動画は、冒頭の数秒が使われます）。選ぶと、この場面は動画クリップになります。" : tab === "commons" ? "Wikimedia Commons の画像です。パブリックドメイン／CC0 だけを出しています。作者・年・権利は各画像の下に出ます。1929年より前の図や写真でも、原産国の条件は画像のページで確認してください。" : tab === "nasa" ? "NASAの画像は公的な素材ですが、画像ごとに出典（機関名）が付きます。" : tab === "jaxa" ? "JAXA 宇宙科学研究所（ISAS）の画像ギャラリーの画像です（約70枚。リュウグウ・あかつき・あらせ・みお）。出典の表示（ISAS/JAXA と、画像ごとのクレジット）を、動画の概要欄に自動で載せます。検索語は日本語です。選ぶと、画像を取り込むので、初めての画像は1〜2分かかります（取り込み済みの画像はすぐです）。ロゴ・ミッションパッチ・顔写真・他機関の画像は、一覧に入れていません。解像度は高くありません（小さい画像が多い）。" : "Pixabayの写真は、検索語と意味が合うか、見て選んでください。"}</div>
       <div class="msg ${res.err ? "err" : ""}" id="rm">${esc(res.err || (res.busy ? "検索しています…" : ""))}</div>
       <div class="results" id="rs"></div>`;
     const rs = body.querySelector("#rs");
@@ -1552,7 +1597,7 @@ function buildPanel(s){
             stageClip(s, bytes, {...it.source, size: picked.size || bytes.length});
             return;
           }
-          const png = await toPng(tab === "nasa" ? await nasaBlob(it.nasaId, it.thumb) : await fetchBlob(it.full, tab === "commons" ? "Commons" : "Pixabay"));
+          const png = await toPng(tab === "nasa" ? await nasaBlob(it.nasaId, it.thumb) : tab === "jaxa" ? await jaxaBlob(it, msg => { rm.textContent = msg; }) : await fetchBlob(it.full, tab === "commons" ? "Commons" : "Pixabay"));
           stage(s, png, it.source);
         }catch(e){ rm.className = "msg err"; rm.textContent = e.message; }
       };
@@ -1562,7 +1607,7 @@ function buildPanel(s){
       const q = body.querySelector("#q").value.trim(); if(!q) return;
       const by = !!(body.querySelector("#by") && body.querySelector("#by").checked);
       S.results[s.id] = {q, tab, busy: true, by}; render();
-      try{ const items = await (tab === "nasa" ? nasaSearch(q) : tab === "commons" ? commonsSearch(q, by) : tab === "clip" ? pxSearchVideo(q) : pxSearch(q)); S.results[s.id] = {q, tab, items, by}; if(!items.length) S.results[s.id].err = "見つかりませんでした。検索語を変えてみてください"; }
+      try{ const items = await (tab === "nasa" ? nasaSearch(q) : tab === "jaxa" ? jaxaSearch(q) : tab === "commons" ? commonsSearch(q, by) : tab === "clip" ? pxSearchVideo(q) : pxSearch(q)); S.results[s.id] = {q, tab, items, by}; if(!items.length) S.results[s.id].err = "見つかりませんでした。検索語を変えてみてください"; }
       catch(e){ S.results[s.id] = {q, tab, err: e.message, by}; }
       render();
     };
